@@ -64,6 +64,12 @@ impl fmt::Display for SessionId {
     }
 }
 
+impl AsRef<str> for SessionId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 /// ISO timestamp wrapper
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ISOTimestamp(DateTime<Utc>);
@@ -82,6 +88,12 @@ impl ISOTimestamp {
     /// Convert to DailyDate
     pub fn to_daily_date(&self) -> DailyDate {
         DailyDate::new(self.0.date_naive())
+    }
+}
+
+impl AsRef<DateTime<Utc>> for ISOTimestamp {
+    fn as_ref(&self) -> &DateTime<Utc> {
+        &self.0
     }
 }
 

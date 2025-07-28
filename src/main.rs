@@ -7,6 +7,7 @@ use ccusage::{
     data_loader::DataLoader,
     error::Result,
     filters::{MonthFilter, UsageFilter},
+    live_monitor::LiveMonitor,
     mcp::McpServer,
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
@@ -39,15 +40,26 @@ async fn main() -> Result<()> {
             until,
             instances,
             project,
+            watch,
+            interval,
+            parallel,
+            intern,
+            arena,
         }) => {
             info!("Running daily usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && atty::is(atty::Stream::Stdout);
-            let data_loader = DataLoader::new().await?.with_progress(show_progress);
+            let show_progress = !json && !watch && atty::is(atty::Stream::Stdout);
+            let data_loader = Arc::new(
+                DataLoader::new()
+                    .await?
+                    .with_progress(show_progress)
+                    .with_interning(intern)
+                    .with_arena(arena)
+            );
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator = Arc::new(Aggregator::new(cost_calculator).with_progress(show_progress));
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -64,27 +76,56 @@ async fn main() -> Result<()> {
                 filter = filter.with_project(project_name.clone());
             }
 
-            // Load and filter entries
-            let entries = data_loader.load_usage_entries();
-            let filtered_entries = filter.filter_stream(entries).await;
-
-            // Handle instances flag
-            if instances {
-                // Group by instance
-                let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
-                let totals = Totals::from_daily_instances(&instance_data);
-                
-                // Format and output
-                let formatter = get_formatter(json);
-                println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+            // Check if we're in watch mode
+            if watch {
+                info!("Starting live monitoring mode");
+                let monitor = LiveMonitor::new(
+                    data_loader,
+                    aggregator,
+                    filter,
+                    mode,
+                    json,
+                    instances,
+                    interval,
+                );
+                monitor.run().await?;
             } else {
-                // Aggregate data normally
-                let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
-                let totals = Totals::from_daily(&daily_data);
-
-                // Format and output
-                let formatter = get_formatter(json);
-                println!("{}", formatter.format_daily(&daily_data, &totals));
+                // Handle instances flag
+                if instances {
+                    // Load and filter entries, then group by instance
+                    if parallel {
+                        let entries = data_loader.load_usage_entries_parallel();
+                        let filtered_entries = filter.filter_stream(entries).await;
+                        let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
+                        let totals = Totals::from_daily_instances(&instance_data);
+                        let formatter = get_formatter(json);
+                        println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                    } else {
+                        let entries = data_loader.load_usage_entries();
+                        let filtered_entries = filter.filter_stream(entries).await;
+                        let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
+                        let totals = Totals::from_daily_instances(&instance_data);
+                        let formatter = get_formatter(json);
+                        println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                    }
+                } else {
+                    // Load and filter entries, then aggregate normally
+                    if parallel {
+                        let entries = data_loader.load_usage_entries_parallel();
+                        let filtered_entries = filter.filter_stream(entries).await;
+                        let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
+                        let totals = Totals::from_daily(&daily_data);
+                        let formatter = get_formatter(json);
+                        println!("{}", formatter.format_daily(&daily_data, &totals));
+                    } else {
+                        let entries = data_loader.load_usage_entries();
+                        let filtered_entries = filter.filter_stream(entries).await;
+                        let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
+                        let totals = Totals::from_daily(&daily_data);
+                        let formatter = get_formatter(json);
+                        println!("{}", formatter.format_daily(&daily_data, &totals));
+                    }
+                }
             }
         }
 

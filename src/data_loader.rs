@@ -37,8 +37,11 @@ use crate::types::UsageEntry;
 use futures::stream::Stream;
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use rayon::prelude::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 /// Data loader for discovering and streaming JSONL files
@@ -50,6 +53,10 @@ pub struct DataLoader {
     claude_paths: Vec<PathBuf>,
     /// Whether to show progress bars
     show_progress: bool,
+    /// Whether to use string interning for memory optimization
+    use_interning: bool,
+    /// Whether to use arena allocation for parsing
+    use_arena: bool,
 }
 
 impl DataLoader {
@@ -71,6 +78,8 @@ impl DataLoader {
         Ok(Self {
             claude_paths: paths,
             show_progress: false,
+            use_interning: false,
+            use_arena: false,
         })
     }
 
@@ -162,6 +171,111 @@ impl DataLoader {
     pub fn with_progress(mut self, show_progress: bool) -> Self {
         self.show_progress = show_progress;
         self
+    }
+    
+    /// Enable string interning for memory optimization
+    pub fn with_interning(mut self, use_interning: bool) -> Self {
+        self.use_interning = use_interning;
+        self
+    }
+    
+    /// Enable arena allocation for parsing
+    pub fn with_arena(mut self, use_arena: bool) -> Self {
+        self.use_arena = use_arena;
+        self
+    }
+    
+    /// Load usage entries in parallel for better performance
+    ///
+    /// This method uses Rayon to process multiple JSONL files concurrently,
+    /// providing significant performance improvements for large datasets.
+    ///
+    /// # Returns
+    ///
+    /// An async stream of `Result<UsageEntry>` items processed in parallel
+    pub fn load_usage_entries_parallel(&self) -> impl Stream<Item = Result<UsageEntry>> + '_ {
+        async_stream::stream! {
+            let files = match self.find_jsonl_files().await {
+                Ok(files) => files,
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            };
+
+            let num_files = files.len();
+            if num_files == 0 {
+                return;
+            }
+
+            // Create progress bar if enabled
+            let progress = if self.show_progress {
+                let pb = ProgressBar::new(num_files as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{msg} [{bar:40.cyan/blue}] {pos}/{len} files")
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+                pb.set_message("Loading usage data (parallel)");
+                Some(Arc::new(pb))
+            } else {
+                None
+            };
+
+            // Use channel to collect results from parallel processing
+            let (tx, mut rx) = mpsc::channel::<Result<Vec<UsageEntry>>>(num_files);
+            
+            // Process files in parallel using Rayon
+            let files_clone = files.clone();
+            let progress_clone = progress.clone();
+            
+            tokio::task::spawn_blocking(move || {
+                files_clone.par_iter().for_each(|file_path| {
+                    let tx = tx.clone();
+                    if let Some(ref pb) = progress_clone {
+                        pb.inc(1);
+                    }
+                    
+                    // Read file synchronously in the thread pool
+                    let result = std::fs::read_to_string(file_path)
+                        .map_err(CcusageError::Io)
+                        .and_then(|content| {
+                            let mut entries = Vec::new();
+                            for line in content.lines() {
+                                if line.trim().is_empty() {
+                                    continue;
+                                }
+                                match serde_json::from_str::<UsageEntry>(line) {
+                                    Ok(entry) => entries.push(entry),
+                                    Err(e) => {
+                                        warn!("Failed to parse entry in {}: {}", file_path.display(), e);
+                                    }
+                                }
+                            }
+                            Ok(entries)
+                        });
+                    
+                    let _ = tx.blocking_send(result);
+                });
+            });
+            
+            // Yield all results
+            while let Some(result) = rx.recv().await {
+                match result {
+                    Ok(entries) => {
+                        for entry in entries {
+                            yield Ok(entry);
+                        }
+                    }
+                    Err(e) => yield Err(e),
+                }
+            }
+            
+            if let Some(pb) = progress {
+                pb.finish_with_message("Loading complete (parallel)");
+            }
+        }
     }
 
     /// Load usage entries as an async stream
@@ -317,5 +431,45 @@ mod tests {
         assert_eq!(entry2.session_id.as_str(), "test2");
         assert_eq!(entry2.tokens.input_tokens, 200);
         assert_eq!(entry2.project, None);
+    }
+    
+    #[tokio::test]
+    async fn test_parallel_loading() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create multiple JSONL files
+        for i in 0..3 {
+            let content = format!(
+                r#"{{"session_id":"test{}","timestamp":"2024-01-01T0{}:00:00Z","model":"claude-3-opus","input_tokens":100,"output_tokens":50,"cache_creation_tokens":10,"cache_read_tokens":5,"total_cost":0.1}}"#,
+                i, i
+            );
+            let file_path = temp_dir.path().join(format!("test{}.jsonl", i));
+            let mut file = tokio::fs::File::create(&file_path).await.unwrap();
+            file.write_all(content.as_bytes()).await.unwrap();
+        }
+
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        // Test parallel loading
+        let entries: Vec<_> = loader
+            .load_usage_entries_parallel()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 3);
+        
+        // Verify all entries are loaded (order may vary due to parallel processing)
+        let session_ids: Vec<_> = entries.iter().map(|e| e.session_id.as_str()).collect();
+        assert!(session_ids.contains(&"test0"));
+        assert!(session_ids.contains(&"test1"));
+        assert!(session_ids.contains(&"test2"));
     }
 }

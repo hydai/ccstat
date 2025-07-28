@@ -41,9 +41,12 @@ pub mod cost_calculator;
 pub mod data_loader;
 pub mod error;
 pub mod filters;
+pub mod live_monitor;
 pub mod mcp;
+pub mod memory_pool;
 pub mod output;
 pub mod pricing_fetcher;
+pub mod string_pool;
 pub mod types;
 
 // Re-export commonly used types
