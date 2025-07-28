@@ -42,7 +42,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::{debug, info, trace};
 
 /// Data loader for discovering and streaming JSONL files
 ///
@@ -176,7 +176,7 @@ impl DataLoader {
             jsonl_files.extend(files);
         }
 
-        debug!("Found {} JSONL files", jsonl_files.len());
+        info!("Found {} JSONL files to process", jsonl_files.len());
         Ok(jsonl_files)
     }
 
@@ -266,7 +266,7 @@ impl DataLoader {
                                         }
                                     },
                                     Err(e) => {
-                                        warn!("Failed to parse entry in {}: {}", file_path.display(), e);
+                                        trace!("Skipping non-usage entry in {}: {}", file_path.display(), e);
                                     }
                                 }
                             }
@@ -403,8 +403,8 @@ impl DataLoader {
                         // Skip non-assistant entries silently
                     },
                     Err(e) => {
-                        warn!(
-                            "Failed to parse line {} in {}: {}",
+                        trace!(
+                            "Skipping non-usage entry at line {} in {}: {}",
                             line_number,
                             path.display(),
                             e
