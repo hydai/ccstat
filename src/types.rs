@@ -249,6 +249,46 @@ pub struct ModelPricing {
     pub cache_read_input_token_cost: Option<f64>,
 }
 
+/// Raw message usage data from the API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageUsage {
+    /// Input tokens used
+    pub input_tokens: u64,
+    /// Output tokens generated  
+    #[serde(default)]
+    pub output_tokens: u64,
+    /// Cache creation tokens
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    /// Cache read tokens
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+}
+
+/// Raw message data from the API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    /// Model used
+    pub model: String,
+    /// Usage data
+    pub usage: MessageUsage,
+}
+
+/// Raw JSONL entry from file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawJsonlEntry {
+    /// Session ID
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    /// Timestamp
+    pub timestamp: String,
+    /// Message containing model and usage
+    pub message: Message,
+    /// Entry type
+    #[serde(rename = "type")]
+    pub entry_type: String,
+}
+
 /// Usage entry from JSONL
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEntry {
@@ -269,6 +309,42 @@ pub struct UsageEntry {
     /// Instance identifier (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instance_id: Option<String>,
+}
+
+impl UsageEntry {
+    /// Create from raw JSONL entry
+    pub fn from_raw(raw: RawJsonlEntry) -> Option<Self> {
+        // Only process entries of type "assistant"
+        if raw.entry_type != "assistant" {
+            return None;
+        }
+        
+        // Skip synthetic models (errors, no response requested, etc.)
+        if raw.message.model == "<synthetic>" {
+            return None;
+        }
+        
+        // Parse timestamp
+        let timestamp = match DateTime::parse_from_rfc3339(&raw.timestamp) {
+            Ok(dt) => ISOTimestamp::new(dt.with_timezone(&Utc)),
+            Err(_) => return None,
+        };
+        
+        Some(Self {
+            session_id: SessionId::new(raw.session_id),
+            timestamp,
+            model: ModelName::new(raw.message.model),
+            tokens: TokenCounts {
+                input_tokens: raw.message.usage.input_tokens,
+                output_tokens: raw.message.usage.output_tokens,
+                cache_creation_tokens: raw.message.usage.cache_creation_input_tokens,
+                cache_read_tokens: raw.message.usage.cache_read_input_tokens,
+            },
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        })
+    }
 }
 
 #[cfg(test)]

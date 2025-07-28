@@ -33,7 +33,7 @@
 //! ```
 
 use crate::error::{CcusageError, Result};
-use crate::types::UsageEntry;
+use crate::types::{RawJsonlEntry, UsageEntry};
 use futures::stream::Stream;
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -86,6 +86,14 @@ impl DataLoader {
     /// Discover Claude data directories on the system
     async fn discover_claude_paths() -> Result<Vec<PathBuf>> {
         let mut paths = Vec::new();
+
+        // Check ~/.claude first (common location for Claude Code)
+        if let Some(home) = dirs::home_dir() {
+            let claude_path = home.join(".claude");
+            if claude_path.exists() {
+                paths.push(claude_path);
+            }
+        }
 
         // Platform-specific path discovery
         #[cfg(target_os = "macos")]
@@ -150,17 +158,22 @@ impl DataLoader {
         let mut jsonl_files = Vec::new();
 
         for base_path in &self.claude_paths {
-            let _pattern = base_path.join("**/*.jsonl");
-
-            // Walk directory recursively
-            if let Ok(mut entries) = tokio::fs::read_dir(base_path).await {
-                while let Some(entry) = entries.next_entry().await? {
+            // Use walkdir for synchronous recursive traversal
+            let path_clone = base_path.clone();
+            let files = tokio::task::spawn_blocking(move || {
+                use walkdir::WalkDir;
+                let mut files = Vec::new();
+                
+                for entry in WalkDir::new(path_clone).into_iter().filter_map(|e| e.ok()) {
                     let path = entry.path();
                     if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                        jsonl_files.push(path);
+                        files.push(path.to_path_buf());
                     }
                 }
-            }
+                files
+            }).await.map_err(|e| CcusageError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            
+            jsonl_files.extend(files);
         }
 
         debug!("Found {} JSONL files", jsonl_files.len());
@@ -246,8 +259,12 @@ impl DataLoader {
                                 if line.trim().is_empty() {
                                     continue;
                                 }
-                                match serde_json::from_str::<UsageEntry>(line) {
-                                    Ok(entry) => entries.push(entry),
+                                match serde_json::from_str::<RawJsonlEntry>(line) {
+                                    Ok(raw_entry) => {
+                                        if let Some(entry) = UsageEntry::from_raw(raw_entry) {
+                                            entries.push(entry);
+                                        }
+                                    },
                                     Err(e) => {
                                         warn!("Failed to parse entry in {}: {}", file_path.display(), e);
                                     }
@@ -378,8 +395,13 @@ impl DataLoader {
                     continue;
                 }
 
-                match serde_json::from_str::<UsageEntry>(&line) {
-                    Ok(entry) => yield Ok(entry),
+                match serde_json::from_str::<RawJsonlEntry>(&line) {
+                    Ok(raw_entry) => {
+                        if let Some(entry) = UsageEntry::from_raw(raw_entry) {
+                            yield Ok(entry);
+                        }
+                        // Skip non-assistant entries silently
+                    },
                     Err(e) => {
                         warn!(
                             "Failed to parse line {} in {}: {}",
