@@ -63,6 +63,14 @@ tokio-test = "0.4"
 name = "parsing"
 harness = false
 
+[[bench]]
+name = "aggregation"
+harness = false
+
+[[bench]]
+name = "cost_calculation"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1
