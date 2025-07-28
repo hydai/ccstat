@@ -1,13 +1,51 @@
 //! Output formatting module for ccusage
+//!
+//! This module provides formatters for displaying usage data in different formats:
+//! - Table format for human-readable terminal output
+//! - JSON format for machine-readable output and integration with other tools
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use ccusage::output::get_formatter;
+//! use ccusage::aggregation::{DailyUsage, Totals};
+//! use ccusage::types::{DailyDate, TokenCounts};
+//! use chrono::NaiveDate;
+//!
+//! let daily_data = vec![
+//!     DailyUsage {
+//!         date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+//!         tokens: TokenCounts::new(1000, 500, 100, 50),
+//!         total_cost: 0.025,
+//!         models_used: vec!["claude-3-opus".to_string()],
+//!     },
+//! ];
+//!
+//! let totals = Totals::from_daily(&daily_data);
+//!
+//! // Get table formatter for human-readable output
+//! let formatter = get_formatter(false);
+//! println!("{}", formatter.format_daily(&daily_data, &totals));
+//!
+//! // Get JSON formatter for machine-readable output
+//! let json_formatter = get_formatter(true);
+//! println!("{}", json_formatter.format_daily(&daily_data, &totals));
+//! ```
 
-use crate::aggregation::{DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals};
+use crate::aggregation::{DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals};
 use prettytable::{format, row, Cell, Row, Table};
 use serde_json::json;
 
 /// Trait for output formatters
+///
+/// This trait defines the interface for formatting various types of usage data.
+/// Implementations can provide different output formats (table, JSON, CSV, etc.).
 pub trait OutputFormatter {
     /// Format daily usage data
     fn format_daily(&self, data: &[DailyUsage], totals: &Totals) -> String;
+
+    /// Format daily usage data grouped by instance
+    fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String;
 
     /// Format session usage data
     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String;
@@ -20,6 +58,10 @@ pub trait OutputFormatter {
 }
 
 /// Table formatter for human-readable output
+///
+/// Produces nicely formatted ASCII tables suitable for terminal display.
+/// Numbers are formatted with thousands separators and costs are shown
+/// with dollar signs for clarity.
 pub struct TableFormatter;
 
 impl TableFormatter {
@@ -92,6 +134,55 @@ impl OutputFormatter for TableFormatter {
 
         // Add totals row
         table.add_row(Self::format_totals_row(totals));
+
+        table.to_string()
+    }
+
+    fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+
+        table.set_titles(row![
+            b -> "Date",
+            b -> "Instance",
+            b -> "Input",
+            b -> "Output",
+            b -> "Cache Create",
+            b -> "Cache Read",
+            b -> "Total Tokens",
+            b -> "Cost",
+            b -> "Models"
+        ]);
+
+        for entry in data {
+            table.add_row(row![
+                entry.date.format("%Y-%m-%d"),
+                entry.instance_id,
+                r -> Self::format_number(entry.tokens.input_tokens),
+                r -> Self::format_number(entry.tokens.output_tokens),
+                r -> Self::format_number(entry.tokens.cache_creation_tokens),
+                r -> Self::format_number(entry.tokens.cache_read_tokens),
+                r -> Self::format_number(entry.tokens.total()),
+                r -> Self::format_currency(entry.total_cost),
+                entry.models_used.join(", ")
+            ]);
+        }
+
+        // Add separator
+        table.add_row(Row::new(vec![Cell::new(""); 9]));
+
+        // Add totals row with extra column for instance
+        table.add_row(row![
+            b -> "TOTAL",
+            "",
+            b -> Self::format_number(totals.tokens.input_tokens),
+            b -> Self::format_number(totals.tokens.output_tokens),
+            b -> Self::format_number(totals.tokens.cache_creation_tokens),
+            b -> Self::format_number(totals.tokens.cache_read_tokens),
+            b -> Self::format_number(totals.tokens.total()),
+            b -> Self::format_currency(totals.total_cost),
+            ""
+        ]);
 
         table.to_string()
     }
@@ -236,6 +327,10 @@ impl OutputFormatter for TableFormatter {
 }
 
 /// JSON formatter for machine-readable output
+///
+/// Produces structured JSON output that can be easily parsed by other tools
+/// or used in automation pipelines. All data is preserved in its raw form
+/// for maximum flexibility.
 pub struct JsonFormatter;
 
 impl OutputFormatter for JsonFormatter {
@@ -243,6 +338,36 @@ impl OutputFormatter for JsonFormatter {
         let output = json!({
             "daily": data.iter().map(|d| json!({
                 "date": d.date.format("%Y-%m-%d"),
+                "tokens": {
+                    "input_tokens": d.tokens.input_tokens,
+                    "output_tokens": d.tokens.output_tokens,
+                    "cache_creation_tokens": d.tokens.cache_creation_tokens,
+                    "cache_read_tokens": d.tokens.cache_read_tokens,
+                    "total": d.tokens.total(),
+                },
+                "total_cost": d.total_cost,
+                "models_used": d.models_used,
+            })).collect::<Vec<_>>(),
+            "totals": {
+                "tokens": {
+                    "input_tokens": totals.tokens.input_tokens,
+                    "output_tokens": totals.tokens.output_tokens,
+                    "cache_creation_tokens": totals.tokens.cache_creation_tokens,
+                    "cache_read_tokens": totals.tokens.cache_read_tokens,
+                    "total": totals.tokens.total(),
+                },
+                "total_cost": totals.total_cost,
+            }
+        });
+
+        serde_json::to_string_pretty(&output).unwrap()
+    }
+
+    fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String {
+        let output = json!({
+            "daily_by_instance": data.iter().map(|d| json!({
+                "date": d.date.format("%Y-%m-%d"),
+                "instance_id": d.instance_id,
                 "tokens": {
                     "input_tokens": d.tokens.input_tokens,
                     "output_tokens": d.tokens.output_tokens,
@@ -353,6 +478,23 @@ impl OutputFormatter for JsonFormatter {
 }
 
 /// Get appropriate formatter based on JSON flag
+///
+/// # Arguments
+///
+/// * `json` - If true, returns a JSON formatter; otherwise returns a table formatter
+///
+/// # Returns
+///
+/// A boxed trait object implementing the OutputFormatter trait
+///
+/// # Example
+///
+/// ```
+/// use ccusage::output::get_formatter;
+///
+/// let table_formatter = get_formatter(false);
+/// let json_formatter = get_formatter(true);
+/// ```
 pub fn get_formatter(json: bool) -> Box<dyn OutputFormatter> {
     if json {
         Box::new(JsonFormatter)

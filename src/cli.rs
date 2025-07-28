@@ -1,4 +1,28 @@
 //! CLI interface for ccusage
+//!
+//! This module defines the command-line interface using clap, providing
+//! structured access to all ccusage functionality.
+//!
+//! # Commands
+//!
+//! - `daily` - Show daily usage summary with optional date filters
+//! - `monthly` - Show monthly rollups with month filters
+//! - `session` - Show individual session details
+//! - `blocks` - Show 5-hour billing blocks
+//! - `mcp` - Start an MCP server for API access
+//!
+//! # Example
+//!
+//! ```bash
+//! # Show daily usage for January 2024
+//! ccusage daily --since 2024-01-01 --until 2024-01-31
+//!
+//! # Show monthly usage as JSON
+//! ccusage monthly --json
+//!
+//! # Show active billing blocks with token warnings
+//! ccusage blocks --active --token-limit 80%
+//! ```
 
 use crate::error::{CcusageError, Result};
 use crate::types::CostMode;
@@ -15,6 +39,9 @@ pub struct Cli {
 }
 
 /// Available commands
+///
+/// Each command provides different views and aggregations of usage data,
+/// with flexible filtering and output options.
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Show daily usage summary
@@ -118,11 +145,13 @@ pub enum Command {
 }
 
 /// MCP transport options
+///
+/// Defines how the MCP server communicates with clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpTransport {
-    /// Standard input/output
+    /// Standard input/output - for direct process communication
     Stdio,
-    /// HTTP server
+    /// HTTP server - for network-based access
     Http,
 }
 
@@ -172,12 +201,52 @@ impl Command {
 }
 
 /// Parse date filter from string
+///
+/// Expects dates in YYYY-MM-DD format.
+///
+/// # Arguments
+///
+/// * `date_str` - Date string to parse
+///
+/// # Returns
+///
+/// A parsed `NaiveDate` or an error if the format is invalid
+///
+/// # Example
+///
+/// ```
+/// use ccusage::cli::parse_date_filter;
+/// use chrono::Datelike;
+///
+/// let date = parse_date_filter("2024-01-15").unwrap();
+/// assert_eq!(date.year(), 2024);
+/// ```
 pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|e| CcusageError::InvalidDate(format!("Invalid date format '{date_str}': {e}")))
 }
 
 /// Parse month filter from string
+///
+/// Expects months in YYYY-MM format.
+///
+/// # Arguments
+///
+/// * `month_str` - Month string to parse
+///
+/// # Returns
+///
+/// A tuple of (year, month) or an error if the format is invalid
+///
+/// # Example
+///
+/// ```
+/// use ccusage::cli::parse_month_filter;
+///
+/// let (year, month) = parse_month_filter("2024-01").unwrap();
+/// assert_eq!(year, 2024);
+/// assert_eq!(month, 1);
+/// ```
 pub fn parse_month_filter(month_str: &str) -> Result<(i32, u32)> {
     let parts: Vec<&str> = month_str.split('-').collect();
     if parts.len() != 2 {

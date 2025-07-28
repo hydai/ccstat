@@ -1,4 +1,37 @@
 //! Aggregation module for summarizing usage data
+//!
+//! This module provides functionality to aggregate raw usage entries into
+//! meaningful summaries like daily usage, monthly rollups, session statistics,
+//! and billing blocks.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use ccusage::{
+//!     aggregation::Aggregator,
+//!     cost_calculator::CostCalculator,
+//!     data_loader::DataLoader,
+//!     pricing_fetcher::PricingFetcher,
+//!     types::CostMode,
+//! };
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> ccusage::Result<()> {
+//! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+//! let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+//! let aggregator = Aggregator::new(cost_calculator);
+//!
+//! let data_loader = DataLoader::new().await?;
+//! let entries = data_loader.load_usage_entries();
+//!
+//! // Aggregate by day
+//! let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
+//!
+//! // Create monthly rollups
+//! let monthly_data = Aggregator::aggregate_monthly(&daily_data);
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::cost_calculator::CostCalculator;
 use crate::error::Result;
@@ -13,6 +46,21 @@ use std::sync::Arc;
 pub struct DailyUsage {
     /// Date of usage
     pub date: DailyDate,
+    /// Token counts for the day
+    pub tokens: TokenCounts,
+    /// Total cost for the day
+    pub total_cost: f64,
+    /// Models used during the day
+    pub models_used: Vec<String>,
+}
+
+/// Daily usage grouped by instance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyInstanceUsage {
+    /// Date of usage
+    pub date: DailyDate,
+    /// Instance identifier (or "default" if none)
+    pub instance_id: String,
     /// Token counts for the day
     pub tokens: TokenCounts,
     /// Total cost for the day
@@ -164,6 +212,44 @@ impl Aggregator {
     /// Create a new Aggregator
     pub fn new(cost_calculator: Arc<CostCalculator>) -> Self {
         Self { cost_calculator }
+    }
+
+    /// Aggregate entries by day and instance
+    pub async fn aggregate_daily_by_instance(
+        &self,
+        entries: impl Stream<Item = Result<UsageEntry>>,
+        cost_mode: CostMode,
+    ) -> Result<Vec<DailyInstanceUsage>> {
+        let mut daily_map: BTreeMap<(DailyDate, String), DailyAccumulator> = BTreeMap::new();
+
+        tokio::pin!(entries);
+        while let Some(result) = entries.next().await {
+            let entry = result?;
+            let date = DailyDate::from_timestamp(&entry.timestamp);
+            let instance_id = entry.instance_id.clone().unwrap_or_else(|| "default".to_string());
+
+            // Calculate cost
+            let cost = self
+                .cost_calculator
+                .calculate_with_mode(&entry.tokens, &entry.model, entry.total_cost, cost_mode)
+                .await?;
+
+            daily_map
+                .entry((date, instance_id.clone()))
+                .or_insert_with(DailyAccumulator::new)
+                .add_entry(entry, cost);
+        }
+
+        Ok(daily_map
+            .into_iter()
+            .map(|((date, instance_id), acc)| DailyInstanceUsage {
+                date,
+                instance_id,
+                tokens: acc.tokens,
+                total_cost: acc.cost,
+                models_used: acc.models.into_iter().map(|m| m.to_string()).collect(),
+            })
+            .collect())
     }
 
     /// Aggregate entries by day
@@ -338,6 +424,15 @@ impl Totals {
         totals
     }
 
+    pub fn from_daily_instances(daily_instances: &[DailyInstanceUsage]) -> Self {
+        let mut totals = Self::default();
+        for daily in daily_instances {
+            totals.tokens += daily.tokens;
+            totals.total_cost += daily.total_cost;
+        }
+        totals
+    }
+
     pub fn from_sessions(sessions: &[SessionUsage]) -> Self {
         let mut totals = Self::default();
         for session in sessions {
@@ -363,6 +458,8 @@ mod tests {
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::new(100, 50, 10, 5),
             total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
         };
 
         acc.add_entry(entry, 0.01);

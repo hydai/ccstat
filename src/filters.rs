@@ -1,9 +1,28 @@
 //! Filtering module for usage entries
+//!
+//! This module provides flexible filtering capabilities for usage data,
+//! supporting date ranges, project names, and month-based filtering.
+//!
+//! # Examples
+//!
+//! ```
+//! use ccusage::filters::UsageFilter;
+//! use chrono::NaiveDate;
+//!
+//! // Create a filter for January 2024
+//! let filter = UsageFilter::new()
+//!     .with_since(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
+//!     .with_until(NaiveDate::from_ymd_opt(2024, 1, 31).unwrap())
+//!     .with_project("my-project".to_string());
+//! ```
 
 use crate::types::UsageEntry;
 use chrono::{Datelike, NaiveDate};
 
 /// Filter configuration for usage entries
+///
+/// Supports filtering by date range and project name. All filters are optional
+/// and can be combined for more specific queries.
 #[derive(Debug, Default, Clone)]
 pub struct UsageFilter {
     /// Start date filter (inclusive)
@@ -58,15 +77,31 @@ impl UsageFilter {
 
         // Check project filter
         if let Some(project_filter) = &self.project {
-            // For now, we'll need to add project field to UsageEntry
-            // TODO: Implement project filtering when project field is added
-            let _ = project_filter;
+            if let Some(entry_project) = &entry.project {
+                if entry_project != project_filter {
+                    return false;
+                }
+            } else {
+                // If filter specifies a project but entry has no project, don't match
+                return false;
+            }
         }
 
         true
     }
 
     /// Filter a stream of entries
+    ///
+    /// Applies the configured filters to a stream of usage entries,
+    /// returning only those that match all criteria.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - An async stream of usage entries to filter
+    ///
+    /// # Returns
+    ///
+    /// A filtered stream containing only matching entries
     pub async fn filter_stream<S>(
         self,
         stream: S,
@@ -95,6 +130,20 @@ impl UsageFilter {
 }
 
 /// Month filter for monthly aggregation
+///
+/// Provides filtering by year and month for monthly usage reports.
+/// Useful for generating reports for specific months or month ranges.
+///
+/// # Example
+///
+/// ```
+/// use ccusage::filters::MonthFilter;
+///
+/// // Filter for Q1 2024
+/// let filter = MonthFilter::new()
+///     .with_since(2024, 1)
+///     .with_until(2024, 3);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct MonthFilter {
     /// Start month (year and month)
@@ -166,6 +215,8 @@ mod tests {
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,
+            project: None,
+            instance_id: None,
         };
 
         let entry_within = UsageEntry {
@@ -178,6 +229,8 @@ mod tests {
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,
+            project: None,
+            instance_id: None,
         };
 
         let entry_after = UsageEntry {
@@ -190,6 +243,8 @@ mod tests {
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,
+            project: None,
+            instance_id: None,
         };
 
         assert!(!filter.matches(&entry_before));
@@ -206,5 +261,44 @@ mod tests {
         assert!(filter.matches_date(&NaiveDate::from_ymd_opt(2024, 2, 15).unwrap()));
         assert!(filter.matches_date(&NaiveDate::from_ymd_opt(2024, 3, 31).unwrap()));
         assert!(!filter.matches_date(&NaiveDate::from_ymd_opt(2024, 4, 1).unwrap()));
+    }
+
+    #[test]
+    fn test_project_filter() {
+        let filter = UsageFilter::new().with_project("my-project".to_string());
+
+        let entry_with_project = UsageEntry {
+            session_id: SessionId::new("test1"),
+            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: Some("my-project".to_string()),
+            instance_id: None,
+        };
+
+        let entry_different_project = UsageEntry {
+            session_id: SessionId::new("test2"),
+            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: Some("other-project".to_string()),
+            instance_id: None,
+        };
+
+        let entry_no_project = UsageEntry {
+            session_id: SessionId::new("test3"),
+            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+
+        assert!(filter.matches(&entry_with_project));
+        assert!(!filter.matches(&entry_different_project));
+        assert!(!filter.matches(&entry_no_project));
     }
 }

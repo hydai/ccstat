@@ -1,4 +1,20 @@
 //! Error types for ccusage
+//!
+//! This module defines the error types used throughout the ccusage library.
+//! All errors are derived from `thiserror` for convenient error handling
+//! and automatic `From` implementations.
+//!
+//! # Example
+//!
+//! ```
+//! use ccusage::error::{CcusageError, Result};
+//!
+//! fn example_function() -> Result<()> {
+//!     // This will automatically convert io::Error to CcusageError
+//!     let _file = std::fs::read_to_string("nonexistent.txt")?;
+//!     Ok(())
+//! }
+//! ```
 
 use std::path::PathBuf;
 use thiserror::Error;
@@ -6,6 +22,9 @@ use thiserror::Error;
 use crate::types::ModelName;
 
 /// Main error type for ccusage operations
+///
+/// This enum encompasses all possible errors that can occur during
+/// ccusage operations, from IO errors to parsing failures and network issues.
 #[derive(Error, Debug)]
 pub enum CcusageError {
     /// IO error occurred
@@ -55,6 +74,19 @@ pub enum CcusageError {
 }
 
 /// Convenience type alias for Results in ccusage
+///
+/// This type alias makes it easier to work with Results throughout
+/// the codebase by providing a default error type.
+///
+/// # Example
+///
+/// ```
+/// use ccusage::Result;
+///
+/// fn process_data() -> Result<String> {
+///     Ok("Processed successfully".to_string())
+/// }
+/// ```
 pub type Result<T> = std::result::Result<T, CcusageError>;
 
 #[cfg(test)]

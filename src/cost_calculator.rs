@@ -1,4 +1,35 @@
 //! Cost calculator module for computing usage costs
+//!
+//! This module provides the core cost calculation functionality, supporting
+//! both pre-calculated costs and dynamic calculation based on LiteLLM pricing data.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use ccusage::{
+//!     cost_calculator::CostCalculator,
+//!     pricing_fetcher::PricingFetcher,
+//!     types::{CostMode, ModelName, TokenCounts},
+//! };
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> ccusage::Result<()> {
+//! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+//! let calculator = CostCalculator::new(pricing_fetcher);
+//!
+//! let tokens = TokenCounts::new(1000, 500, 100, 50);
+//! let model = ModelName::new("claude-3-opus");
+//!
+//! // Calculate cost directly
+//! let cost = calculator.calculate_cost(&tokens, &model).await?;
+//!
+//! // Calculate with mode consideration
+//! let cost_with_mode = calculator
+//!     .calculate_with_mode(&tokens, &model, Some(0.05), CostMode::Auto)
+//!     .await?;
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::error::{CcusageError, Result};
 use crate::pricing_fetcher::PricingFetcher;
@@ -7,18 +38,38 @@ use std::sync::Arc;
 use tracing::debug;
 
 /// Calculates costs based on token usage and pricing
+///
+/// The CostCalculator integrates with the PricingFetcher to provide accurate
+/// cost calculations for various Claude models. It supports multiple cost modes
+/// allowing flexibility in how costs are computed.
 pub struct CostCalculator {
     /// Pricing fetcher instance
     pricing_fetcher: Arc<PricingFetcher>,
 }
 
 impl CostCalculator {
-    /// Create a new CostCalculator
+    /// Create a new CostCalculator with a pricing fetcher
+    ///
+    /// # Arguments
+    ///
+    /// * `pricing_fetcher` - Arc to a PricingFetcher instance for retrieving model pricing
     pub fn new(pricing_fetcher: Arc<PricingFetcher>) -> Self {
         Self { pricing_fetcher }
     }
 
     /// Calculate cost for token usage
+    ///
+    /// Fetches the current pricing for the specified model and calculates
+    /// the total cost based on token counts.
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - Token counts to calculate cost for
+    /// * `model_name` - Name of the model to get pricing for
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model is unknown or pricing data is unavailable
     pub async fn calculate_cost(
         &self,
         tokens: &TokenCounts,
@@ -33,7 +84,19 @@ impl CostCalculator {
         Ok(Self::calculate_from_pricing(tokens, &pricing))
     }
 
-    /// Calculate cost from pricing data
+    /// Calculate cost from pricing data without fetching
+    ///
+    /// This is a pure function that calculates cost given token counts and pricing.
+    /// Useful when you already have pricing data and don't need to fetch it.
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - Token counts to calculate cost for
+    /// * `pricing` - Model pricing information
+    ///
+    /// # Returns
+    ///
+    /// Total cost in dollars
     pub fn calculate_from_pricing(tokens: &TokenCounts, pricing: &ModelPricing) -> f64 {
         let mut cost = 0.0;
 
@@ -63,6 +126,24 @@ impl CostCalculator {
     }
 
     /// Calculate cost with mode consideration
+    ///
+    /// This method supports different cost calculation modes:
+    /// - `Auto`: Uses pre-calculated cost if available, otherwise calculates
+    /// - `Calculate`: Always calculates cost from tokens and pricing
+    /// - `Display`: Only uses pre-calculated cost, errors if not available
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - Token counts to calculate cost for
+    /// * `model_name` - Name of the model to get pricing for
+    /// * `pre_calculated` - Optional pre-calculated cost from usage data
+    /// * `mode` - Cost calculation mode to use
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Model is unknown (in Calculate/Auto modes)
+    /// - No pre-calculated cost is available (in Display mode)
     pub async fn calculate_with_mode(
         &self,
         tokens: &TokenCounts,

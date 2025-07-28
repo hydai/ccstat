@@ -1,21 +1,36 @@
 //! Core domain types for ccusage
+//!
+//! This module contains the fundamental types used throughout the ccusage library.
+//! These types provide strong typing for common concepts like model names, session IDs,
+//! timestamps, and token counts.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, AddAssign};
 
-/// Strongly-typed model name
+/// Strongly-typed model name wrapper
+/// 
+/// This ensures model names are consistently handled throughout the application
+/// and provides type safety when working with model identifiers.
+/// 
+/// # Examples
+/// ```
+/// use ccusage::types::ModelName;
+/// 
+/// let model = ModelName::new("claude-3-opus");
+/// assert_eq!(model.as_str(), "claude-3-opus");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ModelName(String);
 
 impl ModelName {
-    /// Create a new ModelName
+    /// Create a new ModelName from any string-like type
     pub fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
-    /// Get the inner string
+    /// Get the inner string value
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -97,6 +112,22 @@ impl DailyDate {
 }
 
 /// Token counts for usage tracking
+/// 
+/// This struct tracks all types of tokens consumed during Claude API usage,
+/// including input, output, and cache-related tokens.
+/// 
+/// # Examples
+/// ```
+/// use ccusage::types::TokenCounts;
+/// 
+/// let tokens = TokenCounts::new(100, 50, 10, 5);
+/// assert_eq!(tokens.total(), 165);
+/// 
+/// // TokenCounts supports arithmetic operations
+/// let tokens2 = TokenCounts::new(50, 25, 5, 2);
+/// let combined = tokens + tokens2;
+/// assert_eq!(combined.input_tokens, 150);
+/// ```
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenCounts {
     /// Input tokens used
@@ -220,6 +251,12 @@ pub struct UsageEntry {
     pub tokens: TokenCounts,
     /// Pre-calculated total cost (optional)
     pub total_cost: Option<f64>,
+    /// Project name (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Instance identifier (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
 }
 
 #[cfg(test)]

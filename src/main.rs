@@ -67,18 +67,24 @@ async fn main() -> Result<()> {
             let entries = data_loader.load_usage_entries();
             let filtered_entries = filter.filter_stream(entries).await;
 
-            // TODO: Handle instances flag
+            // Handle instances flag
             if instances {
-                // TODO: Group by instance
+                // Group by instance
+                let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
+                let totals = Totals::from_daily_instances(&instance_data);
+                
+                // Format and output
+                let formatter = get_formatter(json);
+                println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+            } else {
+                // Aggregate data normally
+                let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
+                let totals = Totals::from_daily(&daily_data);
+
+                // Format and output
+                let formatter = get_formatter(json);
+                println!("{}", formatter.format_daily(&daily_data, &totals));
             }
-
-            // Aggregate data
-            let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
-            let totals = Totals::from_daily(&daily_data);
-
-            // Format and output
-            let formatter = get_formatter(json);
-            println!("{}", formatter.format_daily(&daily_data, &totals));
         }
 
         Some(Command::Monthly {
