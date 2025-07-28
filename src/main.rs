@@ -6,6 +6,7 @@ use ccusage::{
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::Result,
+    filters::{MonthFilter, UsageFilter},
     mcp::McpServer,
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
@@ -47,23 +48,24 @@ async fn main() -> Result<()> {
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator = Aggregator::new(cost_calculator);
 
-            // Load and filter entries
-            let entries = data_loader.load_usage_entries();
+            // Build filter
+            let mut filter = UsageFilter::new();
 
-            // TODO: Apply date filters
             if let Some(since_str) = &since {
-                let _since_date = parse_date_filter(since_str)?;
-                // TODO: Filter entries by start date
+                let since_date = parse_date_filter(since_str)?;
+                filter = filter.with_since(since_date);
             }
             if let Some(until_str) = &until {
-                let _until_date = parse_date_filter(until_str)?;
-                // TODO: Filter entries by end date
+                let until_date = parse_date_filter(until_str)?;
+                filter = filter.with_until(until_date);
+            }
+            if let Some(project_name) = &project {
+                filter = filter.with_project(project_name.clone());
             }
 
-            // TODO: Apply project filter
-            if let Some(_project_name) = &project {
-                // TODO: Filter entries by project
-            }
+            // Load and filter entries
+            let entries = data_loader.load_usage_entries();
+            let filtered_entries = filter.filter_stream(entries).await;
 
             // TODO: Handle instances flag
             if instances {
@@ -71,7 +73,7 @@ async fn main() -> Result<()> {
             }
 
             // Aggregate data
-            let daily_data = aggregator.aggregate_daily(entries, mode).await?;
+            let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
             let totals = Totals::from_daily(&daily_data);
 
             // Format and output
@@ -93,22 +95,41 @@ async fn main() -> Result<()> {
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator = Aggregator::new(cost_calculator);
 
+            // Build month filter
+            let mut month_filter = MonthFilter::new();
+
+            if let Some(since_str) = &since {
+                let (year, month) = parse_month_filter(since_str)?;
+                month_filter = month_filter.with_since(year, month);
+            }
+            if let Some(until_str) = &until {
+                let (year, month) = parse_month_filter(until_str)?;
+                month_filter = month_filter.with_until(year, month);
+            }
+
             // Load entries
             let entries = data_loader.load_usage_entries();
 
-            // TODO: Apply month filters
-            if let Some(since_str) = &since {
-                let _since_month = parse_month_filter(since_str)?;
-                // TODO: Filter entries by start month
-            }
-            if let Some(until_str) = &until {
-                let _until_month = parse_month_filter(until_str)?;
-                // TODO: Filter entries by end month
-            }
-
             // Aggregate data
             let daily_data = aggregator.aggregate_daily(entries, mode).await?;
-            let monthly_data = Aggregator::aggregate_monthly(&daily_data);
+            let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
+
+            // Apply month filter to aggregated monthly data
+            monthly_data.retain(|monthly| {
+                // Parse month string (YYYY-MM) to check filter
+                if let Ok((year, month)) = monthly
+                    .month
+                    .split_once('-')
+                    .and_then(|(y, m)| Some((y.parse::<i32>().ok()?, m.parse::<u32>().ok()?)))
+                    .ok_or(())
+                {
+                    // Create a date for the first day of the month to check filter
+                    if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1) {
+                        return month_filter.matches_date(&date);
+                    }
+                }
+                false
+            });
 
             let mut totals = Totals::default();
             for monthly in &monthly_data {
@@ -135,21 +156,26 @@ async fn main() -> Result<()> {
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator = Aggregator::new(cost_calculator);
 
-            // Load entries
-            let entries = data_loader.load_usage_entries();
+            // Build filter
+            let mut filter = UsageFilter::new();
 
-            // TODO: Apply date filters
             if let Some(since_str) = &since {
-                let _since_date = parse_date_filter(since_str)?;
-                // TODO: Filter entries by start date
+                let since_date = parse_date_filter(since_str)?;
+                filter = filter.with_since(since_date);
             }
             if let Some(until_str) = &until {
-                let _until_date = parse_date_filter(until_str)?;
-                // TODO: Filter entries by end date
+                let until_date = parse_date_filter(until_str)?;
+                filter = filter.with_until(until_date);
             }
 
+            // Load and filter entries
+            let entries = data_loader.load_usage_entries();
+            let filtered_entries = filter.filter_stream(entries).await;
+
             // Aggregate data
-            let session_data = aggregator.aggregate_sessions(entries, mode).await?;
+            let session_data = aggregator
+                .aggregate_sessions(filtered_entries, mode)
+                .await?;
             let totals = Totals::from_sessions(&session_data);
 
             // Format and output
@@ -191,9 +217,62 @@ async fn main() -> Result<()> {
                 blocks.retain(|b| b.start_time > cutoff);
             }
 
-            // TODO: Apply token limit warnings
-            if let Some(_limit_str) = &token_limit {
-                // TODO: Parse limit and add warnings
+            // Apply token limit warnings
+            if let Some(limit_str) = &token_limit {
+                // Parse token limit (can be a number or percentage like "80%")
+                let (limit_value, is_percentage) = if limit_str.ends_with('%') {
+                    let value = limit_str
+                        .trim_end_matches('%')
+                        .parse::<f64>()
+                        .map_err(|_| {
+                            ccusage::error::CcusageError::InvalidDate(format!(
+                                "Invalid token limit: {limit_str}"
+                            ))
+                        })?;
+                    (value / 100.0, true)
+                } else {
+                    let value = limit_str.parse::<u64>().map_err(|_| {
+                        ccusage::error::CcusageError::InvalidDate(format!(
+                            "Invalid token limit: {limit_str}"
+                        ))
+                    })?;
+                    (value as f64, false)
+                };
+
+                // Apply warnings to blocks
+                for block in &mut blocks {
+                    if block.is_active {
+                        let total_tokens = block.tokens.total();
+                        let threshold = if is_percentage {
+                            // Assuming 5-hour block has a typical max of ~10M tokens
+                            10_000_000.0 * limit_value
+                        } else {
+                            limit_value
+                        };
+
+                        if total_tokens as f64 >= threshold {
+                            block.warning = Some(format!(
+                                "⚠️  Block has used {} tokens, exceeding threshold of {}",
+                                total_tokens,
+                                if is_percentage {
+                                    format!(
+                                        "{}% (~{:.0} tokens)",
+                                        (limit_value * 100.0) as u32,
+                                        threshold
+                                    )
+                                } else {
+                                    format!("{} tokens", threshold as u64)
+                                }
+                            ));
+                        } else if total_tokens as f64 >= threshold * 0.8 {
+                            block.warning = Some(format!(
+                                "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
+                                total_tokens,
+                                ((total_tokens as f64 / threshold) * 100.0) as u32
+                            ));
+                        }
+                    }
+                }
             }
 
             // Format and output

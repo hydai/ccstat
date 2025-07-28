@@ -12,6 +12,7 @@ pub mod cli;
 pub mod cost_calculator;
 pub mod data_loader;
 pub mod error;
+pub mod filters;
 pub mod mcp;
 pub mod output;
 pub mod pricing_fetcher;

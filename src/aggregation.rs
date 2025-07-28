@@ -66,6 +66,8 @@ pub struct SessionBlock {
     pub total_cost: f64,
     /// Whether block is currently active
     pub is_active: bool,
+    /// Optional warning message if approaching token limit
+    pub warning: Option<String>,
 }
 
 /// Accumulator for daily aggregation
@@ -284,6 +286,7 @@ impl Aggregator {
                         tokens: std::mem::take(&mut current_tokens),
                         total_cost: std::mem::take(&mut current_cost),
                         is_active: false,
+                        warning: None,
                     });
                     current_block_start = None;
                 }
@@ -310,6 +313,7 @@ impl Aggregator {
                 tokens: current_tokens,
                 total_cost: current_cost,
                 is_active,
+                warning: None,
             });
         }
 

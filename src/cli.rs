@@ -173,9 +173,8 @@ impl Command {
 
 /// Parse date filter from string
 pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
-    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
-        CcusageError::InvalidDate(format!("Invalid date format '{date_str}': {e}"))
-    })
+    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .map_err(|e| CcusageError::InvalidDate(format!("Invalid date format '{date_str}': {e}")))
 }
 
 /// Parse month filter from string
