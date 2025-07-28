@@ -15,10 +15,10 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccusage::data_loader::DataLoader;
+//! use ccstat::data_loader::DataLoader;
 //! use futures::StreamExt;
 //!
-//! # async fn example() -> ccusage::Result<()> {
+//! # async fn example() -> ccstat::Result<()> {
 //! let data_loader = DataLoader::new().await?;
 //!
 //! // Stream usage entries
@@ -32,7 +32,7 @@
 //! # }
 //! ```
 
-use crate::error::{CcusageError, Result};
+use crate::error::{CcstatError, Result};
 use crate::types::{RawJsonlEntry, UsageEntry};
 use futures::stream::Stream;
 use futures::StreamExt;
@@ -71,7 +71,7 @@ impl DataLoader {
     pub async fn new() -> Result<Self> {
         let paths = Self::discover_claude_paths().await?;
         if paths.is_empty() {
-            return Err(CcusageError::NoClaudeDirectory);
+            return Err(CcstatError::NoClaudeDirectory);
         }
 
         debug!("Discovered {} Claude data directories", paths.len());
@@ -171,7 +171,7 @@ impl DataLoader {
                     }
                 }
                 files
-            }).await.map_err(|e| CcusageError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            }).await.map_err(|e| CcstatError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
             
             jsonl_files.extend(files);
         }
@@ -252,7 +252,7 @@ impl DataLoader {
                     
                     // Read file synchronously in the thread pool
                     let result = std::fs::read_to_string(file_path)
-                        .map_err(CcusageError::Io)
+                        .map_err(CcstatError::Io)
                         .and_then(|content| {
                             let mut entries = Vec::new();
                             for line in content.lines() {
@@ -308,9 +308,9 @@ impl DataLoader {
     /// # Example
     ///
     /// ```no_run
-    /// # use ccusage::data_loader::DataLoader;
+    /// # use ccstat::data_loader::DataLoader;
     /// # use futures::StreamExt;
-    /// # async fn example() -> ccusage::Result<()> {
+    /// # async fn example() -> ccstat::Result<()> {
     /// let loader = DataLoader::new().await?;
     /// let entries = loader.load_usage_entries();
     /// tokio::pin!(entries);

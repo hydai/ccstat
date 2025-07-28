@@ -6,14 +6,14 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccusage::{
+//! use ccstat::{
 //!     cost_calculator::CostCalculator,
 //!     pricing_fetcher::PricingFetcher,
 //!     types::{CostMode, ModelName, TokenCounts},
 //! };
 //! use std::sync::Arc;
 //!
-//! # async fn example() -> ccusage::Result<()> {
+//! # async fn example() -> ccstat::Result<()> {
 //! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //! let calculator = CostCalculator::new(pricing_fetcher);
 //!
@@ -31,7 +31,7 @@
 //! # }
 //! ```
 
-use crate::error::{CcusageError, Result};
+use crate::error::{CcstatError, Result};
 use crate::pricing_fetcher::PricingFetcher;
 use crate::types::{CostMode, ModelName, ModelPricing, TokenCounts};
 use std::sync::Arc;
@@ -79,7 +79,7 @@ impl CostCalculator {
             .pricing_fetcher
             .get_model_pricing(model_name.as_str())
             .await?
-            .ok_or_else(|| CcusageError::UnknownModel(model_name.clone()))?;
+            .ok_or_else(|| CcstatError::UnknownModel(model_name.clone()))?;
 
         Ok(Self::calculate_from_pricing(tokens, &pricing))
     }
@@ -161,7 +161,7 @@ impl CostCalculator {
             }
             CostMode::Calculate => self.calculate_cost(tokens, model_name).await,
             CostMode::Display => pre_calculated.ok_or_else(|| {
-                CcusageError::InvalidArgument(
+                CcstatError::InvalidArgument(
                     "No pre-calculated cost available in display mode".to_string(),
                 )
             }),

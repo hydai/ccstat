@@ -1,6 +1,6 @@
-//! ccusage - Analyze Claude Code usage data from local JSONL files
+//! ccstat - Analyze Claude Code usage data from local JSONL files
 
-use ccusage::{
+use ccstat::{
     aggregation::{Aggregator, Totals},
     cli::{parse_date_filter, parse_month_filter, Cli, Command, McpTransport},
     cost_calculator::CostCalculator,
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "ccusage=info".into()),
+                .unwrap_or_else(|_| "ccstat=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -276,14 +276,14 @@ async fn main() -> Result<()> {
                         .trim_end_matches('%')
                         .parse::<f64>()
                         .map_err(|_| {
-                            ccusage::error::CcusageError::InvalidDate(format!(
+                            ccstat::error::CcstatError::InvalidDate(format!(
                                 "Invalid token limit: {limit_str}"
                             ))
                         })?;
                     (value / 100.0, true)
                 } else {
                     let value = limit_str.parse::<u64>().map_err(|_| {
-                        ccusage::error::CcusageError::InvalidDate(format!(
+                        ccstat::error::CcstatError::InvalidDate(format!(
                             "Invalid token limit: {limit_str}"
                         ))
                     })?;

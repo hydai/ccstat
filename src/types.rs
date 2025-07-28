@@ -1,6 +1,6 @@
-//! Core domain types for ccusage
+//! Core domain types for ccstat
 //!
-//! This module contains the fundamental types used throughout the ccusage library.
+//! This module contains the fundamental types used throughout the ccstat library.
 //! These types provide strong typing for common concepts like model names, session IDs,
 //! timestamps, and token counts.
 
@@ -16,7 +16,7 @@ use std::ops::{Add, AddAssign};
 /// 
 /// # Examples
 /// ```
-/// use ccusage::types::ModelName;
+/// use ccstat::types::ModelName;
 /// 
 /// let model = ModelName::new("claude-3-opus");
 /// assert_eq!(model.as_str(), "claude-3-opus");
@@ -130,7 +130,7 @@ impl DailyDate {
 /// 
 /// # Examples
 /// ```
-/// use ccusage::types::TokenCounts;
+/// use ccstat::types::TokenCounts;
 /// 
 /// let tokens = TokenCounts::new(100, 50, 10, 5);
 /// assert_eq!(tokens.total(), 165);

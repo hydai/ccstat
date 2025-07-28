@@ -1,10 +1,10 @@
-# ccusage
+# ccstat
 
 Analyze Claude Code usage data from local JSONL files.
 
 ## Overview
 
-ccusage is a high-performance Rust CLI tool that processes Claude Code usage logs, calculates costs using LiteLLM pricing data, and provides various reporting views including daily, monthly, session-based, and 5-hour billing block reports.
+ccstat is a high-performance Rust CLI tool that processes Claude Code usage logs, calculates costs using LiteLLM pricing data, and provides various reporting views including daily, monthly, session-based, and 5-hour billing block reports.
 
 This is a Rust reimplementation of the original TypeScript tool, offering:
 - 50-70% reduction in memory usage
@@ -27,8 +27,8 @@ This is a Rust reimplementation of the original TypeScript tool, offering:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ccusage
-cd ccusage
+git clone https://github.com/yourusername/ccstat
+cd ccstat
 
 # Build and install
 cargo install --path .
@@ -36,7 +36,7 @@ cargo install --path .
 
 ### Pre-built Binaries
 
-Download the latest release for your platform from the [releases page](https://github.com/yourusername/ccusage/releases).
+Download the latest release for your platform from the [releases page](https://github.com/yourusername/ccstat/releases).
 
 ## Usage
 
@@ -46,16 +46,16 @@ Show daily token usage and costs:
 
 ```bash
 # Default table output
-ccusage daily
+ccstat daily
 
 # JSON output for processing
-ccusage daily --json
+ccstat daily --json
 
 # Filter by date range
-ccusage daily --since 2024-01-01 --until 2024-01-31
+ccstat daily --since 2024-01-01 --until 2024-01-31
 
 # Show per-instance breakdown
-ccusage daily --instances
+ccstat daily --instances
 ```
 
 ### Monthly Summary
@@ -64,10 +64,10 @@ Aggregate usage by month:
 
 ```bash
 # Monthly totals
-ccusage monthly
+ccstat monthly
 
 # Filter specific months
-ccusage monthly --since 2024-01 --until 2024-03
+ccstat monthly --since 2024-01 --until 2024-03
 ```
 
 ### Session Analysis
@@ -76,10 +76,10 @@ Analyze individual sessions:
 
 ```bash
 # List all sessions
-ccusage session
+ccstat session
 
 # JSON output with full details
-ccusage session --json
+ccstat session --json
 ```
 
 ### Billing Blocks
@@ -88,13 +88,13 @@ Track 5-hour billing blocks:
 
 ```bash
 # Show all blocks
-ccusage blocks
+ccstat blocks
 
 # Only active blocks
-ccusage blocks --active
+ccstat blocks --active
 
 # Recent blocks (last 24h)
-ccusage blocks --recent
+ccstat blocks --recent
 ```
 
 ### Cost Calculation Modes
@@ -103,13 +103,13 @@ Control how costs are calculated:
 
 ```bash
 # Auto mode (default) - use pre-calculated when available
-ccusage daily --mode auto
+ccstat daily --mode auto
 
 # Always calculate from tokens
-ccusage daily --mode calculate
+ccstat daily --mode calculate
 
 # Only use pre-calculated costs
-ccusage daily --mode display
+ccstat daily --mode display
 ```
 
 ## Output Examples
@@ -163,11 +163,11 @@ ccusage daily --mode display
 ### Environment Variables
 
 - `CLAUDE_DATA_PATH`: Override default Claude data directory location
-- `RUST_LOG`: Control logging level (e.g., `RUST_LOG=ccusage=debug`)
+- `RUST_LOG`: Control logging level (e.g., `RUST_LOG=ccstat=debug`)
 
 ### Data Locations
 
-ccusage automatically discovers Claude data in standard locations:
+ccstat automatically discovers Claude data in standard locations:
 
 - **macOS**: `~/Library/Application Support/Claude/`
 - **Linux**: `~/.config/Claude/`
@@ -218,6 +218,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- Original TypeScript implementation by the ccusage team
+- Original TypeScript implementation by the ccstat team
 - LiteLLM for model pricing data
 - Claude by Anthropic for the usage data format

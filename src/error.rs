@@ -1,16 +1,16 @@
-//! Error types for ccusage
+//! Error types for ccstat
 //!
-//! This module defines the error types used throughout the ccusage library.
+//! This module defines the error types used throughout the ccstat library.
 //! All errors are derived from `thiserror` for convenient error handling
 //! and automatic `From` implementations.
 //!
 //! # Example
 //!
 //! ```
-//! use ccusage::error::{CcusageError, Result};
+//! use ccstat::error::{CcstatError, Result};
 //!
 //! fn example_function() -> Result<()> {
-//!     // This will automatically convert io::Error to CcusageError
+//!     // This will automatically convert io::Error to CcstatError
 //!     let _file = std::fs::read_to_string("nonexistent.txt")?;
 //!     Ok(())
 //! }
@@ -21,12 +21,12 @@ use thiserror::Error;
 
 use crate::types::ModelName;
 
-/// Main error type for ccusage operations
+/// Main error type for ccstat operations
 ///
 /// This enum encompasses all possible errors that can occur during
-/// ccusage operations, from IO errors to parsing failures and network issues.
+/// ccstat operations, from IO errors to parsing failures and network issues.
 #[derive(Error, Debug)]
-pub enum CcusageError {
+pub enum CcstatError {
     /// IO error occurred
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -73,7 +73,7 @@ pub enum CcusageError {
     McpServer(String),
 }
 
-/// Convenience type alias for Results in ccusage
+/// Convenience type alias for Results in ccstat
 ///
 /// This type alias makes it easier to work with Results throughout
 /// the codebase by providing a default error type.
@@ -81,13 +81,13 @@ pub enum CcusageError {
 /// # Example
 ///
 /// ```
-/// use ccusage::Result;
+/// use ccstat::Result;
 ///
 /// fn process_data() -> Result<String> {
 ///     Ok("Processed successfully".to_string())
 /// }
 /// ```
-pub type Result<T> = std::result::Result<T, CcusageError>;
+pub type Result<T> = std::result::Result<T, CcstatError>;
 
 #[cfg(test)]
 mod tests {
@@ -95,14 +95,14 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let error = CcusageError::NoClaudeDirectory;
+        let error = CcstatError::NoClaudeDirectory;
         assert_eq!(error.to_string(), "No Claude data directories found");
     }
 
     #[test]
     fn test_io_error_conversion() {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let ccusage_error: CcusageError = io_error.into();
-        assert!(matches!(ccusage_error, CcusageError::Io(_)));
+        let ccstat_error: CcstatError = io_error.into();
+        assert!(matches!(ccstat_error, CcstatError::Io(_)));
     }
 }

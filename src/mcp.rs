@@ -1,6 +1,6 @@
 //! MCP (Model Context Protocol) server implementation
 //!
-//! This module provides a JSON-RPC server that exposes ccusage functionality
+//! This module provides a JSON-RPC server that exposes ccstat functionality
 //! through the Model Context Protocol. It supports both stdio and HTTP transports.
 //!
 //! # Available Methods
@@ -18,7 +18,7 @@
 //! to stdout, making it suitable for integration with other tools via pipes.
 //!
 //! ```bash
-//! ccusage mcp --transport stdio
+//! ccstat mcp --transport stdio
 //! ```
 //!
 //! ## HTTP Transport
@@ -27,7 +27,7 @@
 //! to the root endpoint.
 //!
 //! ```bash
-//! ccusage mcp --transport http --port 8080
+//! ccstat mcp --transport http --port 8080
 //! ```
 //!
 //! # Example Request
@@ -50,7 +50,7 @@ use crate::aggregation::{Aggregator, Totals};
 use crate::cli::{parse_date_filter, parse_month_filter};
 use crate::cost_calculator::CostCalculator;
 use crate::data_loader::DataLoader;
-use crate::error::{CcusageError, Result};
+use crate::error::{CcstatError, Result};
 use crate::filters::{MonthFilter, UsageFilter};
 use crate::pricing_fetcher::PricingFetcher;
 use crate::types::CostMode;
@@ -147,7 +147,7 @@ impl McpServer {
         // Add server info method
         handler.add_method("server_info", |_params| async move {
             Ok(serde_json::json!({
-                "name": "ccusage MCP Server",
+                "name": "ccstat MCP Server",
                 "version": crate::VERSION,
                 "methods": ["daily", "session", "monthly", "server_info"],
             }))
@@ -366,7 +366,7 @@ impl McpServer {
                     // Serialize and write response
                     if let Some(response) = response {
                         let response_str = serde_json::to_string(&response)
-                            .map_err(|e| CcusageError::McpServer(format!("Failed to serialize response: {}", e)))?;
+                            .map_err(|e| CcstatError::McpServer(format!("Failed to serialize response: {}", e)))?;
                         
                         stdout.write_all(response_str.as_bytes()).await?;
                         stdout.write_all(b"\n").await?;
@@ -385,7 +385,7 @@ impl McpServer {
                     );
                     
                     let response_str = serde_json::to_string(&error_response)
-                        .map_err(|e| CcusageError::McpServer(format!("Failed to serialize error: {}", e)))?;
+                        .map_err(|e| CcstatError::McpServer(format!("Failed to serialize error: {}", e)))?;
                     
                     stdout.write_all(response_str.as_bytes()).await?;
                     stdout.write_all(b"\n").await?;

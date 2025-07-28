@@ -1,4 +1,4 @@
-//! Output formatting module for ccusage
+//! Output formatting module for ccstat
 //!
 //! This module provides formatters for displaying usage data in different formats:
 //! - Table format for human-readable terminal output
@@ -7,9 +7,9 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccusage::output::get_formatter;
-//! use ccusage::aggregation::{DailyUsage, Totals};
-//! use ccusage::types::{DailyDate, TokenCounts};
+//! use ccstat::output::get_formatter;
+//! use ccstat::aggregation::{DailyUsage, Totals};
+//! use ccstat::types::{DailyDate, TokenCounts};
 //! use chrono::NaiveDate;
 //!
 //! let daily_data = vec![
@@ -490,7 +490,7 @@ impl OutputFormatter for JsonFormatter {
 /// # Example
 ///
 /// ```
-/// use ccusage::output::get_formatter;
+/// use ccstat::output::get_formatter;
 ///
 /// let table_formatter = get_formatter(false);
 /// let json_formatter = get_formatter(true);

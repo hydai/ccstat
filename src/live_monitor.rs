@@ -1,4 +1,4 @@
-//! Live monitoring functionality for ccusage
+//! Live monitoring functionality for ccstat
 //! 
 //! This module provides file watching and periodic updates for real-time
 //! usage monitoring. It watches for changes in JSONL files and refreshes
@@ -7,7 +7,7 @@
 use crate::{
     aggregation::{Aggregator, Totals},
     data_loader::DataLoader,
-    error::{CcusageError, Result},
+    error::{CcstatError, Result},
     filters::UsageFilter,
     output::get_formatter,
     types::{CostMode, UsageEntry},
@@ -92,7 +92,7 @@ impl LiveMonitor {
                     }
                 },
                 Config::default(),
-            ).map_err(|e| CcusageError::Io(std::io::Error::new(
+            ).map_err(|e| CcstatError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to create file watcher: {e}"),
             )))?;
@@ -101,7 +101,7 @@ impl LiveMonitor {
             for dir in watched_dirs {
                 if dir.exists() {
                     watcher.watch(&dir, RecursiveMode::Recursive).map_err(|e| {
-                        CcusageError::Io(std::io::Error::new(
+                        CcstatError::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             format!("Failed to watch directory {}: {e}", dir.display()),
                         ))
@@ -280,7 +280,7 @@ impl DataLoader {
         }
         
         if dirs.is_empty() {
-            return Err(CcusageError::Io(std::io::Error::new(
+            return Err(CcstatError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No Claude data directories found",
             )));
@@ -332,7 +332,7 @@ mod tests {
             }
             Err(e) => {
                 // It's okay if directories don't exist
-                assert!(matches!(e, CcusageError::Io(_)));
+                assert!(matches!(e, CcstatError::Io(_)));
             }
         }
     }

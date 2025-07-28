@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use ccusage::filters::UsageFilter;
+//! use ccstat::filters::UsageFilter;
 //! use chrono::NaiveDate;
 //!
 //! // Create a filter for January 2024
@@ -137,7 +137,7 @@ impl UsageFilter {
 /// # Example
 ///
 /// ```
-/// use ccusage::filters::MonthFilter;
+/// use ccstat::filters::MonthFilter;
 ///
 /// // Filter for Q1 2024
 /// let filter = MonthFilter::new()

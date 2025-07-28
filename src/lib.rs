@@ -1,4 +1,4 @@
-//! ccusage - Analyze Claude Code usage data from local JSONL files
+//! ccstat - Analyze Claude Code usage data from local JSONL files
 //!
 //! This library provides functionality to:
 //! - Parse JSONL usage logs from multiple Claude data directories
@@ -10,7 +10,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccusage::{
+//! use ccstat::{
 //!     data_loader::DataLoader,
 //!     aggregation::Aggregator,
 //!     cost_calculator::CostCalculator,
@@ -20,7 +20,7 @@
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
-//! async fn main() -> ccusage::Result<()> {
+//! async fn main() -> ccstat::Result<()> {
 //!     // Initialize components
 //!     let data_loader = DataLoader::new().await?;
 //!     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
@@ -50,7 +50,7 @@ pub mod string_pool;
 pub mod types;
 
 // Re-export commonly used types
-pub use error::{CcusageError, Result};
+pub use error::{CcstatError, Result};
 pub use types::{CostMode, DailyDate, ISOTimestamp, ModelName, SessionId, TokenCounts};
 
 /// Library version

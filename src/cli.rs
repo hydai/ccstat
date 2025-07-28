@@ -1,7 +1,7 @@
-//! CLI interface for ccusage
+//! CLI interface for ccstat
 //!
 //! This module defines the command-line interface using clap, providing
-//! structured access to all ccusage functionality.
+//! structured access to all ccstat functionality.
 //!
 //! # Commands
 //!
@@ -15,22 +15,22 @@
 //!
 //! ```bash
 //! # Show daily usage for January 2024
-//! ccusage daily --since 2024-01-01 --until 2024-01-31
+//! ccstat daily --since 2024-01-01 --until 2024-01-31
 //!
 //! # Show monthly usage as JSON
-//! ccusage monthly --json
+//! ccstat monthly --json
 //!
 //! # Show active billing blocks with token warnings
-//! ccusage blocks --active --token-limit 80%
+//! ccstat blocks --active --token-limit 80%
 //! ```
 
-use crate::error::{CcusageError, Result};
+use crate::error::{CcstatError, Result};
 use crate::types::CostMode;
 use clap::{Parser, Subcommand};
 
 /// Analyze Claude Code usage data from local JSONL files
 #[derive(Parser, Debug)]
-#[command(name = "ccusage")]
+#[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     /// Subcommand to execute
@@ -235,7 +235,7 @@ impl Command {
 /// # Example
 ///
 /// ```
-/// use ccusage::cli::parse_date_filter;
+/// use ccstat::cli::parse_date_filter;
 /// use chrono::Datelike;
 ///
 /// let date = parse_date_filter("2024-01-15").unwrap();
@@ -243,7 +243,7 @@ impl Command {
 /// ```
 pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .map_err(|e| CcusageError::InvalidDate(format!("Invalid date format '{date_str}': {e}")))
+        .map_err(|e| CcstatError::InvalidDate(format!("Invalid date format '{date_str}': {e}")))
 }
 
 /// Parse month filter from string
@@ -261,7 +261,7 @@ pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
 /// # Example
 ///
 /// ```
-/// use ccusage::cli::parse_month_filter;
+/// use ccstat::cli::parse_month_filter;
 ///
 /// let (year, month) = parse_month_filter("2024-01").unwrap();
 /// assert_eq!(year, 2024);
@@ -270,20 +270,20 @@ pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
 pub fn parse_month_filter(month_str: &str) -> Result<(i32, u32)> {
     let parts: Vec<&str> = month_str.split('-').collect();
     if parts.len() != 2 {
-        return Err(CcusageError::InvalidDate(format!(
+        return Err(CcstatError::InvalidDate(format!(
             "Invalid month format '{month_str}', expected YYYY-MM"
         )));
     }
 
     let year = parts[0]
         .parse::<i32>()
-        .map_err(|_| CcusageError::InvalidDate(format!("Invalid year in '{month_str}'")))?;
+        .map_err(|_| CcstatError::InvalidDate(format!("Invalid year in '{month_str}'")))?;
     let month = parts[1]
         .parse::<u32>()
-        .map_err(|_| CcusageError::InvalidDate(format!("Invalid month in '{month_str}'")))?;
+        .map_err(|_| CcstatError::InvalidDate(format!("Invalid month in '{month_str}'")))?;
 
     if !(1..=12).contains(&month) {
-        return Err(CcusageError::InvalidDate(format!(
+        return Err(CcstatError::InvalidDate(format!(
             "Month must be between 1-12, got {month}"
         )));
     }
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_cli_parsing() {
-        let cli = Cli::parse_from(["ccusage", "daily", "--json"]);
+        let cli = Cli::parse_from(["ccstat", "daily", "--json"]);
         match cli.command {
             Some(Command::Daily { json, .. }) => assert!(json),
             _ => panic!("Expected Daily command"),
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_cost_mode_parsing() {
-        let cli = Cli::parse_from(["ccusage", "daily", "--mode", "calculate"]);
+        let cli = Cli::parse_from(["ccstat", "daily", "--mode", "calculate"]);
         match cli.command {
             Some(Command::Daily { mode, .. }) => assert_eq!(mode, CostMode::Calculate),
             _ => panic!("Expected Daily command"),

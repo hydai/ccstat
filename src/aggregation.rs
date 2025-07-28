@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccusage::{
+//! use ccstat::{
 //!     aggregation::Aggregator,
 //!     cost_calculator::CostCalculator,
 //!     data_loader::DataLoader,
@@ -16,7 +16,7 @@
 //! };
 //! use std::sync::Arc;
 //!
-//! # async fn example() -> ccusage::Result<()> {
+//! # async fn example() -> ccstat::Result<()> {
 //! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //! let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
 //! let aggregator = Aggregator::new(cost_calculator);
