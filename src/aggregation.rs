@@ -37,6 +37,7 @@ use crate::cost_calculator::CostCalculator;
 use crate::error::Result;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
 use futures::stream::{Stream, StreamExt};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -206,12 +207,22 @@ impl SessionAccumulator {
 /// Main aggregation engine
 pub struct Aggregator {
     cost_calculator: Arc<CostCalculator>,
+    show_progress: bool,
 }
 
 impl Aggregator {
     /// Create a new Aggregator
     pub fn new(cost_calculator: Arc<CostCalculator>) -> Self {
-        Self { cost_calculator }
+        Self { 
+            cost_calculator,
+            show_progress: false,
+        }
+    }
+    
+    /// Enable or disable progress bars
+    pub fn with_progress(mut self, show_progress: bool) -> Self {
+        self.show_progress = show_progress;
+        self
     }
 
     /// Aggregate entries by day and instance
@@ -221,6 +232,23 @@ impl Aggregator {
         cost_mode: CostMode,
     ) -> Result<Vec<DailyInstanceUsage>> {
         let mut daily_map: BTreeMap<(DailyDate, String), DailyAccumulator> = BTreeMap::new();
+        
+        // Create progress spinner if enabled
+        let progress = if self.show_progress {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg} [{elapsed_precise}] {pos} entries processed")
+                    .unwrap(),
+            );
+            pb.set_message("Aggregating daily usage by instance");
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            Some(pb)
+        } else {
+            None
+        };
+        
+        let mut count = 0u64;
 
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
@@ -238,6 +266,15 @@ impl Aggregator {
                 .entry((date, instance_id.clone()))
                 .or_insert_with(DailyAccumulator::new)
                 .add_entry(entry, cost);
+                
+            count += 1;
+            if let Some(ref pb) = progress {
+                pb.set_position(count);
+            }
+        }
+        
+        if let Some(pb) = progress {
+            pb.finish_with_message(format!("Aggregated {} entries", count));
         }
 
         Ok(daily_map
@@ -259,6 +296,23 @@ impl Aggregator {
         cost_mode: CostMode,
     ) -> Result<Vec<DailyUsage>> {
         let mut daily_map: BTreeMap<DailyDate, DailyAccumulator> = BTreeMap::new();
+        
+        // Create progress spinner if enabled
+        let progress = if self.show_progress {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg} [{elapsed_precise}] {pos} entries processed")
+                    .unwrap(),
+            );
+            pb.set_message("Aggregating daily usage");
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            Some(pb)
+        } else {
+            None
+        };
+        
+        let mut count = 0u64;
 
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
@@ -275,6 +329,15 @@ impl Aggregator {
                 .entry(date)
                 .or_insert_with(DailyAccumulator::new)
                 .add_entry(entry, cost);
+                
+            count += 1;
+            if let Some(ref pb) = progress {
+                pb.set_position(count);
+            }
+        }
+        
+        if let Some(pb) = progress {
+            pb.finish_with_message(format!("Aggregated {} entries into {} days", count, daily_map.len()));
         }
 
         Ok(daily_map
@@ -290,6 +353,23 @@ impl Aggregator {
         cost_mode: CostMode,
     ) -> Result<Vec<SessionUsage>> {
         let mut session_map: BTreeMap<SessionId, SessionAccumulator> = BTreeMap::new();
+        
+        // Create progress spinner if enabled
+        let progress = if self.show_progress {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg} [{elapsed_precise}] {pos} entries processed")
+                    .unwrap(),
+            );
+            pb.set_message("Aggregating session usage");
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            Some(pb)
+        } else {
+            None
+        };
+        
+        let mut count = 0u64;
 
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
@@ -306,6 +386,15 @@ impl Aggregator {
                 .entry(session_id)
                 .or_insert_with(SessionAccumulator::new)
                 .add_entry(entry, cost);
+                
+            count += 1;
+            if let Some(ref pb) = progress {
+                pb.set_position(count);
+            }
+        }
+        
+        if let Some(pb) = progress {
+            pb.finish_with_message(format!("Aggregated {} entries into {} sessions", count, session_map.len()));
         }
 
         let mut sessions: Vec<_> = session_map

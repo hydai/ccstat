@@ -42,11 +42,12 @@ async fn main() -> Result<()> {
         }) => {
             info!("Running daily usage report");
 
-            // Initialize components
-            let data_loader = DataLoader::new().await?;
+            // Initialize components with progress bars enabled for terminal output
+            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator);
+            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -95,11 +96,12 @@ async fn main() -> Result<()> {
         }) => {
             info!("Running monthly usage report");
 
-            // Initialize components
-            let data_loader = DataLoader::new().await?;
+            // Initialize components with progress bars enabled for terminal output
+            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator);
+            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
 
             // Build month filter
             let mut month_filter = MonthFilter::new();
@@ -156,11 +158,12 @@ async fn main() -> Result<()> {
         }) => {
             info!("Running session usage report");
 
-            // Initialize components
-            let data_loader = DataLoader::new().await?;
+            // Initialize components with progress bars enabled for terminal output
+            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator);
+            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -198,11 +201,12 @@ async fn main() -> Result<()> {
         }) => {
             info!("Running billing blocks report");
 
-            // Initialize components
-            let data_loader = DataLoader::new().await?;
+            // Initialize components with progress bars enabled for terminal output
+            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator);
+            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
 
             // Load entries
             let entries = data_loader.load_usage_entries();
@@ -305,11 +309,12 @@ async fn main() -> Result<()> {
             // Default to daily report
             info!("No command specified, running daily report");
 
-            // Initialize components
-            let data_loader = DataLoader::new().await?;
+            // Initialize components with progress bars enabled for terminal output
+            let show_progress = atty::is(atty::Stream::Stdout);
+            let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator);
+            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
 
             // Load entries
             let entries = data_loader.load_usage_entries();

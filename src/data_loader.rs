@@ -36,6 +36,7 @@ use crate::error::{CcusageError, Result};
 use crate::types::UsageEntry;
 use futures::stream::Stream;
 use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{debug, warn};
@@ -47,6 +48,8 @@ use tracing::{debug, warn};
 pub struct DataLoader {
     /// Discovered Claude data paths
     claude_paths: Vec<PathBuf>,
+    /// Whether to show progress bars
+    show_progress: bool,
 }
 
 impl DataLoader {
@@ -67,6 +70,7 @@ impl DataLoader {
         debug!("Discovered {} Claude data directories", paths.len());
         Ok(Self {
             claude_paths: paths,
+            show_progress: false,
         })
     }
 
@@ -154,6 +158,12 @@ impl DataLoader {
         Ok(jsonl_files)
     }
 
+    /// Enable or disable progress bars
+    pub fn with_progress(mut self, show_progress: bool) -> Self {
+        self.show_progress = show_progress;
+        self
+    }
+
     /// Load usage entries as an async stream
     ///
     /// This method provides a stream of usage entries parsed from all discovered
@@ -193,19 +203,48 @@ impl DataLoader {
                 }
             };
 
-            for file_path in files {
-                let entries = Self::parse_jsonl_stream(file_path);
+            // Create progress bar if enabled
+            let progress = if self.show_progress {
+                let pb = ProgressBar::new(files.len() as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{msg} [{bar:40.cyan/blue}] {pos}/{len} files")
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+                pb.set_message("Loading usage data");
+                Some(pb)
+            } else {
+                None
+            };
+
+            for (idx, file_path) in files.into_iter().enumerate() {
+                if let Some(ref pb) = progress {
+                    pb.set_position(idx as u64);
+                }
+                
+                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref());
                 tokio::pin!(entries);
                 while let Some(result) = entries.next().await {
                     yield result;
                 }
             }
+            
+            if let Some(pb) = progress {
+                pb.finish_with_message("Loading complete");
+            }
         }
     }
 
     /// Parse a single JSONL file as a stream
-    fn parse_jsonl_stream(path: PathBuf) -> impl Stream<Item = Result<UsageEntry>> {
+    fn parse_jsonl_stream(path: PathBuf, _progress: Option<&ProgressBar>) -> impl Stream<Item = Result<UsageEntry>> + '_ {
         async_stream::stream! {
+            // Get file size for progress tracking
+            let _file_size = match tokio::fs::metadata(&path).await {
+                Ok(metadata) => metadata.len(),
+                Err(_) => 0,
+            };
+            
             let file = match tokio::fs::File::open(&path).await {
                 Ok(f) => f,
                 Err(e) => {
@@ -266,7 +305,7 @@ mod tests {
         file.write_all(b"\n").await.unwrap();
         file.write_all(br#"{"session_id":"test2","timestamp":"2024-01-01T01:00:00Z","model":"claude-3-sonnet","input_tokens":200,"output_tokens":100,"cache_creation_tokens":20,"cache_read_tokens":10}"#).await.unwrap();
 
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path);
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None);
         tokio::pin!(stream);
 
         let entry1 = stream.next().await.unwrap().unwrap();
