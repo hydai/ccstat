@@ -45,6 +45,7 @@ async fn main() -> Result<()> {
             parallel,
             intern,
             arena,
+            verbose,
         }) => {
             info!("Running daily usage report");
 
@@ -113,14 +114,14 @@ async fn main() -> Result<()> {
                     if parallel {
                         let entries = data_loader.load_usage_entries_parallel();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
+                        let daily_data = aggregator.aggregate_daily_verbose(filtered_entries, mode, verbose).await?;
                         let totals = Totals::from_daily(&daily_data);
                         let formatter = get_formatter(json);
                         println!("{}", formatter.format_daily(&daily_data, &totals));
                     } else {
                         let entries = data_loader.load_usage_entries();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator.aggregate_daily(filtered_entries, mode).await?;
+                        let daily_data = aggregator.aggregate_daily_verbose(filtered_entries, mode, verbose).await?;
                         let totals = Totals::from_daily(&daily_data);
                         let formatter = get_formatter(json);
                         println!("{}", formatter.format_daily(&daily_data, &totals));

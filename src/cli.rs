@@ -89,6 +89,10 @@ pub enum Command {
         /// Enable arena allocation for parsing
         #[arg(long)]
         arena: bool,
+        
+        /// Show detailed token information per entry
+        #[arg(long, short = 'v')]
+        verbose: bool,
     },
 
     /// Show monthly usage summary

@@ -53,6 +53,24 @@ pub struct DailyUsage {
     pub total_cost: f64,
     /// Models used during the day
     pub models_used: Vec<String>,
+    /// Individual entries for verbose mode
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<VerboseEntry>>,
+}
+
+/// Verbose entry for detailed token information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerboseEntry {
+    /// Timestamp of the entry
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    /// Session ID
+    pub session_id: String,
+    /// Model used
+    pub model: String,
+    /// Token counts
+    pub tokens: TokenCounts,
+    /// Calculated cost for this entry
+    pub cost: f64,
 }
 
 /// Daily usage grouped by instance
@@ -124,21 +142,33 @@ struct DailyAccumulator {
     tokens: TokenCounts,
     cost: f64,
     models: HashSet<ModelName>,
+    verbose_entries: Option<Vec<VerboseEntry>>,
 }
 
 impl DailyAccumulator {
-    fn new() -> Self {
+    fn new(verbose: bool) -> Self {
         Self {
             tokens: TokenCounts::default(),
             cost: 0.0,
             models: HashSet::new(),
+            verbose_entries: if verbose { Some(Vec::new()) } else { None },
         }
     }
 
     fn add_entry(&mut self, entry: UsageEntry, calculated_cost: f64) {
         self.tokens += entry.tokens;
         self.cost += calculated_cost;
-        self.models.insert(entry.model);
+        self.models.insert(entry.model.clone());
+        
+        if let Some(ref mut entries) = self.verbose_entries {
+            entries.push(VerboseEntry {
+                timestamp: *entry.timestamp.inner(),
+                session_id: entry.session_id.to_string(),
+                model: entry.model.to_string(),
+                tokens: entry.tokens,
+                cost: calculated_cost,
+            });
+        }
     }
 
     fn into_daily_usage(self, date: DailyDate) -> DailyUsage {
@@ -147,6 +177,7 @@ impl DailyAccumulator {
             tokens: self.tokens,
             total_cost: self.cost,
             models_used: self.models.into_iter().map(|m| m.to_string()).collect(),
+            entries: self.verbose_entries,
         }
     }
 }
@@ -264,7 +295,7 @@ impl Aggregator {
 
             daily_map
                 .entry((date, instance_id.clone()))
-                .or_insert_with(DailyAccumulator::new)
+                .or_insert_with(|| DailyAccumulator::new(false))
                 .add_entry(entry, cost);
                 
             count += 1;
@@ -294,6 +325,16 @@ impl Aggregator {
         &self,
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
+    ) -> Result<Vec<DailyUsage>> {
+        self.aggregate_daily_verbose(entries, cost_mode, false).await
+    }
+    
+    /// Aggregate entries by day with optional verbose mode
+    pub async fn aggregate_daily_verbose(
+        &self,
+        entries: impl Stream<Item = Result<UsageEntry>>,
+        cost_mode: CostMode,
+        verbose: bool,
     ) -> Result<Vec<DailyUsage>> {
         let mut daily_map: BTreeMap<DailyDate, DailyAccumulator> = BTreeMap::new();
         
@@ -327,7 +368,7 @@ impl Aggregator {
 
             daily_map
                 .entry(date)
-                .or_insert_with(DailyAccumulator::new)
+                .or_insert_with(|| DailyAccumulator::new(verbose))
                 .add_entry(entry, cost);
                 
             count += 1;
@@ -539,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_daily_accumulator() {
-        let mut acc = DailyAccumulator::new();
+        let mut acc = DailyAccumulator::new(false);
 
         let entry = UsageEntry {
             session_id: SessionId::new("test"),
@@ -555,6 +596,28 @@ mod tests {
         assert_eq!(acc.tokens.input_tokens, 100);
         assert_eq!(acc.cost, 0.01);
         assert_eq!(acc.models.len(), 1);
+    }
+    
+    #[test]
+    fn test_daily_accumulator_verbose() {
+        let mut acc = DailyAccumulator::new(true);
+
+        let entry = UsageEntry {
+            session_id: SessionId::new("test"),
+            timestamp: crate::types::ISOTimestamp::new(chrono::Utc::now()),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        };
+
+        acc.add_entry(entry, 0.01);
+        assert_eq!(acc.tokens.input_tokens, 100);
+        assert_eq!(acc.cost, 0.01);
+        assert_eq!(acc.models.len(), 1);
+        assert!(acc.verbose_entries.is_some());
+        assert_eq!(acc.verbose_entries.unwrap().len(), 1);
     }
 
     #[test]
