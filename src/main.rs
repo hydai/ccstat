@@ -56,11 +56,12 @@ async fn main() -> Result<()> {
                     .await?
                     .with_progress(show_progress)
                     .with_interning(intern)
-                    .with_arena(arena)
+                    .with_arena(arena),
             );
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Arc::new(Aggregator::new(cost_calculator).with_progress(show_progress));
+            let aggregator =
+                Arc::new(Aggregator::new(cost_calculator).with_progress(show_progress));
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -97,31 +98,45 @@ async fn main() -> Result<()> {
                     if parallel {
                         let entries = data_loader.load_usage_entries_parallel();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
+                        let instance_data = aggregator
+                            .aggregate_daily_by_instance(filtered_entries, mode)
+                            .await?;
                         let totals = Totals::from_daily_instances(&instance_data);
                         let formatter = get_formatter(json);
-                        println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                        println!(
+                            "{}",
+                            formatter.format_daily_by_instance(&instance_data, &totals)
+                        );
                     } else {
                         let entries = data_loader.load_usage_entries();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let instance_data = aggregator.aggregate_daily_by_instance(filtered_entries, mode).await?;
+                        let instance_data = aggregator
+                            .aggregate_daily_by_instance(filtered_entries, mode)
+                            .await?;
                         let totals = Totals::from_daily_instances(&instance_data);
                         let formatter = get_formatter(json);
-                        println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                        println!(
+                            "{}",
+                            formatter.format_daily_by_instance(&instance_data, &totals)
+                        );
                     }
                 } else {
                     // Load and filter entries, then aggregate normally
                     if parallel {
                         let entries = data_loader.load_usage_entries_parallel();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator.aggregate_daily_verbose(filtered_entries, mode, verbose).await?;
+                        let daily_data = aggregator
+                            .aggregate_daily_verbose(filtered_entries, mode, verbose)
+                            .await?;
                         let totals = Totals::from_daily(&daily_data);
                         let formatter = get_formatter(json);
                         println!("{}", formatter.format_daily(&daily_data, &totals));
                     } else {
                         let entries = data_loader.load_usage_entries();
                         let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator.aggregate_daily_verbose(filtered_entries, mode, verbose).await?;
+                        let daily_data = aggregator
+                            .aggregate_daily_verbose(filtered_entries, mode, verbose)
+                            .await?;
                         let totals = Totals::from_daily(&daily_data);
                         let formatter = get_formatter(json);
                         println!("{}", formatter.format_daily(&daily_data, &totals));

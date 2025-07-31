@@ -33,7 +33,9 @@
 //! println!("{}", json_formatter.format_daily(&daily_data, &totals));
 //! ```
 
-use crate::aggregation::{DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals};
+use crate::aggregation::{
+    DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals,
+};
 use prettytable::{format, row, Cell, Row, Table};
 use serde_json::json;
 
@@ -104,20 +106,20 @@ impl TableFormatter {
 impl OutputFormatter for TableFormatter {
     fn format_daily(&self, data: &[DailyUsage], totals: &Totals) -> String {
         let mut output = String::new();
-        
+
         // Check if we have verbose entries
         let is_verbose = data.iter().any(|d| d.entries.is_some());
-        
+
         if is_verbose {
             // Verbose mode: show detailed entries for each day
             for daily in data {
                 // Day header
                 output.push_str(&format!("\n=== {} ===\n", daily.date.format("%Y-%m-%d")));
-                
+
                 if let Some(ref entries) = daily.entries {
                     let mut table = Table::new();
                     table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-                    
+
                     table.set_titles(row![
                         b -> "Time",
                         b -> "Session ID",
@@ -129,7 +131,7 @@ impl OutputFormatter for TableFormatter {
                         b -> "Total",
                         b -> "Cost"
                     ]);
-                    
+
                     for entry in entries {
                         table.add_row(row![
                             entry.timestamp.format("%H:%M:%S"),
@@ -143,10 +145,10 @@ impl OutputFormatter for TableFormatter {
                             r -> Self::format_currency(entry.cost)
                         ]);
                     }
-                    
+
                     output.push_str(&table.to_string());
                 }
-                
+
                 // Day summary
                 output.push_str(&format!(
                     "\nDay Total: {} tokens, {}\n",
@@ -154,11 +156,11 @@ impl OutputFormatter for TableFormatter {
                     Self::format_currency(daily.total_cost)
                 ));
             }
-            
+
             // Overall summary
             output.push_str("\n=== OVERALL SUMMARY ===\n");
         }
-        
+
         // Regular summary table (shown in both verbose and non-verbose modes)
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
@@ -408,7 +410,7 @@ impl OutputFormatter for JsonFormatter {
                     "total_cost": d.total_cost,
                     "models_used": d.models_used,
                 });
-                
+
                 // Add verbose entries if available
                 if let Some(ref entries) = d.entries {
                     day_json["entries"] = json!(entries.iter().map(|e| json!({
@@ -425,7 +427,7 @@ impl OutputFormatter for JsonFormatter {
                         "cost": e.cost,
                     })).collect::<Vec<_>>());
                 }
-                
+
                 day_json
             }).collect::<Vec<_>>(),
             "totals": {

@@ -163,7 +163,7 @@ impl DataLoader {
             let files = tokio::task::spawn_blocking(move || {
                 use walkdir::WalkDir;
                 let mut files = Vec::new();
-                
+
                 for entry in WalkDir::new(path_clone).into_iter().filter_map(|e| e.ok()) {
                     let path = entry.path();
                     if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
@@ -171,8 +171,10 @@ impl DataLoader {
                     }
                 }
                 files
-            }).await.map_err(|e| CcstatError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-            
+            })
+            .await
+            .map_err(|e| CcstatError::Io(std::io::Error::other(e)))?;
+
             jsonl_files.extend(files);
         }
 
@@ -185,19 +187,19 @@ impl DataLoader {
         self.show_progress = show_progress;
         self
     }
-    
+
     /// Enable string interning for memory optimization
     pub fn with_interning(mut self, use_interning: bool) -> Self {
         self.use_interning = use_interning;
         self
     }
-    
+
     /// Enable arena allocation for parsing
     pub fn with_arena(mut self, use_arena: bool) -> Self {
         self.use_arena = use_arena;
         self
     }
-    
+
     /// Load usage entries in parallel for better performance
     ///
     /// This method uses Rayon to process multiple JSONL files concurrently,
@@ -238,22 +240,22 @@ impl DataLoader {
 
             // Use channel to collect results from parallel processing
             let (tx, mut rx) = mpsc::channel::<Result<Vec<UsageEntry>>>(num_files);
-            
+
             // Process files in parallel using Rayon
             let files_clone = files.clone();
             let progress_clone = progress.clone();
-            
+
             tokio::task::spawn_blocking(move || {
                 files_clone.par_iter().for_each(|file_path| {
                     let tx = tx.clone();
                     if let Some(ref pb) = progress_clone {
                         pb.inc(1);
                     }
-                    
+
                     // Read file synchronously in the thread pool
                     let result = std::fs::read_to_string(file_path)
                         .map_err(CcstatError::Io)
-                        .and_then(|content| {
+                        .map(|content| {
                             let mut entries = Vec::new();
                             for line in content.lines() {
                                 if line.trim().is_empty() {
@@ -270,13 +272,13 @@ impl DataLoader {
                                     }
                                 }
                             }
-                            Ok(entries)
+                            entries
                         });
-                    
+
                     let _ = tx.blocking_send(result);
                 });
             });
-            
+
             // Yield all results
             while let Some(result) = rx.recv().await {
                 match result {
@@ -288,7 +290,7 @@ impl DataLoader {
                     Err(e) => yield Err(e),
                 }
             }
-            
+
             if let Some(pb) = progress {
                 pb.finish_with_message("Loading complete (parallel)");
             }
@@ -314,7 +316,7 @@ impl DataLoader {
     /// let loader = DataLoader::new().await?;
     /// let entries = loader.load_usage_entries();
     /// tokio::pin!(entries);
-    /// 
+    ///
     /// while let Some(entry) = entries.next().await {
     ///     match entry {
     ///         Ok(usage) => println!("Loaded entry for session {}", usage.session_id),
@@ -353,14 +355,14 @@ impl DataLoader {
                 if let Some(ref pb) = progress {
                     pb.set_position(idx as u64);
                 }
-                
+
                 let entries = Self::parse_jsonl_stream(file_path, progress.as_ref());
                 tokio::pin!(entries);
                 while let Some(result) = entries.next().await {
                     yield result;
                 }
             }
-            
+
             if let Some(pb) = progress {
                 pb.finish_with_message("Loading complete");
             }
@@ -368,14 +370,17 @@ impl DataLoader {
     }
 
     /// Parse a single JSONL file as a stream
-    fn parse_jsonl_stream(path: PathBuf, _progress: Option<&ProgressBar>) -> impl Stream<Item = Result<UsageEntry>> + '_ {
+    fn parse_jsonl_stream(
+        path: PathBuf,
+        _progress: Option<&ProgressBar>,
+    ) -> impl Stream<Item = Result<UsageEntry>> + '_ {
         async_stream::stream! {
             // Get file size for progress tracking
             let _file_size = match tokio::fs::metadata(&path).await {
                 Ok(metadata) => metadata.len(),
                 Err(_) => 0,
             };
-            
+
             let file = match tokio::fs::File::open(&path).await {
                 Ok(f) => f,
                 Err(e) => {
@@ -437,9 +442,9 @@ mod tests {
         let jsonl_path = temp_dir.path().join("test.jsonl");
 
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        file.write_all(br#"{"session_id":"test1","timestamp":"2024-01-01T00:00:00Z","model":"claude-3-opus","input_tokens":100,"output_tokens":50,"cache_creation_tokens":10,"cache_read_tokens":5,"project":"project-a"}"#).await.unwrap();
+        file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"cwd":"/home/user/project-a"}"#).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        file.write_all(br#"{"session_id":"test2","timestamp":"2024-01-01T01:00:00Z","model":"claude-3-sonnet","input_tokens":200,"output_tokens":100,"cache_creation_tokens":20,"cache_read_tokens":10}"#).await.unwrap();
+        file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100,"cache_creation_input_tokens":20,"cache_read_input_tokens":10}}}"#).await.unwrap();
 
         let stream = DataLoader::parse_jsonl_stream(jsonl_path, None);
         tokio::pin!(stream);
@@ -454,18 +459,17 @@ mod tests {
         assert_eq!(entry2.tokens.input_tokens, 200);
         assert_eq!(entry2.project, None);
     }
-    
+
     #[tokio::test]
     async fn test_parallel_loading() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create multiple JSONL files
         for i in 0..3 {
             let content = format!(
-                r#"{{"session_id":"test{}","timestamp":"2024-01-01T0{}:00:00Z","model":"claude-3-opus","input_tokens":100,"output_tokens":50,"cache_creation_tokens":10,"cache_read_tokens":5,"total_cost":0.1}}"#,
-                i, i
+                r#"{{"sessionId":"test{i}","timestamp":"2024-01-01T0{i}:00:00Z","type":"assistant","message":{{"model":"claude-3-opus","usage":{{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}}}},"cost_usd":0.1}}"#
             );
-            let file_path = temp_dir.path().join(format!("test{}.jsonl", i));
+            let file_path = temp_dir.path().join(format!("test{i}.jsonl"));
             let mut file = tokio::fs::File::create(&file_path).await.unwrap();
             file.write_all(content.as_bytes()).await.unwrap();
         }
@@ -487,7 +491,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(entries.len(), 3);
-        
+
         // Verify all entries are loaded (order may vary due to parallel processing)
         let session_ids: Vec<_> = entries.iter().map(|e| e.session_id.as_str()).collect();
         assert!(session_ids.contains(&"test0"));

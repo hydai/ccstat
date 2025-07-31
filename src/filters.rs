@@ -269,7 +269,11 @@ mod tests {
 
         let entry_with_project = UsageEntry {
             session_id: SessionId::new("test1"),
-            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,
@@ -279,7 +283,11 @@ mod tests {
 
         let entry_different_project = UsageEntry {
             session_id: SessionId::new("test2"),
-            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,
@@ -289,7 +297,11 @@ mod tests {
 
         let entry_no_project = UsageEntry {
             session_id: SessionId::new("test3"),
-            timestamp: ISOTimestamp::new(DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc)),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             model: ModelName::new("claude-3-opus"),
             tokens: TokenCounts::default(),
             total_cost: None,

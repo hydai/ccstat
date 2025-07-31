@@ -1,6 +1,6 @@
-//! Integration tests for ccusage
+//! Integration tests for ccstat
 
-use ccusage::{
+use ccstat::{
     aggregation::Aggregator,
     cost_calculator::CostCalculator,
     filters::{MonthFilter, UsageFilter},
@@ -28,7 +28,7 @@ fn create_test_entry(
         tokens: TokenCounts::new(input_tokens, output_tokens, 0, 0),
         total_cost: None,
         project: None,
-            instance_id: None,
+        instance_id: None,
     }
 }
 
@@ -102,7 +102,7 @@ async fn test_monthly_aggregation_with_filter() {
 
 #[tokio::test]
 async fn test_token_limit_warnings() {
-    use ccusage::aggregation::SessionUsage;
+    use ccstat::aggregation::SessionUsage;
 
     let sessions = vec![
         SessionUsage {
@@ -198,7 +198,7 @@ async fn test_cost_calculation_modes() {
         tokens: TokenCounts::new(1000, 500, 0, 0),
         total_cost: Some(0.05), // This one has pre-calculated cost
         project: None,
-            instance_id: None,
+        instance_id: None,
     }];
     let entries_stream = stream::iter(display_entries.into_iter().map(Ok));
     let daily_data_display = aggregator

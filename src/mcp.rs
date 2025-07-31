@@ -174,19 +174,19 @@ impl McpServer {
 
         // Build filter
         let mut filter = UsageFilter::new();
-        
+
         if let Some(since_str) = &args.since {
             let since_date = parse_date_filter(since_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             filter = filter.with_since(since_date);
         }
-        
+
         if let Some(until_str) = &args.until {
             let until_date = parse_date_filter(until_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             filter = filter.with_until(until_date);
         }
-        
+
         if let Some(project_name) = &args.project {
             filter = filter.with_project(project_name.clone());
         }
@@ -230,13 +230,13 @@ impl McpServer {
 
         // Build filter
         let mut filter = UsageFilter::new();
-        
+
         if let Some(since_str) = &args.since {
             let since_date = parse_date_filter(since_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             filter = filter.with_since(since_date);
         }
-        
+
         if let Some(until_str) = &args.until {
             let until_date = parse_date_filter(until_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
@@ -292,22 +292,22 @@ impl McpServer {
 
         // Then aggregate to monthly
         let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
-        
+
         // Apply month filter if provided
         let mut month_filter = MonthFilter::new();
-        
+
         if let Some(since_str) = &args.since {
             let (year, month) = parse_month_filter(since_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             month_filter = month_filter.with_since(year, month);
         }
-        
+
         if let Some(until_str) = &args.until {
             let (year, month) = parse_month_filter(until_str)
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             month_filter = month_filter.with_until(year, month);
         }
-        
+
         // Filter monthly data
         monthly_data.retain(|monthly| {
             if let Some((year, month)) = monthly
@@ -362,31 +362,33 @@ impl McpServer {
                 Ok(request) => {
                     // Handle the request
                     let response = handler.handle_rpc_request(request).await;
-                    
+
                     // Serialize and write response
                     if let Some(response) = response {
-                        let response_str = serde_json::to_string(&response)
-                            .map_err(|e| CcstatError::McpServer(format!("Failed to serialize response: {}", e)))?;
-                        
+                        let response_str = serde_json::to_string(&response).map_err(|e| {
+                            CcstatError::McpServer(format!("Failed to serialize response: {e}"))
+                        })?;
+
                         stdout.write_all(response_str.as_bytes()).await?;
                         stdout.write_all(b"\n").await?;
                         stdout.flush().await?;
-                        
+
                         debug!("Sent response: {}", response_str);
                     }
                 }
                 Err(e) => {
                     error!("Failed to parse request: {}", e);
-                    
+
                     // Send error response
                     let error_response = jsonrpc_core::Response::from(
                         jsonrpc_core::Error::parse_error(),
                         Some(jsonrpc_core::Version::V2),
                     );
-                    
-                    let response_str = serde_json::to_string(&error_response)
-                        .map_err(|e| CcstatError::McpServer(format!("Failed to serialize error: {}", e)))?;
-                    
+
+                    let response_str = serde_json::to_string(&error_response).map_err(|e| {
+                        CcstatError::McpServer(format!("Failed to serialize error: {e}"))
+                    })?;
+
                     stdout.write_all(response_str.as_bytes()).await?;
                     stdout.write_all(b"\n").await?;
                     stdout.flush().await?;
@@ -412,8 +414,8 @@ impl McpServer {
             .allow_methods(vec!["POST", "GET", "OPTIONS"]);
 
         // Health check endpoint
-        let health = warp::path("health")
-            .map(|| warp::reply::json(&serde_json::json!({"status": "ok"})));
+        let health =
+            warp::path("health").map(|| warp::reply::json(&serde_json::json!({"status": "ok"})));
 
         // JSON-RPC endpoint
         let jsonrpc = warp::path::end()
@@ -423,18 +425,21 @@ impl McpServer {
             .and_then(handle_jsonrpc_request);
 
         // Combine routes
-        let routes = health
-            .or(jsonrpc)
-            .with(cors)
-            .with(warp::trace::request());
+        let routes = health.or(jsonrpc).with(cors).with(warp::trace::request());
 
         // Start server
         let addr = ([127, 0, 0, 1], port);
-        info!("MCP HTTP server listening on http://{}:{}", addr.0.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."), addr.1);
-        
-        warp::serve(routes)
-            .run(addr)
-            .await;
+        info!(
+            "MCP HTTP server listening on http://{}:{}",
+            addr.0
+                .iter()
+                .map(|b| b.to_string())
+                .collect::<Vec<_>>()
+                .join("."),
+            addr.1
+        );
+
+        warp::serve(routes).run(addr).await;
 
         Ok(())
     }
@@ -446,10 +451,10 @@ async fn handle_jsonrpc_request(
     handler: Arc<IoHandler>,
 ) -> std::result::Result<impl warp::Reply, warp::Rejection> {
     debug!("Received HTTP JSON-RPC request: {:?}", request);
-    
+
     // Handle the request
     let response = handler.handle_rpc_request(request).await;
-    
+
     // Convert response to warp reply
     match response {
         Some(response) => Ok(warp::reply::json(&response)),

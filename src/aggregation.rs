@@ -159,7 +159,7 @@ impl DailyAccumulator {
         self.tokens += entry.tokens;
         self.cost += calculated_cost;
         self.models.insert(entry.model.clone());
-        
+
         if let Some(ref mut entries) = self.verbose_entries {
             entries.push(VerboseEntry {
                 timestamp: *entry.timestamp.inner(),
@@ -244,12 +244,12 @@ pub struct Aggregator {
 impl Aggregator {
     /// Create a new Aggregator
     pub fn new(cost_calculator: Arc<CostCalculator>) -> Self {
-        Self { 
+        Self {
             cost_calculator,
             show_progress: false,
         }
     }
-    
+
     /// Enable or disable progress bars
     pub fn with_progress(mut self, show_progress: bool) -> Self {
         self.show_progress = show_progress;
@@ -263,7 +263,7 @@ impl Aggregator {
         cost_mode: CostMode,
     ) -> Result<Vec<DailyInstanceUsage>> {
         let mut daily_map: BTreeMap<(DailyDate, String), DailyAccumulator> = BTreeMap::new();
-        
+
         // Create progress spinner if enabled
         let progress = if self.show_progress {
             let pb = ProgressBar::new_spinner();
@@ -278,14 +278,17 @@ impl Aggregator {
         } else {
             None
         };
-        
+
         let mut count = 0u64;
 
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
             let entry = result?;
             let date = DailyDate::from_timestamp(&entry.timestamp);
-            let instance_id = entry.instance_id.clone().unwrap_or_else(|| "default".to_string());
+            let instance_id = entry
+                .instance_id
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
 
             // Calculate cost
             let cost = self
@@ -297,15 +300,15 @@ impl Aggregator {
                 .entry((date, instance_id.clone()))
                 .or_insert_with(|| DailyAccumulator::new(false))
                 .add_entry(entry, cost);
-                
+
             count += 1;
             if let Some(ref pb) = progress {
                 pb.set_position(count);
             }
         }
-        
+
         if let Some(pb) = progress {
-            pb.finish_with_message(format!("Aggregated {} entries", count));
+            pb.finish_with_message(format!("Aggregated {count} entries"));
         }
 
         Ok(daily_map
@@ -326,9 +329,10 @@ impl Aggregator {
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
     ) -> Result<Vec<DailyUsage>> {
-        self.aggregate_daily_verbose(entries, cost_mode, false).await
+        self.aggregate_daily_verbose(entries, cost_mode, false)
+            .await
     }
-    
+
     /// Aggregate entries by day with optional verbose mode
     pub async fn aggregate_daily_verbose(
         &self,
@@ -337,7 +341,7 @@ impl Aggregator {
         verbose: bool,
     ) -> Result<Vec<DailyUsage>> {
         let mut daily_map: BTreeMap<DailyDate, DailyAccumulator> = BTreeMap::new();
-        
+
         // Create progress spinner if enabled
         let progress = if self.show_progress {
             let pb = ProgressBar::new_spinner();
@@ -352,7 +356,7 @@ impl Aggregator {
         } else {
             None
         };
-        
+
         let mut count = 0u64;
 
         tokio::pin!(entries);
@@ -370,15 +374,19 @@ impl Aggregator {
                 .entry(date)
                 .or_insert_with(|| DailyAccumulator::new(verbose))
                 .add_entry(entry, cost);
-                
+
             count += 1;
             if let Some(ref pb) = progress {
                 pb.set_position(count);
             }
         }
-        
+
         if let Some(pb) = progress {
-            pb.finish_with_message(format!("Aggregated {} entries into {} days", count, daily_map.len()));
+            pb.finish_with_message(format!(
+                "Aggregated {} entries into {} days",
+                count,
+                daily_map.len()
+            ));
         }
 
         Ok(daily_map
@@ -394,7 +402,7 @@ impl Aggregator {
         cost_mode: CostMode,
     ) -> Result<Vec<SessionUsage>> {
         let mut session_map: BTreeMap<SessionId, SessionAccumulator> = BTreeMap::new();
-        
+
         // Create progress spinner if enabled
         let progress = if self.show_progress {
             let pb = ProgressBar::new_spinner();
@@ -409,7 +417,7 @@ impl Aggregator {
         } else {
             None
         };
-        
+
         let mut count = 0u64;
 
         tokio::pin!(entries);
@@ -427,15 +435,19 @@ impl Aggregator {
                 .entry(session_id)
                 .or_insert_with(SessionAccumulator::new)
                 .add_entry(entry, cost);
-                
+
             count += 1;
             if let Some(ref pb) = progress {
                 pb.set_position(count);
             }
         }
-        
+
         if let Some(pb) = progress {
-            pb.finish_with_message(format!("Aggregated {} entries into {} sessions", count, session_map.len()));
+            pb.finish_with_message(format!(
+                "Aggregated {} entries into {} sessions",
+                count,
+                session_map.len()
+            ));
         }
 
         let mut sessions: Vec<_> = session_map
@@ -597,7 +609,7 @@ mod tests {
         assert_eq!(acc.cost, 0.01);
         assert_eq!(acc.models.len(), 1);
     }
-    
+
     #[test]
     fn test_daily_accumulator_verbose() {
         let mut acc = DailyAccumulator::new(true);

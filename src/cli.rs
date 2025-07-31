@@ -69,27 +69,27 @@ pub enum Command {
         /// Filter by project name
         #[arg(long, short = 'p')]
         project: Option<String>,
-        
+
         /// Enable live monitoring mode
         #[arg(long, short = 'w')]
         watch: bool,
-        
+
         /// Refresh interval in seconds (default: 5)
         #[arg(long, default_value = "5")]
         interval: u64,
-        
+
         /// Use parallel file processing
         #[arg(long)]
         parallel: bool,
-        
+
         /// Enable string interning for memory optimization
         #[arg(long)]
         intern: bool,
-        
+
         /// Enable arena allocation for parsing
         #[arg(long)]
         arena: bool,
-        
+
         /// Show detailed token information per entry
         #[arg(long, short = 'v')]
         verbose: bool,

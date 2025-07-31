@@ -1,5 +1,5 @@
 //! Live monitoring functionality for ccstat
-//! 
+//!
 //! This module provides file watching and periodic updates for real-time
 //! usage monitoring. It watches for changes in JSONL files and refreshes
 //! the display at specified intervals.
@@ -66,11 +66,11 @@ impl LiveMonitor {
         // Track if we need to refresh
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_refresh_watcher = should_refresh.clone();
-        
+
         // Set up file watching
         let (tx, mut rx) = mpsc::channel(10);
         let watched_dirs = self.data_loader.get_data_directories().await?;
-        
+
         // Create watcher in a separate task
         let watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
             let mut watcher = RecommendedWatcher::new(
@@ -92,36 +92,37 @@ impl LiveMonitor {
                     }
                 },
                 Config::default(),
-            ).map_err(|e| CcstatError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create file watcher: {e}"),
-            )))?;
-            
+            )
+            .map_err(|e| {
+                CcstatError::Io(std::io::Error::other(
+                    format!("Failed to create file watcher: {e}")
+                ))
+            })?;
+
             // Watch all data directories
             for dir in watched_dirs {
                 if dir.exists() {
                     watcher.watch(&dir, RecursiveMode::Recursive).map_err(|e| {
-                        CcstatError::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to watch directory {}: {e}", dir.display()),
+                        CcstatError::Io(std::io::Error::other(
+                            format!("Failed to watch directory {}: {e}", dir.display())
                         ))
                     })?;
                 }
             }
-            
+
             // Keep the watcher alive
             loop {
                 std::thread::sleep(Duration::from_secs(60));
             }
         });
-        
+
         // Set up interval timer
         let mut interval = interval(Duration::from_secs(self.interval_secs));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        
+
         // Initial display
         self.refresh_display().await?;
-        
+
         // Main monitoring loop
         loop {
             tokio::select! {
@@ -145,30 +146,36 @@ impl LiveMonitor {
                 }
             }
         }
-        
+
         // Clean up watcher
         watcher_handle.abort();
         Ok(())
     }
-    
+
     /// Refresh the display with current data
     async fn refresh_display(&self) -> Result<()> {
         // Clear screen
         if !self.json_output {
             print!("\x1B[2J\x1B[1;1H"); // Clear screen and move cursor to top-left
         }
-        
+
         // Show current time and mode
         if !self.json_output {
             let now = Local::now();
-            println!("Live Monitoring - Last updated: {}", now.format("%Y-%m-%d %H:%M:%S"));
-            println!("Refresh interval: {}s | Press Ctrl+C to exit", self.interval_secs);
+            println!(
+                "Live Monitoring - Last updated: {}",
+                now.format("%Y-%m-%d %H:%M:%S")
+            );
+            println!(
+                "Refresh interval: {}s | Press Ctrl+C to exit",
+                self.interval_secs
+            );
             println!("{}", "-".repeat(80));
         }
-        
+
         // Load and aggregate data
         let entries = self.data_loader.load_usage_entries();
-        
+
         // Apply filters and collect entries
         let filtered_entries: Vec<UsageEntry> = entries
             .filter_map(|result| async {
@@ -179,17 +186,17 @@ impl LiveMonitor {
             })
             .collect()
             .await;
-        
+
         // Highlight active sessions (within last 5 minutes)
         let now = chrono::Utc::now();
         let active_cutoff = now - chrono::Duration::minutes(5);
-        
+
         let active_sessions: Vec<String> = filtered_entries
             .iter()
             .filter(|entry| entry.timestamp.as_ref() > &active_cutoff)
             .map(|entry| entry.session_id.as_ref().to_string())
             .collect();
-        
+
         // Generate output
         if self.instances {
             let instance_data = self
@@ -201,17 +208,26 @@ impl LiveMonitor {
                 .await?;
             let totals = Totals::from_daily_instances(&instance_data);
             let formatter = get_formatter(self.json_output);
-            
+
             if self.json_output {
-                println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                println!(
+                    "{}",
+                    formatter.format_daily_by_instance(&instance_data, &totals)
+                );
             } else {
                 // Add active session indicators for table output
-                println!("\nActive Sessions: {}", if active_sessions.is_empty() { 
-                    "None".to_string() 
-                } else { 
-                    format!("{} session(s)", active_sessions.len())
-                });
-                println!("{}", formatter.format_daily_by_instance(&instance_data, &totals));
+                println!(
+                    "\nActive Sessions: {}",
+                    if active_sessions.is_empty() {
+                        "None".to_string()
+                    } else {
+                        format!("{} session(s)", active_sessions.len())
+                    }
+                );
+                println!(
+                    "{}",
+                    formatter.format_daily_by_instance(&instance_data, &totals)
+                );
             }
         } else {
             let daily_data = self
@@ -223,20 +239,23 @@ impl LiveMonitor {
                 .await?;
             let totals = Totals::from_daily(&daily_data);
             let formatter = get_formatter(self.json_output);
-            
+
             if self.json_output {
                 println!("{}", formatter.format_daily(&daily_data, &totals));
             } else {
                 // Add active session indicators for table output
-                println!("\nActive Sessions: {}", if active_sessions.is_empty() { 
-                    "None".to_string() 
-                } else { 
-                    format!("{} session(s)", active_sessions.len())
-                });
+                println!(
+                    "\nActive Sessions: {}",
+                    if active_sessions.is_empty() {
+                        "None".to_string()
+                    } else {
+                        format!("{} session(s)", active_sessions.len())
+                    }
+                );
                 println!("{}", formatter.format_daily(&daily_data, &totals));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -247,7 +266,7 @@ impl DataLoader {
         // This would need to be implemented in DataLoader to expose the directories
         // For now, we'll use a placeholder implementation
         let mut dirs = Vec::new();
-        
+
         // Get platform-specific directories
         #[cfg(target_os = "macos")]
         {
@@ -258,7 +277,7 @@ impl DataLoader {
                 }
             }
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             if let Some(data_dir) = dirs::data_dir() {
@@ -268,7 +287,7 @@ impl DataLoader {
                 }
             }
         }
-        
+
         #[cfg(target_os = "windows")]
         {
             if let Some(data_dir) = dirs::data_dir() {
@@ -278,14 +297,14 @@ impl DataLoader {
                 }
             }
         }
-        
+
         if dirs.is_empty() {
             return Err(CcstatError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No Claude data directories found",
             )));
         }
-        
+
         Ok(dirs)
     }
 }
@@ -293,8 +312,8 @@ impl DataLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pricing_fetcher::PricingFetcher;
     use crate::cost_calculator::CostCalculator;
+    use crate::pricing_fetcher::PricingFetcher;
 
     #[tokio::test]
     async fn test_live_monitor_creation() {
@@ -303,7 +322,7 @@ mod tests {
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator));
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -313,16 +332,16 @@ mod tests {
             false,
             5,
         );
-        
+
         // Just verify it can be created
         assert_eq!(monitor.interval_secs, 5);
     }
-    
+
     #[tokio::test]
     async fn test_data_directories_discovery() {
         let data_loader = DataLoader::new().await.unwrap();
         let dirs = data_loader.get_data_directories().await;
-        
+
         // Should either find directories or return an error
         match dirs {
             Ok(directories) => {

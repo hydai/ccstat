@@ -8,16 +8,17 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, AddAssign};
+use uuid::Uuid;
 
 /// Strongly-typed model name wrapper
-/// 
+///
 /// This ensures model names are consistently handled throughout the application
 /// and provides type safety when working with model identifiers.
-/// 
+///
 /// # Examples
 /// ```
 /// use ccstat::types::ModelName;
-/// 
+///
 /// let model = ModelName::new("claude-3-opus");
 /// assert_eq!(model.as_str(), "claude-3-opus");
 /// ```
@@ -124,17 +125,17 @@ impl DailyDate {
 }
 
 /// Token counts for usage tracking
-/// 
+///
 /// This struct tracks all types of tokens consumed during Claude API usage,
 /// including input, output, and cache-related tokens.
-/// 
+///
 /// # Examples
 /// ```
 /// use ccstat::types::TokenCounts;
-/// 
+///
 /// let tokens = TokenCounts::new(100, 50, 10, 5);
 /// assert_eq!(tokens.total(), 165);
-/// 
+///
 /// // TokenCounts supports arithmetic operations
 /// let tokens2 = TokenCounts::new(50, 25, 5, 2);
 /// let combined = tokens + tokens2;
@@ -287,6 +288,30 @@ pub struct RawJsonlEntry {
     /// Entry type
     #[serde(rename = "type")]
     pub entry_type: String,
+    /// Unique identifier for the event
+    #[serde(default)]
+    pub uuid: Option<String>,
+    /// Current working directory when the event occurred
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// References parent events for threaded conversations
+    #[serde(rename = "parentUuid", default)]
+    pub parent_uuid: Option<String>,
+    /// Boolean indicating if this is a branch conversation
+    #[serde(rename = "isSidechain", default)]
+    pub is_sidechain: Option<bool>,
+    /// Categorizes the user type (typically "external")
+    #[serde(rename = "userType", default)]
+    pub user_type: Option<String>,
+    /// Claude Code version number
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Active git branch at event time
+    #[serde(rename = "gitBranch", default)]
+    pub git_branch: Option<String>,
+    /// Pre-calculated cost in USD
+    #[serde(rename = "cost_usd", default)]
+    pub cost_usd: Option<f64>,
 }
 
 /// Usage entry from JSONL
@@ -318,18 +343,37 @@ impl UsageEntry {
         if raw.entry_type != "assistant" {
             return None;
         }
-        
+
         // Skip synthetic models (errors, no response requested, etc.)
         if raw.message.model == "<synthetic>" {
             return None;
         }
-        
-        // Parse timestamp
+
+        // Parse and validate timestamp
         let timestamp = match DateTime::parse_from_rfc3339(&raw.timestamp) {
             Ok(dt) => ISOTimestamp::new(dt.with_timezone(&Utc)),
             Err(_) => return None,
         };
-        
+
+        // Validate UUID format if present
+        let instance_id = raw.uuid.as_ref().map(|uuid_str| {
+            // Try to parse as UUID to validate format
+            match Uuid::parse_str(uuid_str) {
+                Ok(_) => uuid_str.clone(),
+                Err(_) => {
+                    // Log warning but don't fail - UUID might be in different format
+                    tracing::debug!("Invalid UUID format: {}", uuid_str);
+                    uuid_str.clone() // Still use it as instance ID
+                }
+            }
+        });
+
+        // Validate session ID format (should be UUID)
+        if Uuid::parse_str(&raw.session_id).is_err() {
+            tracing::debug!("Session ID is not a valid UUID: {}", raw.session_id);
+            // Don't fail - continue processing with the session ID as-is
+        }
+
         Some(Self {
             session_id: SessionId::new(raw.session_id),
             timestamp,
@@ -340,9 +384,15 @@ impl UsageEntry {
                 cache_creation_tokens: raw.message.usage.cache_creation_input_tokens,
                 cache_read_tokens: raw.message.usage.cache_read_input_tokens,
             },
-            total_cost: None,
-            project: None,
-            instance_id: None,
+            total_cost: raw.cost_usd, // Use pre-calculated cost from JSONL if available
+            project: raw.cwd.as_ref().and_then(|cwd| {
+                // Extract project name from cwd path
+                std::path::Path::new(cwd)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string())
+            }),
+            instance_id,
         })
     }
 }
