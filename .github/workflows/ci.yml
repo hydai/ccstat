@@ -3,26 +3,131 @@ name: CI
 on:
   push:
     branches: [ main, master, develop ]
+    paths:
+      - 'src/**'
+      - 'Cargo.*'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'Cargo.*'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+# Cancel old runs when pushing new commits to a PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
+  # Quick tests that run on every OS
+  quick-test:
+    name: Quick Tests - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Skip duplicate runs when PR is merged
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Merge pull request')
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, nightly]
-        include:
-          - os: ubuntu-latest
-            rust: stable
-            coverage: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+
+    - name: Build
+      run: cargo build --verbose
+
+    - name: Run unit tests
+      run: cargo test --lib --verbose
+
+    - name: Run doctests
+      run: cargo test --doc --verbose
+
+  # Full test suite and coverage - only runs on Linux
+  full-test:
+    name: Full Test Suite & Coverage
+    runs-on: ubuntu-latest
+    needs: quick-test
+    # Skip duplicate runs when PR is merged
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Merge pull request')
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+
+    - name: Run all tests
+      run: cargo test --all --verbose
+
+    - name: Run tests with all features
+      run: cargo test --all-features --verbose
+
+    - name: Install tarpaulin
+      run: cargo install cargo-tarpaulin
+
+    - name: Generate coverage
+      run: cargo tarpaulin --out Xml --verbose
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v5
+      with:
+        files: ./cobertura.xml
+        fail_ci_if_error: true
+
+  # Code quality checks
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    needs: quick-test
+    # Skip duplicate runs when PR is merged
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Merge pull request')
 
     steps:
     - name: Checkout code
@@ -31,51 +136,28 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
 
-    - name: Cache cargo dependencies
-      uses: actions/cache@v3
+    - name: Cache cargo registry
+      uses: actions/cache@v4
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-registry-
 
     - name: Check formatting
-      run: cargo fmt -- --check
+      run: cargo fmt --all -- --check
 
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
 
-    - name: Build
-      run: cargo build --verbose
-
-    - name: Run tests
-      run: cargo test --verbose
-
-    - name: Run doc tests
-      run: cargo test --doc
-
-    - name: Install tarpaulin (coverage)
-      if: matrix.coverage
-      run: cargo install cargo-tarpaulin
-
-    - name: Generate coverage
-      if: matrix.coverage
-      run: cargo tarpaulin --out Xml --verbose
-
-    - name: Upload coverage
-      if: matrix.coverage
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./cobertura.xml
-        fail_ci_if_error: true
+    - name: Build documentation
+      run: cargo doc --no-deps --document-private-items
+      env:
+        RUSTDOCFLAGS: -D warnings
 
   build-release:
     name: Build Release Binary
@@ -109,7 +191,7 @@ jobs:
       run: cargo build --release --target ${{ matrix.target }}
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ccstat-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
@@ -125,7 +207,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache cargo dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/bin/
@@ -143,11 +225,24 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    needs: quick-test
+    # Skip duplicate runs when PR is merged
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Merge pull request')
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Run security audit
-      uses: actions-rs/audit-check@v1
+    - name: Cache cargo-audit
+      id: cache-cargo-audit
+      uses: actions/cache@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        path: ~/.cargo/bin/cargo-audit
+        key: cargo-audit-${{ runner.os }}-v1
+
+    - name: Install cargo-audit
+      if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+      run: cargo install cargo-audit
+
+    - name: Run security audit
+      run: cargo audit
