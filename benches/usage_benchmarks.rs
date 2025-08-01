@@ -9,7 +9,8 @@ use ccstat::{
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::{TimeZone, Utc};
-use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use futures::stream;
 use std::sync::Arc;
 

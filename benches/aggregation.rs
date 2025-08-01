@@ -5,7 +5,8 @@ use ccstat::{
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::Utc;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use futures::stream;
 use std::sync::Arc;
 
