@@ -663,6 +663,15 @@ impl Totals {
         }
         totals
     }
+
+    pub fn from_monthly(monthly_usage: &[MonthlyUsage]) -> Self {
+        let mut totals = Self::default();
+        for monthly in monthly_usage {
+            totals.tokens += monthly.tokens;
+            totals.total_cost += monthly.total_cost;
+        }
+        totals
+    }
 }
 
 #[cfg(test)]

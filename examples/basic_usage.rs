@@ -10,7 +10,6 @@ use ccstat::{
     types::CostMode,
     Result,
 };
-use futures::StreamExt;
 use std::sync::Arc;
 
 #[tokio::main]

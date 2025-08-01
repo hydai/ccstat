@@ -12,7 +12,6 @@ use ccstat::{
     Result,
 };
 use chrono::NaiveDate;
-use futures::StreamExt;
 use std::sync::Arc;
 
 #[tokio::main]

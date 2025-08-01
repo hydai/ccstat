@@ -6,7 +6,7 @@ use ccstat::{
     aggregation::{Aggregator, Totals},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
-    output::{get_formatter, OutputFormatter},
+    output::get_formatter,
     pricing_fetcher::PricingFetcher,
     types::CostMode,
     Result,
