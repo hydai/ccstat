@@ -71,6 +71,10 @@ pub enum CcstatError {
     /// MCP server error
     #[error("MCP server error: {0}")]
     McpServer(String),
+
+    /// Duplicate entry found
+    #[error("Duplicate entry")]
+    DuplicateEntry,
 }
 
 /// Convenience type alias for Results in ccstat

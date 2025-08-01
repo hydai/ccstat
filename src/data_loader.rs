@@ -38,8 +38,9 @@ use futures::stream::Stream;
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
@@ -241,9 +242,13 @@ impl DataLoader {
             // Use channel to collect results from parallel processing
             let (tx, mut rx) = mpsc::channel::<Result<Vec<UsageEntry>>>(num_files);
 
+            // Shared deduplication set
+            let seen_entries = Arc::new(Mutex::new(HashSet::new()));
+
             // Process files in parallel using Rayon
             let files_clone = files.clone();
             let progress_clone = progress.clone();
+            let seen_entries_clone = seen_entries.clone();
 
             tokio::task::spawn_blocking(move || {
                 files_clone.par_iter().for_each(|file_path| {
@@ -257,12 +262,25 @@ impl DataLoader {
                         .map_err(CcstatError::Io)
                         .map(|content| {
                             let mut entries = Vec::new();
+                            let mut local_duplicates = 0;
+
                             for line in content.lines() {
                                 if line.trim().is_empty() {
                                     continue;
                                 }
                                 match serde_json::from_str::<RawJsonlEntry>(line) {
                                     Ok(raw_entry) => {
+                                        // Check for deduplication key
+                                        if let Some(dedup_key) = UsageEntry::dedup_key(&raw_entry) {
+                                            let mut seen = seen_entries_clone.lock().unwrap();
+                                            if seen.contains(&dedup_key) {
+                                                local_duplicates += 1;
+                                                trace!("Skipping duplicate entry with key: {}", dedup_key);
+                                                continue;
+                                            }
+                                            seen.insert(dedup_key);
+                                        }
+
                                         if let Some(entry) = UsageEntry::from_raw(raw_entry) {
                                             entries.push(entry);
                                         }
@@ -272,6 +290,11 @@ impl DataLoader {
                                     }
                                 }
                             }
+
+                            if local_duplicates > 0 {
+                                debug!("Skipped {} duplicate entries in {}", local_duplicates, file_path.display());
+                            }
+
                             entries
                         });
 
@@ -289,6 +312,12 @@ impl DataLoader {
                     }
                     Err(e) => yield Err(e),
                 }
+            }
+
+            // Log deduplication stats
+            let final_seen_count = seen_entries.lock().unwrap().len();
+            if final_seen_count > 0 {
+                info!("Processed {} unique entries after deduplication", final_seen_count);
             }
 
             if let Some(pb) = progress {
@@ -351,16 +380,33 @@ impl DataLoader {
                 None
             };
 
+            // Deduplication set
+            let mut seen_entries = HashSet::new();
+            let mut total_duplicates = 0;
+
             for (idx, file_path) in files.into_iter().enumerate() {
                 if let Some(ref pb) = progress {
                     pb.set_position(idx as u64);
                 }
 
-                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref());
+                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref(), &mut seen_entries);
                 tokio::pin!(entries);
                 while let Some(result) = entries.next().await {
-                    yield result;
+                    match &result {
+                        Ok(_) => yield result,
+                        Err(e) => {
+                            if let CcstatError::DuplicateEntry = e {
+                                total_duplicates += 1;
+                            } else {
+                                yield result;
+                            }
+                        }
+                    }
                 }
+            }
+
+            if total_duplicates > 0 {
+                info!("Skipped {} duplicate entries", total_duplicates);
             }
 
             if let Some(pb) = progress {
@@ -370,10 +416,11 @@ impl DataLoader {
     }
 
     /// Parse a single JSONL file as a stream
-    fn parse_jsonl_stream(
+    fn parse_jsonl_stream<'a>(
         path: PathBuf,
-        _progress: Option<&ProgressBar>,
-    ) -> impl Stream<Item = Result<UsageEntry>> + '_ {
+        _progress: Option<&'a ProgressBar>,
+        seen_entries: &'a mut HashSet<String>,
+    ) -> impl Stream<Item = Result<UsageEntry>> + 'a {
         async_stream::stream! {
             // Get file size for progress tracking
             let _file_size = match tokio::fs::metadata(&path).await {
@@ -392,6 +439,7 @@ impl DataLoader {
             let reader = BufReader::new(file);
             let mut lines = reader.lines();
             let mut line_number = 0;
+            let mut file_duplicates = 0;
 
             while let Ok(Some(line)) = lines.next_line().await {
                 line_number += 1;
@@ -402,6 +450,17 @@ impl DataLoader {
 
                 match serde_json::from_str::<RawJsonlEntry>(&line) {
                     Ok(raw_entry) => {
+                        // Check for deduplication key
+                        if let Some(dedup_key) = UsageEntry::dedup_key(&raw_entry) {
+                            if seen_entries.contains(&dedup_key) {
+                                file_duplicates += 1;
+                                trace!("Skipping duplicate entry with key: {}", dedup_key);
+                                yield Err(CcstatError::DuplicateEntry);
+                                continue;
+                            }
+                            seen_entries.insert(dedup_key);
+                        }
+
                         if let Some(entry) = UsageEntry::from_raw(raw_entry) {
                             yield Ok(entry);
                         }
@@ -417,6 +476,10 @@ impl DataLoader {
                         // Continue processing other lines
                     }
                 }
+            }
+
+            if file_duplicates > 0 {
+                debug!("Skipped {} duplicate entries in {}", file_duplicates, path.display());
             }
         }
     }
@@ -446,7 +509,8 @@ mod tests {
         file.write_all(b"\n").await.unwrap();
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100,"cache_creation_input_tokens":20,"cache_read_input_tokens":10}}}"#).await.unwrap();
 
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None);
+        let mut seen = HashSet::new();
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let entry1 = stream.next().await.unwrap().unwrap();

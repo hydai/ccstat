@@ -273,21 +273,27 @@ pub struct Message {
     pub model: String,
     /// Usage data
     pub usage: MessageUsage,
+    /// Message ID (used for deduplication)
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Message content (may contain error messages)
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
 }
 
 /// Raw JSONL entry from file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawJsonlEntry {
     /// Session ID
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
+    #[serde(rename = "sessionId", default)]
+    pub session_id: Option<String>,
     /// Timestamp
     pub timestamp: String,
     /// Message containing model and usage
     pub message: Message,
     /// Entry type
-    #[serde(rename = "type")]
-    pub entry_type: String,
+    #[serde(rename = "type", default)]
+    pub entry_type: Option<String>,
     /// Unique identifier for the event
     #[serde(default)]
     pub uuid: Option<String>,
@@ -309,9 +315,18 @@ pub struct RawJsonlEntry {
     /// Active git branch at event time
     #[serde(rename = "gitBranch", default)]
     pub git_branch: Option<String>,
-    /// Pre-calculated cost in USD
+    /// Pre-calculated cost in USD (snake_case for compatibility)
     #[serde(rename = "cost_usd", default)]
     pub cost_usd: Option<f64>,
+    /// Pre-calculated cost in USD (camelCase as per ccusage spec)
+    #[serde(rename = "costUSD", default)]
+    pub cost_usd_camel: Option<f64>,
+    /// Request ID (used for deduplication)
+    #[serde(rename = "requestId", default)]
+    pub request_id: Option<String>,
+    /// Flag indicating if this is an API error message
+    #[serde(rename = "isApiErrorMessage", default)]
+    pub is_api_error_message: Option<bool>,
 }
 
 /// Usage entry from JSONL
@@ -339,9 +354,17 @@ pub struct UsageEntry {
 impl UsageEntry {
     /// Create from raw JSONL entry
     pub fn from_raw(raw: RawJsonlEntry) -> Option<Self> {
-        // Only process entries of type "assistant"
-        if raw.entry_type != "assistant" {
+        // Skip API error messages
+        if raw.is_api_error_message.unwrap_or(false) {
+            tracing::debug!("Skipping API error message entry");
             return None;
+        }
+
+        // Only process entries of type "assistant" (if type is present)
+        if let Some(entry_type) = &raw.entry_type {
+            if entry_type != "assistant" {
+                return None;
+            }
         }
 
         // Skip synthetic models (errors, no response requested, etc.)
@@ -368,14 +391,27 @@ impl UsageEntry {
             }
         });
 
+        // Generate session ID - use provided session_id or fallback to a generated one
+        let session_id = raw.session_id.unwrap_or_else(|| {
+            // Generate a session ID from the timestamp and model if not provided
+            format!(
+                "generated-{}-{}",
+                timestamp.inner().timestamp(),
+                raw.message.model
+            )
+        });
+
         // Validate session ID format (should be UUID)
-        if Uuid::parse_str(&raw.session_id).is_err() {
-            tracing::debug!("Session ID is not a valid UUID: {}", raw.session_id);
+        if Uuid::parse_str(&session_id).is_err() {
+            tracing::debug!("Session ID is not a valid UUID: {}", session_id);
             // Don't fail - continue processing with the session ID as-is
         }
 
+        // Use either cost_usd or costUSD, preferring costUSD (ccusage format)
+        let total_cost = raw.cost_usd_camel.or(raw.cost_usd);
+
         Some(Self {
-            session_id: SessionId::new(raw.session_id),
+            session_id: SessionId::new(session_id),
             timestamp,
             model: ModelName::new(raw.message.model),
             tokens: TokenCounts {
@@ -384,7 +420,7 @@ impl UsageEntry {
                 cache_creation_tokens: raw.message.usage.cache_creation_input_tokens,
                 cache_read_tokens: raw.message.usage.cache_read_input_tokens,
             },
-            total_cost: raw.cost_usd, // Use pre-calculated cost from JSONL if available
+            total_cost,
             project: raw.cwd.as_ref().and_then(|cwd| {
                 // Extract project name from cwd path
                 std::path::Path::new(cwd)
@@ -394,6 +430,16 @@ impl UsageEntry {
             }),
             instance_id,
         })
+    }
+
+    /// Generate a deduplication key from message.id and requestId
+    pub fn dedup_key(raw: &RawJsonlEntry) -> Option<String> {
+        match (&raw.message.id, &raw.request_id) {
+            (Some(msg_id), Some(req_id)) => Some(format!("{msg_id}-{req_id}")),
+            (Some(msg_id), None) => Some(msg_id.clone()),
+            (None, Some(req_id)) => Some(req_id.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -446,5 +492,190 @@ mod tests {
         let daily = ts.to_daily_date();
 
         assert_eq!(daily.format("%Y-%m-%d"), "2024-01-15");
+    }
+
+    #[test]
+    fn test_dedup_key_generation() {
+        // Test with both message.id and requestId
+        let raw1 = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: Some("msg_123".to_string()),
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            request_id: Some("req_456".to_string()),
+            cost_usd: None,
+            cost_usd_camel: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+
+        assert_eq!(
+            UsageEntry::dedup_key(&raw1),
+            Some("msg_123-req_456".to_string())
+        );
+
+        // Test with only message.id
+        let mut raw2 = raw1.clone();
+        raw2.request_id = None;
+        assert_eq!(UsageEntry::dedup_key(&raw2), Some("msg_123".to_string()));
+
+        // Test with only requestId
+        let mut raw3 = raw1.clone();
+        raw3.message.id = None;
+        assert_eq!(UsageEntry::dedup_key(&raw3), Some("req_456".to_string()));
+
+        // Test with neither
+        let mut raw4 = raw1.clone();
+        raw4.message.id = None;
+        raw4.request_id = None;
+        assert_eq!(UsageEntry::dedup_key(&raw4), None);
+    }
+
+    #[test]
+    fn test_cost_usd_field_parsing() {
+        // Test camelCase costUSD field
+        let raw1 = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: None,
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            cost_usd: None,
+            cost_usd_camel: Some(0.123),
+            request_id: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+
+        let entry = UsageEntry::from_raw(raw1).unwrap();
+        assert_eq!(entry.total_cost, Some(0.123));
+
+        // Test snake_case cost_usd field
+        let raw2 = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: None,
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            cost_usd: Some(0.456),
+            cost_usd_camel: None,
+            request_id: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+
+        let entry = UsageEntry::from_raw(raw2).unwrap();
+        assert_eq!(entry.total_cost, Some(0.456));
+
+        // Test preference for costUSD over cost_usd
+        let raw3 = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: None,
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            cost_usd: Some(0.456),
+            cost_usd_camel: Some(0.789),
+            request_id: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+
+        let entry = UsageEntry::from_raw(raw3).unwrap();
+        assert_eq!(entry.total_cost, Some(0.789)); // Should prefer costUSD (camelCase)
+    }
+
+    #[test]
+    fn test_skip_api_error_messages() {
+        let raw = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: None,
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            is_api_error_message: Some(true),
+            cost_usd: None,
+            cost_usd_camel: None,
+            request_id: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+
+        assert!(UsageEntry::from_raw(raw).is_none());
     }
 }
