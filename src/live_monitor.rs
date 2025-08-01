@@ -354,12 +354,16 @@ mod tests {
         match DataLoader::new().await {
             Ok(data_loader) => {
                 let dirs = data_loader.get_data_directories().await;
-                
+
                 // Should either find directories or return an error
                 match dirs {
                     Ok(directories) => {
                         // Ensure we get at least one directory on supported platforms
-                        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+                        #[cfg(any(
+                            target_os = "macos",
+                            target_os = "linux",
+                            target_os = "windows"
+                        ))]
                         assert!(!directories.is_empty());
                     }
                     Err(e) => {

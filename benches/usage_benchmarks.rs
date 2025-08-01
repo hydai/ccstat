@@ -10,8 +10,8 @@ use ccstat::{
 };
 use chrono::{TimeZone, Utc};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
 use futures::stream;
+use std::hint::black_box;
 use std::sync::Arc;
 
 /// Generate test usage entries

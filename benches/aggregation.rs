@@ -6,8 +6,8 @@ use ccstat::{
 };
 use chrono::Utc;
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
 use futures::stream;
+use std::hint::black_box;
 use std::sync::Arc;
 
 fn create_test_entries(count: usize) -> Vec<UsageEntry> {
