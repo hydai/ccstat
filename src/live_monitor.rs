@@ -377,7 +377,7 @@ mod tests {
                 println!("No Claude directories found - this is expected in CI");
             }
             Err(e) => {
-                panic!("Unexpected error creating DataLoader: {}", e);
+                panic!("Unexpected error creating DataLoader: {e}");
             }
         }
     }
