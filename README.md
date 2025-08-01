@@ -6,7 +6,7 @@ Analyze Claude Code usage data from local JSONL files.
 
 ccstat is a high-performance Rust CLI tool that processes Claude Code usage logs, calculates costs using LiteLLM pricing data, and provides various reporting views including daily, monthly, session-based, and 5-hour billing block reports.
 
-This is a Rust reimplementation of the original TypeScript tool, offering:
+This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and is a Rust reimplementation (RIIR - Rewrite It In Rust) of the original TypeScript tool, offering:
 - 50-70% reduction in memory usage
 - 2-3x faster processing speed
 - Zero memory leaks through RAII
@@ -416,6 +416,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- Original TypeScript implementation by the ccstat team
+- [ccusage](https://github.com/ryoppippi/ccusage) - The original TypeScript implementation that inspired this project
 - LiteLLM for model pricing data
 - Claude by Anthropic for the usage data format
