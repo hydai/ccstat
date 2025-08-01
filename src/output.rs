@@ -43,20 +43,51 @@ use serde_json::json;
 ///
 /// This trait defines the interface for formatting various types of usage data.
 /// Implementations can provide different output formats (table, JSON, CSV, etc.).
+///
+/// # Example Implementation
+///
+/// ```
+/// use ccstat::output::OutputFormatter;
+/// use ccstat::aggregation::{DailyUsage, DailyInstanceUsage, SessionUsage, MonthlyUsage, SessionBlock, Totals};
+///
+/// struct CustomFormatter;
+///
+/// impl OutputFormatter for CustomFormatter {
+///     fn format_daily(&self, data: &[DailyUsage], totals: &Totals) -> String {
+///         format!("Total days: {}, Total cost: ${:.2}", data.len(), totals.total_cost)
+///     }
+///     
+///     fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String {
+///         format!("Total instances: {}", data.len())
+///     }
+///     
+///     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String {
+///         format!("Total sessions: {}", data.len())
+///     }
+///     
+///     fn format_monthly(&self, data: &[MonthlyUsage], totals: &Totals) -> String {
+///         format!("Total months: {}", data.len())
+///     }
+///     
+///     fn format_blocks(&self, data: &[SessionBlock]) -> String {
+///         format!("Total blocks: {}", data.len())
+///     }
+/// }
+/// ```
 pub trait OutputFormatter {
-    /// Format daily usage data
+    /// Format daily usage data with totals
     fn format_daily(&self, data: &[DailyUsage], totals: &Totals) -> String;
 
     /// Format daily usage data grouped by instance
     fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String;
 
-    /// Format session usage data
+    /// Format session usage data with totals
     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String;
 
-    /// Format monthly usage data
+    /// Format monthly usage data with totals
     fn format_monthly(&self, data: &[MonthlyUsage], totals: &Totals) -> String;
 
-    /// Format billing blocks
+    /// Format billing blocks (5-hour windows)
     fn format_blocks(&self, data: &[SessionBlock]) -> String;
 }
 
@@ -561,6 +592,9 @@ impl OutputFormatter for JsonFormatter {
 
 /// Get appropriate formatter based on JSON flag
 ///
+/// This is the main entry point for obtaining a formatter. It returns the appropriate
+/// formatter based on whether JSON output is requested.
+///
 /// # Arguments
 ///
 /// * `json` - If true, returns a JSON formatter; otherwise returns a table formatter
@@ -569,13 +603,33 @@ impl OutputFormatter for JsonFormatter {
 ///
 /// A boxed trait object implementing the OutputFormatter trait
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
-/// use ccstat::output::get_formatter;
+/// use ccstat::output::{get_formatter, OutputFormatter};
+/// use ccstat::aggregation::{DailyUsage, Totals};
+/// use ccstat::types::{DailyDate, TokenCounts};
+/// use chrono::NaiveDate;
 ///
-/// let table_formatter = get_formatter(false);
+/// // Get table formatter for human-readable output
+/// let formatter = get_formatter(false);
+/// 
+/// // Get JSON formatter for machine-readable output
 /// let json_formatter = get_formatter(true);
+/// 
+/// // Use with data
+/// let daily_data = vec![
+///     DailyUsage {
+///         date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+///         tokens: TokenCounts::new(1000, 500, 0, 0),
+///         total_cost: 0.025,
+///         models_used: vec!["claude-3-opus".to_string()],
+///         entries: None,
+///     },
+/// ];
+/// let totals = Totals::from_daily(&daily_data);
+/// 
+/// let output = formatter.format_daily(&daily_data, &totals);
 /// ```
 pub fn get_formatter(json: bool) -> Box<dyn OutputFormatter> {
     if json {

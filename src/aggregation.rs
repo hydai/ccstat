@@ -43,17 +43,35 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 /// Daily usage summary
+///
+/// Aggregates all usage entries for a single day, providing token counts,
+/// costs, and model usage information.
+///
+/// # Examples
+/// ```
+/// use ccstat::aggregation::DailyUsage;
+/// use ccstat::types::{DailyDate, TokenCounts};
+/// use chrono::NaiveDate;
+///
+/// let daily = DailyUsage {
+///     date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()),
+///     tokens: TokenCounts::new(10000, 5000, 1000, 500),
+///     total_cost: 0.255,
+///     models_used: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string()],
+///     entries: None,
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyUsage {
     /// Date of usage
     pub date: DailyDate,
     /// Token counts for the day
     pub tokens: TokenCounts,
-    /// Total cost for the day
+    /// Total cost for the day in USD
     pub total_cost: f64,
-    /// Models used during the day
+    /// List of unique models used during the day
     pub models_used: Vec<String>,
-    /// Individual entries for verbose mode
+    /// Individual entries for verbose mode (only populated when verbose flag is set)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entries: Option<Vec<VerboseEntry>>,
 }
@@ -89,13 +107,35 @@ pub struct DailyInstanceUsage {
 }
 
 /// Session usage summary
+///
+/// Aggregates all usage entries for a single session, tracking duration,
+/// token usage, and costs. Sessions are identified by their UUID.
+///
+/// # Examples
+/// ```
+/// use ccstat::aggregation::SessionUsage;
+/// use ccstat::types::{SessionId, TokenCounts, ModelName};
+/// use chrono::Utc;
+///
+/// let session = SessionUsage {
+///     session_id: SessionId::new("550e8400-e29b-41d4-a716-446655440000"),
+///     start_time: Utc::now() - chrono::Duration::hours(2),
+///     end_time: Utc::now(),
+///     tokens: TokenCounts::new(5000, 2500, 500, 250),
+///     total_cost: 0.1275,
+///     model: ModelName::new("claude-3-opus"),
+/// };
+/// 
+/// // Calculate session duration
+/// let duration = session.end_time - session.start_time;
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionUsage {
     /// Session identifier
     pub session_id: SessionId,
-    /// Start timestamp
+    /// Start timestamp (earliest usage in session)
     pub start_time: chrono::DateTime<chrono::Utc>,
-    /// End timestamp
+    /// End timestamp (latest usage in session)
     pub end_time: chrono::DateTime<chrono::Utc>,
     /// Token counts for the session
     pub tokens: TokenCounts,
@@ -106,34 +146,74 @@ pub struct SessionUsage {
 }
 
 /// Monthly usage summary
+///
+/// Aggregates daily usage data into monthly summaries for billing and
+/// trend analysis purposes.
+///
+/// # Examples
+/// ```
+/// use ccstat::aggregation::MonthlyUsage;
+/// use ccstat::types::TokenCounts;
+///
+/// let monthly = MonthlyUsage {
+///     month: "2024-01".to_string(),
+///     tokens: TokenCounts::new(500000, 250000, 50000, 25000),
+///     total_cost: 12.75,
+///     active_days: 20,
+/// };
+/// 
+/// // Average daily cost
+/// let avg_daily_cost = monthly.total_cost / monthly.active_days as f64;
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyUsage {
-    /// Year and month (YYYY-MM)
+    /// Year and month in YYYY-MM format
     pub month: String,
-    /// Token counts for the month
+    /// Total token counts for the month
     pub tokens: TokenCounts,
-    /// Total cost for the month
+    /// Total cost for the month in USD
     pub total_cost: f64,
-    /// Number of days with usage
+    /// Number of days with usage in this month
     pub active_days: usize,
 }
 
 /// 5-hour billing block
+///
+/// Groups sessions into 5-hour windows based on Claude's billing model.
+/// This helps track usage within billing periods and identify when approaching
+/// token limits.
+///
+/// # Examples
+/// ```
+/// use ccstat::aggregation::{SessionBlock, SessionUsage};
+/// use ccstat::types::{SessionId, TokenCounts, ModelName};
+/// use chrono::Utc;
+///
+/// let block = SessionBlock {
+///     start_time: Utc::now() - chrono::Duration::hours(3),
+///     end_time: Utc::now() + chrono::Duration::hours(2),
+///     sessions: vec![],
+///     tokens: TokenCounts::new(8_000_000, 4_000_000, 0, 0),
+///     total_cost: 240.0,
+///     is_active: true,
+///     warning: Some("⚠️  Block has used 12,000,000 tokens, exceeding threshold of 10,000,000 tokens".to_string()),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBlock {
     /// Block start time
     pub start_time: chrono::DateTime<chrono::Utc>,
-    /// Block end time (5 hours later)
+    /// Block end time (5 hours after start)
     pub end_time: chrono::DateTime<chrono::Utc>,
-    /// Sessions in this block
+    /// Sessions included in this block
     pub sessions: Vec<SessionUsage>,
-    /// Total tokens in block
+    /// Total tokens used in this block
     pub tokens: TokenCounts,
-    /// Total cost in block
+    /// Total cost for this block in USD
     pub total_cost: f64,
-    /// Whether block is currently active
+    /// Whether this block is currently active (contains recent usage)
     pub is_active: bool,
-    /// Optional warning message if approaching token limit
+    /// Optional warning message if approaching or exceeding token limits
     pub warning: Option<String>,
 }
 

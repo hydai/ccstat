@@ -23,13 +23,35 @@ use chrono::{Datelike, NaiveDate};
 ///
 /// Supports filtering by date range and project name. All filters are optional
 /// and can be combined for more specific queries.
+///
+/// # Examples
+/// ```
+/// use ccstat::filters::UsageFilter;
+/// use ccstat::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
+/// use chrono::{NaiveDate, Utc};
+///
+/// let filter = UsageFilter::new()
+///     .with_since(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+///
+/// let entry = UsageEntry {
+///     session_id: SessionId::new("test-session"),
+///     timestamp: ISOTimestamp::new(Utc::now()),
+///     model: ModelName::new("claude-3-opus"),
+///     tokens: TokenCounts::new(100, 50, 0, 0),
+///     total_cost: None,
+///     project: Some("my-project".to_string()),
+///     instance_id: None,
+/// };
+///
+/// assert!(filter.matches(&entry));
+/// ```
 #[derive(Debug, Default, Clone)]
 pub struct UsageFilter {
     /// Start date filter (inclusive)
     pub since_date: Option<NaiveDate>,
     /// End date filter (inclusive)
     pub until_date: Option<NaiveDate>,
-    /// Project name filter
+    /// Project name filter (exact match)
     pub project: Option<String>,
 }
 

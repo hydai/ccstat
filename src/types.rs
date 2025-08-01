@@ -43,7 +43,18 @@ impl fmt::Display for ModelName {
     }
 }
 
-/// Strongly-typed session ID
+/// Strongly-typed session ID wrapper
+/// 
+/// Represents a unique identifier for a Claude session. Session IDs are used to group
+/// related usage entries together for aggregation and billing purposes.
+/// 
+/// # Examples
+/// ```
+/// use ccstat::types::SessionId;
+/// 
+/// let session = SessionId::new("550e8400-e29b-41d4-a716-446655440000");
+/// assert_eq!(session.as_str(), "550e8400-e29b-41d4-a716-446655440000");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SessionId(String);
 
@@ -71,7 +82,23 @@ impl AsRef<str> for SessionId {
     }
 }
 
-/// ISO timestamp wrapper
+/// ISO timestamp wrapper for UTC timestamps
+///
+/// Provides a strongly-typed wrapper around chrono's `DateTime<Utc>` with
+/// serialization support and convenient conversion methods.
+///
+/// # Examples
+/// ```
+/// use ccstat::types::ISOTimestamp;
+/// use chrono::{TimeZone, Utc};
+///
+/// let dt = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
+/// let timestamp = ISOTimestamp::new(dt);
+/// 
+/// // Convert to daily date for aggregation
+/// let daily = timestamp.to_daily_date();
+/// assert_eq!(daily.format("%Y-%m-%d"), "2024-01-15");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ISOTimestamp(DateTime<Utc>);
 
@@ -99,6 +126,23 @@ impl AsRef<DateTime<Utc>> for ISOTimestamp {
 }
 
 /// Daily date for aggregation
+///
+/// Represents a calendar date without time information, used for daily
+/// aggregation of usage data. This type ensures consistent date handling
+/// across the application.
+///
+/// # Examples
+/// ```
+/// use ccstat::types::DailyDate;
+/// use chrono::NaiveDate;
+///
+/// let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+/// let daily = DailyDate::new(date);
+/// 
+/// // Format for display
+/// assert_eq!(daily.format("%Y-%m-%d"), "2024-01-15");
+/// assert_eq!(daily.format("%B %d, %Y"), "January 15, 2024");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct DailyDate(NaiveDate);
 
@@ -198,13 +242,38 @@ impl AddAssign for TokenCounts {
 }
 
 /// Cost calculation mode
+///
+/// Determines how costs are calculated when generating reports. This enum
+/// provides flexibility in handling pre-calculated costs vs. dynamic calculation.
+///
+/// # Examples
+/// ```
+/// use ccstat::types::CostMode;
+/// use std::str::FromStr;
+///
+/// // Parse from string
+/// let mode = CostMode::from_str("auto").unwrap();
+/// assert_eq!(mode, CostMode::Auto);
+///
+/// // Display mode formatting
+/// assert_eq!(CostMode::Calculate.to_string(), "calculate");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CostMode {
-    /// Use pre-calculated costs when available
+    /// Use pre-calculated costs when available, otherwise calculate
+    /// 
+    /// This is the default mode that provides the best balance between
+    /// accuracy and performance.
     Auto,
-    /// Always calculate from tokens
+    /// Always calculate from tokens using current pricing data
+    /// 
+    /// Use this mode when you need the most up-to-date cost calculations
+    /// based on the latest pricing information.
     Calculate,
-    /// Always use pre-calculated costs
+    /// Always use pre-calculated costs, error if not available
+    /// 
+    /// Use this mode when you only want to display costs that were
+    /// calculated at the time of usage.
     Display,
 }
 
@@ -238,15 +307,31 @@ impl std::str::FromStr for CostMode {
 }
 
 /// Model pricing information from LiteLLM
+///
+/// Contains pricing rates for different types of token usage. All costs are
+/// in USD per token. Fields are optional to handle models that may not have
+/// all pricing types available.
+///
+/// # Examples
+/// ```
+/// use ccstat::types::ModelPricing;
+///
+/// let pricing = ModelPricing {
+///     input_cost_per_token: Some(0.00001),  // $0.01 per 1K tokens
+///     output_cost_per_token: Some(0.00003), // $0.03 per 1K tokens
+///     cache_creation_input_token_cost: Some(0.0000125),
+///     cache_read_input_token_cost: Some(0.0000025),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelPricing {
-    /// Cost per input token
+    /// Cost per input token in USD
     pub input_cost_per_token: Option<f64>,
-    /// Cost per output token
+    /// Cost per output token in USD
     pub output_cost_per_token: Option<f64>,
-    /// Cost per cache creation token
+    /// Cost per cache creation token in USD
     pub cache_creation_input_token_cost: Option<f64>,
-    /// Cost per cache read token
+    /// Cost per cache read token in USD
     pub cache_read_input_token_cost: Option<f64>,
 }
 
@@ -330,23 +415,48 @@ pub struct RawJsonlEntry {
 }
 
 /// Usage entry from JSONL
+///
+/// Represents a single Claude API usage event parsed from JSONL log files.
+/// This is the primary data structure for tracking usage across the application.
+///
+/// # Examples
+/// ```
+/// use ccstat::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
+/// use chrono::Utc;
+///
+/// let entry = UsageEntry {
+///     session_id: SessionId::new("550e8400-e29b-41d4-a716-446655440000"),
+///     timestamp: ISOTimestamp::new(Utc::now()),
+///     model: ModelName::new("claude-3-opus"),
+///     tokens: TokenCounts::new(1000, 500, 100, 50),
+///     total_cost: Some(0.0255),
+///     project: Some("my-project".to_string()),
+///     instance_id: Some("instance-123".to_string()),
+/// };
+///
+/// // Entries can be serialized to JSON
+/// let json = serde_json::to_string(&entry).unwrap();
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEntry {
-    /// Session identifier
+    /// Session identifier for grouping related API calls
     pub session_id: SessionId,
-    /// Timestamp of the usage
+    /// Timestamp when the API call was made
     pub timestamp: ISOTimestamp,
-    /// Model used
+    /// Model that was used for this API call
     pub model: ModelName,
-    /// Token counts
+    /// Token counts broken down by type
     #[serde(flatten)]
     pub tokens: TokenCounts,
-    /// Pre-calculated total cost (optional)
+    /// Pre-calculated total cost in USD (optional)
+    /// 
+    /// This may be present in the usage logs if cost was calculated
+    /// at the time of the API call.
     pub total_cost: Option<f64>,
-    /// Project name (optional)
+    /// Project name extracted from working directory (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    /// Instance identifier (optional)
+    /// Instance identifier (UUID) for the API call (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instance_id: Option<String>,
 }
@@ -677,5 +787,139 @@ mod tests {
         };
 
         assert!(UsageEntry::from_raw(raw).is_none());
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        // Test with empty string session_id
+        let raw = RawJsonlEntry {
+            session_id: Some("".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: Some("msg_123".to_string()),
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            request_id: Some("req_456".to_string()),
+            cost_usd: None,
+            cost_usd_camel: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+        
+        // Should handle empty session_id
+        let entry = UsageEntry::from_raw(raw).unwrap();
+        assert_eq!(entry.session_id.as_ref(), "");
+    }
+
+    #[test]
+    fn test_model_name_edge_cases() {
+        // Test empty model name
+        assert_eq!(ModelName::new("").as_str(), "");
+        
+        // Test very long model name
+        let long_name = "a".repeat(1000);
+        assert_eq!(ModelName::new(&long_name).as_str(), &long_name);
+        
+        // Test model name with special characters
+        let special_name = "claude-3.5-sonnet@2024";
+        assert_eq!(ModelName::new(special_name).as_str(), special_name);
+    }
+
+    #[test]
+    fn test_token_counts_large_values() {
+        // Test with very large but non-overflowing values
+        let t1 = TokenCounts::new(1_000_000_000, 500_000_000, 100_000_000, 50_000_000);
+        let t2 = TokenCounts::new(2_000_000_000, 1_000_000_000, 200_000_000, 100_000_000);
+        
+        let result = t1 + t2;
+        
+        assert_eq!(result.input_tokens, 3_000_000_000);
+        assert_eq!(result.output_tokens, 1_500_000_000);
+        assert_eq!(result.cache_creation_tokens, 300_000_000);
+        assert_eq!(result.cache_read_tokens, 150_000_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    #[cfg(debug_assertions)]
+    fn test_token_counts_overflow_debug() {
+        // In debug mode, addition should panic on overflow
+        let t1 = TokenCounts::new(u64::MAX - 100, 50, 0, 0);
+        let t2 = TokenCounts::new(200, 50, 0, 0);
+        
+        // This should panic in debug mode
+        let _ = t1 + t2;
+    }
+
+    #[test]
+    fn test_invalid_timestamp_parsing() {
+        let raw = RawJsonlEntry {
+            session_id: Some("session123".to_string()),
+            timestamp: "not-a-valid-timestamp".to_string(),
+            message: Message {
+                model: "claude-3-opus".to_string(),
+                usage: MessageUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                id: Some("msg_123".to_string()),
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            request_id: Some("req_456".to_string()),
+            cost_usd: None,
+            cost_usd_camel: None,
+            is_api_error_message: None,
+            uuid: None,
+            cwd: None,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+        };
+        
+        // Should return None for invalid timestamp
+        assert!(UsageEntry::from_raw(raw).is_none());
+    }
+
+    #[test]
+    fn test_daily_date_edge_cases() {
+        // Test dates at year boundaries
+        let date1 = NaiveDate::from_ymd_opt(2023, 12, 31).unwrap();
+        let dd1 = DailyDate::new(date1);
+        assert_eq!(dd1.inner(), &date1);
+        
+        // Test leap year date
+        let date2 = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
+        let dd2 = DailyDate::new(date2);
+        assert_eq!(dd2.inner(), &date2);
+    }
+
+    #[test]
+    fn test_iso_timestamp_ordering() {
+        let ts1 = ISOTimestamp::new(Utc::now());
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let ts2 = ISOTimestamp::new(Utc::now());
+        
+        assert!(ts1 < ts2);
+        assert!(ts2 > ts1);
+        assert_eq!(ts1, ts1);
     }
 }
