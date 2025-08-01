@@ -41,7 +41,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # MCP/JSON-RPC
 jsonrpc-core = "18.0"
-jsonrpc-core-client = "18.0"
 
 # Performance
 smallvec = "1.13"
@@ -53,7 +52,7 @@ string-interner = "0.19"
 dirs = "6.0"
 derive_more = { version = "2.0", features = ["display", "from", "error"] }
 indicatif = "0.18"
-atty = "0.2"
+is-terminal = "0.4"
 notify = "8.1"
 once_cell = "1.19"
 walkdir = "2.5"

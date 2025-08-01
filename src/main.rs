@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
             info!("Running daily usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && !watch && atty::is(atty::Stream::Stdout);
+            let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
             let data_loader = Arc::new(
                 DataLoader::new()
                     .await?
@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
             info!("Running monthly usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
             info!("Running session usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
@@ -259,7 +259,7 @@ async fn main() -> Result<()> {
             info!("Running billing blocks report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && atty::is(atty::Stream::Stdout);
+            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
@@ -367,7 +367,7 @@ async fn main() -> Result<()> {
             info!("No command specified, running daily report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = atty::is(atty::Stream::Stdout);
+            let show_progress = is_terminal::is_terminal(std::io::stdout());
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
