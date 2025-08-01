@@ -94,18 +94,19 @@ impl LiveMonitor {
                 Config::default(),
             )
             .map_err(|e| {
-                CcstatError::Io(std::io::Error::other(
-                    format!("Failed to create file watcher: {e}")
-                ))
+                CcstatError::Io(std::io::Error::other(format!(
+                    "Failed to create file watcher: {e}"
+                )))
             })?;
 
             // Watch all data directories
             for dir in watched_dirs {
                 if dir.exists() {
                     watcher.watch(&dir, RecursiveMode::Recursive).map_err(|e| {
-                        CcstatError::Io(std::io::Error::other(
-                            format!("Failed to watch directory {}: {e}", dir.display())
-                        ))
+                        CcstatError::Io(std::io::Error::other(format!(
+                            "Failed to watch directory {}: {e}",
+                            dir.display()
+                        )))
                     })?;
                 }
             }
