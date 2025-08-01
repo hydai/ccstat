@@ -205,4 +205,83 @@ mod tests {
         // Expected: (1000 * 0.00001) + (500 * 0.00002) = 0.01 + 0.01 = 0.02
         assert!((cost - 0.02).abs() < 0.000001);
     }
+
+    #[test]
+    fn test_zero_tokens() {
+        let tokens = TokenCounts::new(0, 0, 0, 0);
+        let pricing = ModelPricing {
+            input_cost_per_token: Some(0.00001),
+            output_cost_per_token: Some(0.00002),
+            cache_creation_input_token_cost: Some(0.000015),
+            cache_read_input_token_cost: Some(0.000001),
+        };
+
+        let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_very_large_token_counts() {
+        // Test with large but realistic token counts
+        let tokens = TokenCounts::new(10_000_000, 5_000_000, 1_000_000, 500_000);
+        let pricing = ModelPricing {
+            input_cost_per_token: Some(0.00001),
+            output_cost_per_token: Some(0.00002),
+            cache_creation_input_token_cost: Some(0.000015),
+            cache_read_input_token_cost: Some(0.000001),
+        };
+
+        let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);
+        // Expected: (10M * 0.00001) + (5M * 0.00002) + (1M * 0.000015) + (500k * 0.000001)
+        // = 100 + 100 + 15 + 0.5 = 215.5
+        assert!((cost - 215.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_all_none_pricing() {
+        let tokens = TokenCounts::new(1000, 500, 100, 50);
+        let pricing = ModelPricing {
+            input_cost_per_token: None,
+            output_cost_per_token: None,
+            cache_creation_input_token_cost: None,
+            cache_read_input_token_cost: None,
+        };
+
+        let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_negative_result_protection() {
+        // Even though our types use u64 which can't be negative,
+        // test that cost calculation doesn't produce negative results
+        let tokens = TokenCounts::new(1, 1, 1, 1);
+        let pricing = ModelPricing {
+            input_cost_per_token: Some(0.0),
+            output_cost_per_token: Some(0.0),
+            cache_creation_input_token_cost: Some(0.0),
+            cache_read_input_token_cost: Some(0.0),
+        };
+
+        let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);
+        assert!(cost >= 0.0);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn test_precision_edge_cases() {
+        // Test with very small pricing values
+        let tokens = TokenCounts::new(1, 1, 1, 1);
+        let pricing = ModelPricing {
+            input_cost_per_token: Some(0.000000001), // 1e-9
+            output_cost_per_token: Some(0.000000002), // 2e-9
+            cache_creation_input_token_cost: Some(0.0000000015), // 1.5e-9
+            cache_read_input_token_cost: Some(0.0000000001), // 1e-10
+        };
+
+        let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);
+        // Should handle very small numbers without precision issues
+        assert!(cost > 0.0);
+        assert!(cost < 0.00001);
+    }
 }

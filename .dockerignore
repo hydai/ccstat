@@ -1,0 +1,35 @@
+# Ignore build artifacts
+target/
+Cargo.lock
+
+# Ignore test data
+test-data/
+stress-test-data/
+*.jsonl
+
+# Ignore documentation build
+target/doc/
+
+# Ignore IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore scripts (not needed in container)
+scripts/
+
+# Ignore examples (not needed in runtime)
+examples/
+
+# Ignore docs
+*.md
+docs/

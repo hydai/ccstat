@@ -19,7 +19,10 @@ This is a Rust reimplementation of the original TypeScript tool, offering:
 - 🔍 **Automatic Discovery**: Finds Claude data directories across platforms
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
-- 🔌 **MCP Server**: API access for integrations (coming soon)
+- 🔌 **MCP Server**: JSON-RPC API for tool integrations
+- 👀 **Live Monitoring**: Real-time usage tracking with auto-refresh
+- ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
+- 🔧 **Advanced Filtering**: By date, project, instance, and more
 
 ## Installation
 
@@ -37,6 +40,22 @@ cargo install --path .
 ### Pre-built Binaries
 
 Download the latest release for your platform from the [releases page](https://github.com/yourusername/ccstat/releases).
+
+## Quick Start
+
+```bash
+# View today's usage
+ccstat daily
+
+# View this month's usage
+ccstat monthly
+
+# View all sessions with costs
+ccstat session
+
+# Export data as JSON for further processing
+ccstat daily --json > usage.json
+```
 
 ## Usage
 
@@ -56,6 +75,23 @@ ccstat daily --since 2024-01-01 --until 2024-01-31
 
 # Show per-instance breakdown
 ccstat daily --instances
+
+# Filter by project
+ccstat daily --project my-project
+
+# Live monitoring mode (auto-refresh)
+ccstat daily --watch
+
+# Custom refresh interval (seconds)
+ccstat daily --watch --interval 30
+
+# Performance options
+ccstat daily --parallel        # Enable parallel file processing
+ccstat daily --intern         # Use string interning for memory efficiency
+ccstat daily --arena          # Use arena allocation
+
+# Verbose mode (show detailed token info per entry)
+ccstat daily --verbose
 ```
 
 ### Monthly Summary
@@ -68,6 +104,15 @@ ccstat monthly
 
 # Filter specific months
 ccstat monthly --since 2024-01 --until 2024-03
+
+# JSON output
+ccstat monthly --json
+
+# Filter by project
+ccstat monthly --project my-project
+
+# Show per-instance breakdown
+ccstat monthly --instances
 ```
 
 ### Session Analysis
@@ -80,6 +125,19 @@ ccstat session
 
 # JSON output with full details
 ccstat session --json
+
+# Filter by date range
+ccstat session --since 2024-01-01 --until 2024-01-31
+
+# Filter by project
+ccstat session --project my-project
+
+# Show detailed models per session
+ccstat session --models
+
+# Different cost calculation modes
+ccstat session --mode calculate   # Always calculate from tokens
+ccstat session --mode display     # Use pre-calculated costs only
 ```
 
 ### Billing Blocks
@@ -95,6 +153,12 @@ ccstat blocks --active
 
 # Recent blocks (last 24h)
 ccstat blocks --recent
+
+# JSON output
+ccstat blocks --json
+
+# Filter by project
+ccstat blocks --project my-project
 ```
 
 ### Cost Calculation Modes
@@ -110,6 +174,39 @@ ccstat daily --mode calculate
 
 # Only use pre-calculated costs
 ccstat daily --mode display
+```
+
+### Verbose Mode
+
+Get detailed token information for each API call:
+
+```bash
+# Show individual entries for daily usage
+ccstat daily --verbose
+
+# Verbose mode with JSON output
+ccstat daily --verbose --json
+
+# Verbose mode for specific date
+ccstat daily --verbose --since 2024-01-15 --until 2024-01-15
+```
+
+### Performance Options
+
+Optimize for large datasets:
+
+```bash
+# Enable parallel processing
+ccstat daily --parallel
+
+# Use string interning to reduce memory
+ccstat daily --intern
+
+# Use arena allocation for better performance
+ccstat daily --arena
+
+# Combine all optimizations
+ccstat daily --parallel --intern --arena
 ```
 
 ## Output Examples
@@ -158,6 +255,35 @@ ccstat daily --mode display
 }
 ```
 
+### MCP Server Mode
+
+Run ccstat as an MCP (Model Context Protocol) server for integration with other tools:
+
+```bash
+# Start MCP server on stdio
+ccstat mcp
+
+# Start MCP server on HTTP
+ccstat mcp --transport http --port 8080
+```
+
+The MCP server exposes the following methods:
+- `daily` - Get daily usage data
+- `session` - Get session data
+- `monthly` - Get monthly aggregated data
+
+Example MCP request:
+```json
+{
+  "method": "daily",
+  "params": {
+    "since": "2024-01-01",
+    "until": "2024-01-31",
+    "costMode": "calculate"
+  }
+}
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -172,6 +298,48 @@ ccstat automatically discovers Claude data in standard locations:
 - **macOS**: `~/Library/Application Support/Claude/`
 - **Linux**: `~/.config/Claude/`
 - **Windows**: `%APPDATA%\Claude\`
+
+## Using as a Library
+
+ccstat can also be used as a Rust library. Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+ccstat = "0.1.0"
+```
+
+Example usage:
+
+```rust
+use ccstat::{
+    data_loader::DataLoader,
+    aggregation::Aggregator,
+    cost_calculator::CostCalculator,
+    pricing_fetcher::PricingFetcher,
+    types::CostMode,
+};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> ccstat::Result<()> {
+    // Load and analyze usage data
+    let data_loader = DataLoader::new().await?;
+    let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+    let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+    let aggregator = Aggregator::new(cost_calculator);
+    
+    let entries = data_loader.load_usage_entries();
+    let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
+    
+    for day in &daily_data {
+        println!("{}: {} tokens", day.date, day.tokens.total());
+    }
+    
+    Ok(())
+}
+```
+
+See the `examples/` directory for more usage examples.
 
 ## Development
 
@@ -211,6 +379,36 @@ The project follows a modular architecture:
 3. Make your changes with tests
 4. Run `cargo fmt` and `cargo clippy`
 5. Submit a pull request
+
+## Troubleshooting
+
+### Common Issues
+
+**No data found:**
+- Ensure Claude Code is installed and has been used
+- Check if data exists in the expected location
+- Try setting `CLAUDE_DATA_PATH` environment variable
+
+**Permission errors:**
+- ccstat needs read access to Claude data directory
+- On Unix systems, check directory permissions
+
+**Pricing data unavailable:**
+- ccstat will use embedded pricing data if LiteLLM API is unavailable
+- Check internet connection for latest pricing
+
+**Memory issues with large datasets:**
+- Use `--parallel` flag to enable parallel processing
+- Use `--intern` flag to reduce memory usage for repeated strings
+- Use `--arena` flag for more efficient memory allocation
+
+### Debug Mode
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+RUST_LOG=ccstat=debug ccstat daily
+```
 
 ## License
 

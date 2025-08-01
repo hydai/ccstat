@@ -81,6 +81,15 @@ harness = false
 name = "usage_benchmarks"
 harness = false
 
+[[example]]
+name = "basic_usage"
+
+[[example]]
+name = "custom_filter"
+
+[[example]]
+name = "json_export"
+
 [profile.release]
 lto = true
 codegen-units = 1

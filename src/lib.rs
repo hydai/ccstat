@@ -55,3 +55,52 @@ pub use types::{CostMode, DailyDate, ISOTimestamp, ModelName, SessionId, TokenCo
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_is_set() {
+        assert!(!VERSION.is_empty());
+        assert!(VERSION.contains('.'));
+    }
+
+    #[test]
+    fn test_all_modules_accessible() {
+        // Test that all public modules are accessible
+        use crate::{aggregation, cost_calculator, data_loader};
+
+        // Just ensure they compile - no runtime test needed
+        let _ = std::mem::size_of::<aggregation::Aggregator>();
+        let _ = std::mem::size_of::<cost_calculator::CostCalculator>();
+        let _ = std::mem::size_of::<data_loader::DataLoader>();
+        
+        // Verify module paths are valid
+        let _ = crate::filters::UsageFilter::new();
+        let _ = crate::output::TableFormatter;
+        let _ = crate::output::JsonFormatter;
+        let _ = crate::types::CostMode::Auto;
+    }
+
+    #[test]
+    fn test_reexported_types() {
+        // Test that re-exported types are accessible
+        let _ = CostMode::Auto;
+        let _ = std::mem::size_of::<DailyDate>();
+        let _ = std::mem::size_of::<ISOTimestamp>();
+        let _ = std::mem::size_of::<ModelName>();
+        let _ = std::mem::size_of::<SessionId>();
+        let _ = std::mem::size_of::<TokenCounts>();
+    }
+
+    #[test]
+    fn test_error_type_accessible() {
+        // Ensure error types are properly re-exported
+        fn returns_result() -> Result<()> {
+            Ok(())
+        }
+
+        assert!(returns_result().is_ok());
+    }
+}
