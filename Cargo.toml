@@ -1,10 +1,10 @@
 [package]
 name = "ccstat"
 version = "0.1.0"
-edition = "2021"
-authors = ["ccstat contributors"]
+edition = "2024"
+authors = ["hydai"]
 description = "Analyze Claude Code usage data from local JSONL files"
-repository = "https://github.com/yourusername/ccstat"
+repository = "https://github.com/hydai/ccstat"
 license = "MIT"
 readme = "README.md"
 keywords = ["claude", "usage", "cli", "cost", "analysis"]

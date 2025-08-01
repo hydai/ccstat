@@ -30,7 +30,7 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ccstat
+git clone https://github.com/hydai/ccstat
 cd ccstat
 
 # Build and install
@@ -39,7 +39,7 @@ cargo install --path .
 
 ### Pre-built Binaries
 
-Download the latest release for your platform from the [releases page](https://github.com/yourusername/ccstat/releases).
+Download the latest release for your platform from the [releases page](https://github.com/hydai/ccstat/releases).
 
 ## Quick Start
 
