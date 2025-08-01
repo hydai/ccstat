@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -85,16 +85,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: ccusage
+            binary_name: ccstat
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: ccusage.exe
+            binary_name: ccstat.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: ccusage
+            binary_name: ccstat
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: ccusage
+            binary_name: ccstat
 
     steps:
     - name: Checkout code
@@ -111,8 +111,34 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: ccusage-${{ matrix.target }}
+        name: ccstat-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+
+  benchmarks:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-bench-
+
+    - name: Run benchmarks
+      run: cargo bench --no-run
 
   security-audit:
     name: Security Audit

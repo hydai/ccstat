@@ -77,6 +77,10 @@ harness = false
 name = "cost_calculation"
 harness = false
 
+[[bench]]
+name = "usage_benchmarks"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1
