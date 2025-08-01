@@ -119,7 +119,7 @@ proptest! {
         pricing in arb_model_pricing(),
     ) {
         let cost_base = CostCalculator::calculate_from_pricing(&base_tokens, &pricing);
-        
+
         let increased_tokens = TokenCounts::new(
             base_tokens.input_tokens + additional_input,
             base_tokens.output_tokens,
@@ -127,7 +127,7 @@ proptest! {
             base_tokens.cache_read_tokens,
         );
         let cost_increased = CostCalculator::calculate_from_pricing(&increased_tokens, &pricing);
-        
+
         // Cost should increase or stay the same when tokens increase
         prop_assert!(cost_increased >= cost_base);
     }
@@ -157,11 +157,11 @@ proptest! {
             t3.cache_creation_tokens / 4,
             t3.cache_read_tokens / 4,
         );
-        
+
         // (t1 + t2) + t3 == t1 + (t2 + t3)
         let left = (safe_t1 + safe_t2) + safe_t3;
         let right = safe_t1 + (safe_t2 + safe_t3);
-        
+
         prop_assert_eq!(left, right);
     }
 
@@ -183,7 +183,7 @@ proptest! {
             t2.cache_creation_tokens / 2,
             t2.cache_read_tokens / 2,
         );
-        
+
         // t1 + t2 == t2 + t1
         prop_assert_eq!(safe_t1 + safe_t2, safe_t2 + safe_t1);
     }
@@ -197,7 +197,7 @@ proptest! {
         let ts1 = ISOTimestamp::new(Utc.timestamp_opt(secs1, 0).unwrap());
         let ts2 = ISOTimestamp::new(Utc.timestamp_opt(secs2, 0).unwrap());
         let ts3 = ISOTimestamp::new(Utc.timestamp_opt(secs3, 0).unwrap());
-        
+
         // If ts1 <= ts2 and ts2 <= ts3, then ts1 <= ts3
         if ts1 <= ts2 && ts2 <= ts3 {
             prop_assert!(ts1 <= ts3);
@@ -211,19 +211,19 @@ proptest! {
         // Serialize and deserialize should produce the same entry
         let serialized = serde_json::to_string(&entry).unwrap();
         let deserialized: UsageEntry = serde_json::from_str(&serialized).unwrap();
-        
+
         prop_assert_eq!(entry.session_id, deserialized.session_id);
         prop_assert_eq!(entry.timestamp, deserialized.timestamp);
         prop_assert_eq!(entry.model, deserialized.model);
         prop_assert_eq!(entry.tokens, deserialized.tokens);
-        
+
         // For floating point comparison, check within epsilon
         match (entry.total_cost, deserialized.total_cost) {
             (Some(a), Some(b)) => prop_assert!((a - b).abs() < 1e-10),
             (None, None) => {},
             _ => prop_assert!(false, "Cost mismatch: {:?} vs {:?}", entry.total_cost, deserialized.total_cost),
         }
-        
+
         prop_assert_eq!(entry.project, deserialized.project);
         prop_assert_eq!(entry.instance_id, deserialized.instance_id);
     }
@@ -234,10 +234,10 @@ proptest! {
         month in 1u32..=12,
         day in 1u32..=28, // Using 28 to avoid invalid dates
     ) {
-        let date_str = format!("{:04}-{:02}-{:02}", year, month, day);
+        let date_str = format!("{year:04}-{month:02}-{day:02}");
         let result = ccstat::cli::parse_date_filter(&date_str);
         prop_assert!(result.is_ok());
-        
+
         let parsed_date = result.unwrap();
         prop_assert_eq!(parsed_date.year(), year);
         prop_assert_eq!(parsed_date.month(), month);
@@ -249,10 +249,10 @@ proptest! {
         year in 2020i32..2030,
         month in 1u32..=12,
     ) {
-        let month_str = format!("{:04}-{:02}", year, month);
+        let month_str = format!("{year:04}-{month:02}");
         let result = ccstat::cli::parse_month_filter(&month_str);
         prop_assert!(result.is_ok());
-        
+
         let (parsed_year, parsed_month) = result.unwrap();
         prop_assert_eq!(parsed_year, year);
         prop_assert_eq!(parsed_month, month);
@@ -268,7 +268,7 @@ mod aggregation_property_tests {
         pricing_fetcher::PricingFetcher,
         types::CostMode,
     };
-    use futures::{stream, StreamExt};
+    use futures::{StreamExt, stream};
 
     proptest! {
         #[test]
@@ -280,15 +280,15 @@ mod aggregation_property_tests {
                 let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
                 let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
                 let aggregator = Aggregator::new(cost_calculator);
-                
+
                 let entries_stream = stream::iter(entries.clone().into_iter().map(Ok));
                 let daily_data = aggregator
                     .aggregate_daily(entries_stream, CostMode::Calculate)
                     .await
                     .unwrap();
-                
+
                 let totals = Totals::from_daily(&daily_data);
-                
+
                 // Total tokens should equal sum of all daily totals
                 let expected_input: u64 = daily_data.iter()
                     .map(|d| d.tokens.input_tokens)
@@ -296,7 +296,7 @@ mod aggregation_property_tests {
                 let expected_output: u64 = daily_data.iter()
                     .map(|d| d.tokens.output_tokens)
                     .sum();
-                
+
                 assert_eq!(totals.tokens.input_tokens, expected_input);
                 assert_eq!(totals.tokens.output_tokens, expected_output);
             });
@@ -310,24 +310,22 @@ mod aggregation_property_tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let now = chrono::Utc::now().date_naive();
             let filter_date = now - chrono::Duration::days(filter_days);
-            
+
             rt.block_on(async {
                 let filter = UsageFilter::new()
                     .with_since(filter_date);
-                
+
                 let entries_stream = stream::iter(entries.into_iter().map(Ok));
                 let filtered: Vec<_> = filter
                     .filter_stream(entries_stream)
                     .await
                     .collect::<Vec<_>>()
                     .await;
-                
+
                 // All filtered entries should match the filter
-                for entry_result in &filtered {
-                    if let Ok(entry) = entry_result {
-                        let entry_date = entry.timestamp.as_ref().date_naive();
-                        assert!(entry_date >= filter_date);
-                    }
+                for entry in filtered.iter().flatten() {
+                    let entry_date = entry.timestamp.as_ref().date_naive();
+                    assert!(entry_date >= filter_date);
                 }
             });
         }

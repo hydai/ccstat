@@ -2,7 +2,7 @@
 
 use ccstat::{
     aggregation::{Aggregator, Totals},
-    cli::{parse_date_filter, parse_month_filter, Cli, Command, McpTransport},
+    cli::{Cli, Command, McpTransport, parse_date_filter, parse_month_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::Result,

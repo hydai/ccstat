@@ -1,14 +1,10 @@
 //! Basic usage example for ccstat library
-//! 
+//!
 //! This example shows how to use ccstat as a library to analyze Claude usage data.
 
 use ccstat::{
-    aggregation::Aggregator,
-    cost_calculator::CostCalculator,
-    data_loader::DataLoader,
-    pricing_fetcher::PricingFetcher,
-    types::CostMode,
-    Result,
+    Result, aggregation::Aggregator, cost_calculator::CostCalculator, data_loader::DataLoader,
+    pricing_fetcher::PricingFetcher, types::CostMode,
 };
 use std::sync::Arc;
 
@@ -32,10 +28,8 @@ async fn main() -> Result<()> {
     // Aggregate by day
     println!("\nDaily Usage Summary:");
     println!("====================");
-    
-    let daily_data = aggregator
-        .aggregate_daily(entries, CostMode::Auto)
-        .await?;
+
+    let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
 
     for day in &daily_data {
         println!(
@@ -52,8 +46,8 @@ async fn main() -> Result<()> {
 
     println!("\nTotal Usage:");
     println!("============");
-    println!("Tokens: {}", total_tokens);
-    println!("Cost: ${:.2}", total_cost);
+    println!("Tokens: {total_tokens}");
+    println!("Cost: ${total_cost:.2}");
 
     Ok(())
 }

@@ -34,8 +34,8 @@
 
 use crate::error::{CcstatError, Result};
 use crate::types::{RawJsonlEntry, UsageEntry};
-use futures::stream::Stream;
 use futures::StreamExt;
+use futures::stream::Stream;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::HashSet;

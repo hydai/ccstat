@@ -216,8 +216,8 @@ impl MonthFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ModelName, SessionId, TokenCounts};
     use crate::ISOTimestamp;
+    use crate::types::{ModelName, SessionId, TokenCounts};
     use chrono::{DateTime, Utc};
 
     #[test]

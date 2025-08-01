@@ -273,10 +273,10 @@ mod tests {
         // Test with very small pricing values
         let tokens = TokenCounts::new(1, 1, 1, 1);
         let pricing = ModelPricing {
-            input_cost_per_token: Some(0.000000001), // 1e-9
-            output_cost_per_token: Some(0.000000002), // 2e-9
+            input_cost_per_token: Some(0.000000001),             // 1e-9
+            output_cost_per_token: Some(0.000000002),            // 2e-9
             cache_creation_input_token_cost: Some(0.0000000015), // 1.5e-9
-            cache_read_input_token_cost: Some(0.0000000001), // 1e-10
+            cache_read_input_token_cost: Some(0.0000000001),     // 1e-10
         };
 
         let cost = CostCalculator::calculate_from_pricing(&tokens, &pricing);

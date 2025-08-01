@@ -36,7 +36,7 @@
 use crate::aggregation::{
     DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals,
 };
-use prettytable::{format, row, Cell, Row, Table};
+use prettytable::{Cell, Row, Table, format, row};
 use serde_json::json;
 
 /// Trait for output formatters
@@ -613,10 +613,10 @@ impl OutputFormatter for JsonFormatter {
 ///
 /// // Get table formatter for human-readable output
 /// let formatter = get_formatter(false);
-/// 
+///
 /// // Get JSON formatter for machine-readable output
 /// let json_formatter = get_formatter(true);
-/// 
+///
 /// // Use with data
 /// let daily_data = vec![
 ///     DailyUsage {
@@ -628,7 +628,7 @@ impl OutputFormatter for JsonFormatter {
 ///     },
 /// ];
 /// let totals = Totals::from_daily(&daily_data);
-/// 
+///
 /// let output = formatter.format_daily(&daily_data, &totals);
 /// ```
 pub fn get_formatter(json: bool) -> Box<dyn OutputFormatter> {

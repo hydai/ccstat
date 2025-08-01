@@ -44,14 +44,14 @@ impl fmt::Display for ModelName {
 }
 
 /// Strongly-typed session ID wrapper
-/// 
+///
 /// Represents a unique identifier for a Claude session. Session IDs are used to group
 /// related usage entries together for aggregation and billing purposes.
-/// 
+///
 /// # Examples
 /// ```
 /// use ccstat::types::SessionId;
-/// 
+///
 /// let session = SessionId::new("550e8400-e29b-41d4-a716-446655440000");
 /// assert_eq!(session.as_str(), "550e8400-e29b-41d4-a716-446655440000");
 /// ```
@@ -94,7 +94,7 @@ impl AsRef<str> for SessionId {
 ///
 /// let dt = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
 /// let timestamp = ISOTimestamp::new(dt);
-/// 
+///
 /// // Convert to daily date for aggregation
 /// let daily = timestamp.to_daily_date();
 /// assert_eq!(daily.format("%Y-%m-%d"), "2024-01-15");
@@ -138,7 +138,7 @@ impl AsRef<DateTime<Utc>> for ISOTimestamp {
 ///
 /// let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 /// let daily = DailyDate::new(date);
-/// 
+///
 /// // Format for display
 /// assert_eq!(daily.format("%Y-%m-%d"), "2024-01-15");
 /// assert_eq!(daily.format("%B %d, %Y"), "January 15, 2024");
@@ -261,17 +261,17 @@ impl AddAssign for TokenCounts {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CostMode {
     /// Use pre-calculated costs when available, otherwise calculate
-    /// 
+    ///
     /// This is the default mode that provides the best balance between
     /// accuracy and performance.
     Auto,
     /// Always calculate from tokens using current pricing data
-    /// 
+    ///
     /// Use this mode when you need the most up-to-date cost calculations
     /// based on the latest pricing information.
     Calculate,
     /// Always use pre-calculated costs, error if not available
-    /// 
+    ///
     /// Use this mode when you only want to display costs that were
     /// calculated at the time of usage.
     Display,
@@ -449,7 +449,7 @@ pub struct UsageEntry {
     #[serde(flatten)]
     pub tokens: TokenCounts,
     /// Pre-calculated total cost in USD (optional)
-    /// 
+    ///
     /// This may be present in the usage logs if cost was calculated
     /// at the time of the API call.
     pub total_cost: Option<f64>,
@@ -819,7 +819,7 @@ mod tests {
             version: None,
             git_branch: None,
         };
-        
+
         // Should handle empty session_id
         let entry = UsageEntry::from_raw(raw).unwrap();
         assert_eq!(entry.session_id.as_ref(), "");
@@ -829,11 +829,11 @@ mod tests {
     fn test_model_name_edge_cases() {
         // Test empty model name
         assert_eq!(ModelName::new("").as_str(), "");
-        
+
         // Test very long model name
         let long_name = "a".repeat(1000);
         assert_eq!(ModelName::new(&long_name).as_str(), &long_name);
-        
+
         // Test model name with special characters
         let special_name = "claude-3.5-sonnet@2024";
         assert_eq!(ModelName::new(special_name).as_str(), special_name);
@@ -844,9 +844,9 @@ mod tests {
         // Test with very large but non-overflowing values
         let t1 = TokenCounts::new(1_000_000_000, 500_000_000, 100_000_000, 50_000_000);
         let t2 = TokenCounts::new(2_000_000_000, 1_000_000_000, 200_000_000, 100_000_000);
-        
+
         let result = t1 + t2;
-        
+
         assert_eq!(result.input_tokens, 3_000_000_000);
         assert_eq!(result.output_tokens, 1_500_000_000);
         assert_eq!(result.cache_creation_tokens, 300_000_000);
@@ -860,7 +860,7 @@ mod tests {
         // In debug mode, addition should panic on overflow
         let t1 = TokenCounts::new(u64::MAX - 100, 50, 0, 0);
         let t2 = TokenCounts::new(200, 50, 0, 0);
-        
+
         // This should panic in debug mode
         let _ = t1 + t2;
     }
@@ -894,7 +894,7 @@ mod tests {
             version: None,
             git_branch: None,
         };
-        
+
         // Should return None for invalid timestamp
         assert!(UsageEntry::from_raw(raw).is_none());
     }
@@ -905,7 +905,7 @@ mod tests {
         let date1 = NaiveDate::from_ymd_opt(2023, 12, 31).unwrap();
         let dd1 = DailyDate::new(date1);
         assert_eq!(dd1.inner(), &date1);
-        
+
         // Test leap year date
         let date2 = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
         let dd2 = DailyDate::new(date2);
@@ -917,7 +917,7 @@ mod tests {
         let ts1 = ISOTimestamp::new(Utc::now());
         std::thread::sleep(std::time::Duration::from_millis(10));
         let ts2 = ISOTimestamp::new(Utc::now());
-        
+
         assert!(ts1 < ts2);
         assert!(ts2 > ts1);
         assert_eq!(ts1, ts1);

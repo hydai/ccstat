@@ -125,7 +125,7 @@ pub struct DailyInstanceUsage {
 ///     total_cost: 0.1275,
 ///     model: ModelName::new("claude-3-opus"),
 /// };
-/// 
+///
 /// // Calculate session duration
 /// let duration = session.end_time - session.start_time;
 /// ```
@@ -161,7 +161,7 @@ pub struct SessionUsage {
 ///     total_cost: 12.75,
 ///     active_days: 20,
 /// };
-/// 
+///
 /// // Average daily cost
 /// let avg_daily_cost = monthly.total_cost / monthly.active_days as f64;
 /// ```

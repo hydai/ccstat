@@ -8,7 +8,7 @@ use ccstat::{
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::{DateTime, NaiveDate, Utc};
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use std::sync::Arc;
 
 fn create_test_entry(
@@ -350,17 +350,17 @@ async fn test_instance_grouping() {
 #[tokio::test]
 async fn test_empty_data_handling() {
     let entries: Vec<UsageEntry> = vec![];
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
         .aggregate_daily(entries_stream, CostMode::Auto)
         .await
         .unwrap();
-    
+
     assert!(daily_data.is_empty());
 }
 
@@ -396,25 +396,25 @@ async fn test_session_duration_calculation() {
             instance_id: None,
         },
     ];
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let session_data = aggregator
         .aggregate_sessions(entries_stream, CostMode::Calculate)
         .await
         .unwrap();
-    
+
     assert_eq!(session_data.len(), 1);
     assert_eq!(session_data[0].session_id.as_str(), "session-1");
-    
+
     // Check duration is approximately 1 hour
     let duration = session_data[0].end_time - session_data[0].start_time;
     assert!(duration.num_minutes() >= 60);
     assert!(duration.num_minutes() <= 61);
-    
+
     // Check tokens are accumulated
     assert_eq!(session_data[0].tokens.input_tokens, 600);
     assert_eq!(session_data[0].tokens.output_tokens, 300);
@@ -463,19 +463,19 @@ async fn test_mixed_models_handling() {
             instance_id: None,
         },
     ];
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
         .aggregate_daily(entries_stream, CostMode::Calculate)
         .await
         .unwrap();
-    
+
     assert_eq!(daily_data.len(), 1);
-    
+
     // Check that all models are tracked
     let models = &daily_data[0].models_used;
     assert_eq!(models.len(), 3);
@@ -486,30 +486,28 @@ async fn test_mixed_models_handling() {
 
 #[tokio::test]
 async fn test_cache_tokens_handling() {
-    let entries = vec![
-        UsageEntry {
-            session_id: SessionId::new("s1"),
-            timestamp: ISOTimestamp::new(chrono::Utc::now()),
-            model: ModelName::new("claude-3-opus"),
-            tokens: TokenCounts::new(1000, 500, 200, 100),
-            total_cost: None,
-            project: None,
-            instance_id: None,
-        },
-    ];
-    
+    let entries = vec![UsageEntry {
+        session_id: SessionId::new("s1"),
+        timestamp: ISOTimestamp::new(chrono::Utc::now()),
+        model: ModelName::new("claude-3-opus"),
+        tokens: TokenCounts::new(1000, 500, 200, 100),
+        total_cost: None,
+        project: None,
+        instance_id: None,
+    }];
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
         .aggregate_daily(entries_stream, CostMode::Calculate)
         .await
         .unwrap();
-    
+
     assert_eq!(daily_data.len(), 1);
-    
+
     // Verify cache tokens are preserved
     assert_eq!(daily_data[0].tokens.cache_creation_tokens, 200);
     assert_eq!(daily_data[0].tokens.cache_read_tokens, 100);
@@ -518,7 +516,7 @@ async fn test_cache_tokens_handling() {
 #[tokio::test]
 async fn test_billing_block_edge_cases() {
     use ccstat::aggregation::SessionUsage;
-    
+
     // Create sessions that span exactly 5 hours
     let now = chrono::Utc::now();
     let sessions = vec![
@@ -547,19 +545,19 @@ async fn test_billing_block_edge_cases() {
             model: ModelName::new("claude-3-opus"),
         },
     ];
-    
+
     let blocks = Aggregator::create_billing_blocks(&sessions);
-    
+
     // Should have at least one block
     assert!(!blocks.is_empty());
-    
+
     // Check that the active block contains the recent session
     let active_blocks: Vec<_> = blocks.iter().filter(|b| b.is_active).collect();
-    
+
     // Since sessions are more than 5 hours apart, there might be no active blocks
     // or one active block depending on the current time
     assert!(active_blocks.len() <= 1);
-    
+
     // Verify the active block's duration if there is one
     if !active_blocks.is_empty() {
         let duration = active_blocks[0].end_time - active_blocks[0].start_time;
@@ -567,10 +565,10 @@ async fn test_billing_block_edge_cases() {
     }
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_error_handling() {
     use ccstat::error::CcstatError;
-    
+
     // Test with invalid date filter
     let result = ccstat::cli::parse_date_filter("invalid-date");
     assert!(result.is_err());
@@ -578,7 +576,7 @@ async fn test_error_handling() {
         Err(CcstatError::InvalidDate(_)) => {}
         _ => panic!("Expected InvalidDate error"),
     }
-    
+
     // Test with invalid month filter
     let result = ccstat::cli::parse_month_filter("2024-13");
     assert!(result.is_err());

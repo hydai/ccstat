@@ -1,6 +1,6 @@
 use ccstat::types::{ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry};
 use chrono::Utc;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::io::Write;
 use tempfile::NamedTempFile;
 

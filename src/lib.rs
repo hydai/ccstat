@@ -62,7 +62,8 @@ mod tests {
 
     #[test]
     fn test_version_is_set() {
-        assert!(!VERSION.is_empty());
+        // VERSION is a compile-time constant, so we know it's not empty
+        assert_ne!(VERSION, "");
         assert!(VERSION.contains('.'));
     }
 
@@ -75,7 +76,7 @@ mod tests {
         let _ = std::mem::size_of::<aggregation::Aggregator>();
         let _ = std::mem::size_of::<cost_calculator::CostCalculator>();
         let _ = std::mem::size_of::<data_loader::DataLoader>();
-        
+
         // Verify module paths are valid
         let _ = crate::filters::UsageFilter::new();
         let _ = crate::output::TableFormatter;

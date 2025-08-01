@@ -3,13 +3,8 @@
 //! This example demonstrates how to filter usage data by date range and project.
 
 use ccstat::{
-    aggregation::Aggregator,
-    cost_calculator::CostCalculator,
-    data_loader::DataLoader,
-    filters::UsageFilter,
-    pricing_fetcher::PricingFetcher,
-    types::CostMode,
-    Result,
+    Result, aggregation::Aggregator, cost_calculator::CostCalculator, data_loader::DataLoader,
+    filters::UsageFilter, pricing_fetcher::PricingFetcher, types::CostMode,
 };
 use chrono::NaiveDate;
 use std::sync::Arc;
@@ -44,7 +39,7 @@ async fn main() -> Result<()> {
     } else {
         println!("January 2024 Usage:");
         println!("==================");
-        
+
         for day in &daily_data {
             println!(
                 "{}: {} input, {} output tokens",
@@ -52,21 +47,21 @@ async fn main() -> Result<()> {
                 day.tokens.input_tokens,
                 day.tokens.output_tokens
             );
-            
+
             // Show models used
             if !day.models_used.is_empty() {
                 println!("  Models: {}", day.models_used.join(", "));
             }
         }
-        
+
         // Monthly summary
         let total_tokens: u64 = daily_data.iter().map(|d| d.tokens.total()).sum();
         let total_cost: f64 = daily_data.iter().map(|d| d.total_cost).sum();
-        
+
         println!("\nJanuary 2024 Summary:");
         println!("====================");
-        println!("Total tokens: {}", total_tokens);
-        println!("Total cost: ${:.2}", total_cost);
+        println!("Total tokens: {total_tokens}");
+        println!("Total cost: ${total_cost:.2}");
         println!("Active days: {}", daily_data.len());
     }
 
