@@ -7,19 +7,16 @@ This is the `ccstat` project - a CLI tool to analyze Claude Code usage data from
 
 ### Building the project
 ```bash
-cd ccstat
 cargo build --release
 ```
 
 ### Running tests
 ```bash
-cd ccstat
 cargo test
 ```
 
 ### Running lints and format checks
 ```bash
-cd ccstat
 cargo fmt -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
@@ -55,3 +52,10 @@ cargo run -- blocks
 
 ## Rust Best Practices
 - Always run cargo clippy --all-targets --all-features -- -D warnings to follow the Rust best practices
+
+## Git Commit Guidelines
+- Use clear, descriptive commit messages
+- Follow conventional commit style (e.g., `feat:`, `fix:`, `docs:`)
+- Group related changes together
+- Avoid large, monolithic commits
+- Before committing, ensure all tests pass and code is formatted
