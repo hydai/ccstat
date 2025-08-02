@@ -19,7 +19,13 @@ COPY src ./src
 # Copy embedded data (required at build time)
 COPY embedded ./embedded
 
-# Build release binary (only the binary, skip examples and benches)
+# Copy examples (required for Cargo.toml validation)
+COPY examples ./examples
+
+# Copy benches (required for Cargo.toml validation)
+COPY benches ./benches
+
+# Build release binary (only the binary, skip building examples and benches)
 RUN cargo build --release --locked --bin ccstat
 
 # Runtime stage
