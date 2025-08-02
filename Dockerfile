@@ -2,7 +2,7 @@
 # Builds a minimal container with just the ccstat binary
 
 # Build stage
-FROM rust:1.75-alpine AS builder
+FROM rust:1.83-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev openssl-dev
