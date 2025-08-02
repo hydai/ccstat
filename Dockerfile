@@ -5,7 +5,7 @@
 FROM rust:1.85-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev openssl-dev
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
 
 # Create app directory
 WORKDIR /app
