@@ -15,11 +15,12 @@ COPY Cargo.toml Cargo.lock ./
 
 # Copy source code
 COPY src ./src
-COPY benches ./benches
-COPY examples ./examples
 
-# Build release binary
-RUN cargo build --release --locked
+# Copy embedded data (required at build time)
+COPY embedded ./embedded
+
+# Build release binary (only the binary, skip examples and benches)
+RUN cargo build --release --locked --bin ccstat
 
 # Runtime stage
 FROM alpine:3.19
