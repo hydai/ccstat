@@ -67,6 +67,10 @@ impl LiveMonitor {
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_refresh_watcher = should_refresh.clone();
 
+        // Track if we should stop
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_watcher = should_stop.clone();
+
         // Set up file watching
         let (tx, mut rx) = mpsc::channel(10);
         let watched_dirs = self.data_loader.get_data_directories().await?;
@@ -111,10 +115,13 @@ impl LiveMonitor {
                 }
             }
 
-            // Keep the watcher alive
-            loop {
-                std::thread::sleep(Duration::from_secs(60));
+            // Keep the watcher alive until we're told to stop
+            while !should_stop_watcher.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(100));
             }
+
+            drop(watcher);
+            Ok(())
         });
 
         // Set up interval timer
@@ -148,8 +155,27 @@ impl LiveMonitor {
             }
         }
 
-        // Clean up watcher
-        watcher_handle.abort();
+        // Signal the watcher thread to stop
+        should_stop.store(true, Ordering::Relaxed);
+
+        // Give the watcher thread a chance to exit cleanly
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Now abort the handle if it's still running
+        if !watcher_handle.is_finished() {
+            watcher_handle.abort();
+        }
+
+        // Wait for it to finish and check for panics
+        match watcher_handle.await {
+            Ok(_) => {}
+            Err(e) => {
+                if e.is_panic() {
+                    tracing::warn!("Watcher task panicked: {:?}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 
