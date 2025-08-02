@@ -1,5 +1,7 @@
 # ccstat
 
+[![Crates.io](https://img.shields.io/crates/v/ccstat.svg)](https://crates.io/crates/ccstat)
+
 Analyze Claude Code usage data from local JSONL files.
 
 ## Overview
