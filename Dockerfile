@@ -2,23 +2,19 @@
 # Builds a minimal container with just the ccstat binary
 
 # Build stage
-FROM rust:1.75-alpine AS builder
+FROM rust:1.85-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev openssl-dev
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
 
 # Create app directory
 WORKDIR /app
 
-# Copy manifest files
-COPY Cargo.toml Cargo.lock ./
+# Copy all project files (dockerignore will exclude unwanted files)
+COPY . .
 
-# Copy source code
-COPY src ./src
-COPY benches ./benches
-
-# Build release binary
-RUN cargo build --release --locked
+# Build release binary (only the binary, skip building examples and benches)
+RUN cargo build --release --locked --bin ccstat
 
 # Runtime stage
 FROM alpine:3.19
