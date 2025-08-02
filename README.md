@@ -28,6 +28,14 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 
 ## Installation
 
+### From crates.io
+
+The easiest way to install ccstat is using cargo:
+
+```bash
+cargo install ccstat
+```
+
 ### From Source
 
 ```bash
