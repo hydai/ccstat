@@ -1,6 +1,5 @@
 # Ignore build artifacts
 target/
-Cargo.lock
 
 # Ignore test data
 test-data/
