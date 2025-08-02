@@ -162,10 +162,19 @@ impl LiveMonitor {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Now abort the handle if it's still running
-        watcher_handle.abort();
+        if !watcher_handle.is_finished() {
+            watcher_handle.abort();
+        }
 
-        // Wait for it to finish
-        let _ = watcher_handle.await;
+        // Wait for it to finish and check for panics
+        match watcher_handle.await {
+            Ok(_) => {}
+            Err(e) => {
+                if e.is_panic() {
+                    tracing::warn!("Watcher task panicked: {:?}", e);
+                }
+            }
+        }
 
         Ok(())
     }
