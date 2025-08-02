@@ -10,20 +10,8 @@ RUN apk add --no-cache musl-dev openssl-dev
 # Create app directory
 WORKDIR /app
 
-# Copy manifest files
-COPY Cargo.toml Cargo.lock ./
-
-# Copy source code
-COPY src ./src
-
-# Copy embedded data (required at build time)
-COPY embedded ./embedded
-
-# Copy examples (required for Cargo.toml validation)
-COPY examples ./examples
-
-# Copy benches (required for Cargo.toml validation)
-COPY benches ./benches
+# Copy all project files (dockerignore will exclude unwanted files)
+COPY . .
 
 # Build release binary (only the binary, skip building examples and benches)
 RUN cargo build --release --locked --bin ccstat
