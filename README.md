@@ -61,18 +61,18 @@ You can run ccstat using Docker without installing Rust or building from source:
 docker pull hydai/ccstat:latest
 
 # Run ccstat with your Claude data directory mounted
-docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat daily
+docker run -v "$HOME/.claude:/data:ro" hydai/ccstat daily
 
 # Use a specific version
-docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat:v1.0.0 monthly
+docker run -v "$HOME/.claude:/data:ro" hydai/ccstat:v1.0.0 monthly
 
 # Run with custom options
-docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat daily --json --since 2024-01-01
+docker run -v "$HOME/.claude:/data:ro" hydai/ccstat daily --json --since 2024-01-01
 ```
 
-For Linux users, adjust the data path:
+For Linux users, the path is the same:
 ```bash
-docker run -v "$HOME/.config/Claude:/data:ro" hydai/ccstat daily
+docker run -v "$HOME/.claude:/data:ro" hydai/ccstat daily
 ```
 
 For Windows users (PowerShell):
@@ -336,8 +336,8 @@ Example MCP request:
 
 ccstat automatically discovers Claude data in standard locations:
 
-- **macOS**: `~/Library/Application Support/Claude/`
-- **Linux**: `~/.config/Claude/`
+- **macOS**: `~/.claude/`
+- **Linux**: `~/.claude/`
 - **Windows**: `%APPDATA%\Claude\`
 
 ## Using as a Library
