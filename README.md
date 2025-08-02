@@ -1,6 +1,7 @@
 # ccstat
 
 [![Crates.io](https://img.shields.io/crates/v/ccstat.svg)](https://crates.io/crates/ccstat)
+[![Docker Hub](https://img.shields.io/docker/v/hydai/ccstat?label=docker&sort=semver)](https://hub.docker.com/r/hydai/ccstat)
 
 Analyze Claude Code usage data from local JSONL files.
 
@@ -50,6 +51,36 @@ cargo install --path .
 ### Pre-built Binaries
 
 Download the latest release for your platform from the [releases page](https://github.com/hydai/ccstat/releases).
+
+### Docker
+
+You can run ccstat using Docker without installing Rust or building from source:
+
+```bash
+# Pull the latest image
+docker pull hydai/ccstat:latest
+
+# Run ccstat with your Claude data directory mounted
+docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat daily
+
+# Use a specific version
+docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat:v1.0.0 monthly
+
+# Run with custom options
+docker run -v "$HOME/Library/Application Support/Claude:/data:ro" hydai/ccstat daily --json --since 2024-01-01
+```
+
+For Linux users, adjust the data path:
+```bash
+docker run -v "$HOME/.config/Claude:/data:ro" hydai/ccstat daily
+```
+
+For Windows users (PowerShell):
+```powershell
+docker run -v "$env:APPDATA\Claude:/data:ro" hydai/ccstat daily
+```
+
+The Docker image is multi-platform and supports both `linux/amd64` and `linux/arm64` architectures.
 
 ## Quick Start
 
