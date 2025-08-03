@@ -176,19 +176,19 @@ impl LiveMonitor {
                         tracing::warn!("Watcher task panicked: {:?}", e);
                     }
                     Err(e) => {
-                        if e.is_cancelled() {
-                            // This is unexpected in our logic since we don't cancel elsewhere
-                            tracing::warn!("Watcher task was cancelled");
-                        } else {
-                            tracing::warn!("Watcher task join error: {}", e);
-                        }
+                        // This is unexpected in our logic since we don't cancel elsewhere
+                        tracing::warn!("Watcher task was cancelled: {}", e);
                     }
                 }
             }
             _ = tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT) => {
                 watcher_handle.abort();
                 // The aborted task still needs to be awaited to free resources
-                let _ = watcher_handle.await;
+                if let Err(e) = watcher_handle.await {
+                    if e.is_panic() {
+                        tracing::warn!("Watcher task panicked during forced shutdown: {:?}", e);
+                    }
+                }
                 tracing::warn!(
                     "Watcher task was aborted because it did not shut down gracefully in time"
                 );
