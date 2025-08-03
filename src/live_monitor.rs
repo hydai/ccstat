@@ -168,7 +168,11 @@ impl LiveMonitor {
 
         // Wait for it to finish and check for panics
         match watcher_handle.await {
-            Ok(_) => {}
+            Ok(result) => {
+                if let Err(e) = result {
+                    tracing::warn!("Watcher task exited with an error: {}", e);
+                }
+            }
             Err(e) => {
                 if e.is_panic() {
                     tracing::warn!("Watcher task panicked: {:?}", e);
