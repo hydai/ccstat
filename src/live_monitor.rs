@@ -28,6 +28,10 @@ use tokio::{
     time::{MissedTickBehavior, interval},
 };
 
+// Constants for watcher thread management
+const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
+
 /// Live monitoring state
 pub struct LiveMonitor {
     data_loader: Arc<DataLoader>,
@@ -63,10 +67,6 @@ impl LiveMonitor {
 
     /// Start the live monitoring loop
     pub async fn run(self) -> Result<()> {
-        // Constants for watcher thread management
-        const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
-        const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
-
         // Track if we need to refresh
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_refresh_watcher = should_refresh.clone();
@@ -80,7 +80,7 @@ impl LiveMonitor {
         let watched_dirs = self.data_loader.get_data_directories().await?;
 
         // Create watcher in a separate task
-        let watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
             let mut watcher = RecommendedWatcher::new(
                 move |result: notify::Result<Event>| {
                     if let Ok(event) = result {
@@ -162,29 +162,36 @@ impl LiveMonitor {
         // Signal the watcher thread to stop
         should_stop.store(true, Ordering::Release);
 
-        // Give the watcher thread a chance to exit cleanly
-        tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT).await;
-
-        // Now abort the handle if it's still running
-        if !watcher_handle.is_finished() {
-            watcher_handle.abort();
-        }
-
-        // Wait for it to finish and check for panics
-        match watcher_handle.await {
-            Ok(result) => {
-                if let Err(e) = result {
-                    tracing::warn!("Watcher task exited with an error: {}", e);
+        // Wait for the watcher to finish with a timeout
+        tokio::select! {
+            res = &mut watcher_handle => {
+                match res {
+                    Ok(Ok(_)) => {
+                        tracing::debug!("Watcher task exited gracefully");
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!("Watcher task exited with an error: {}", e);
+                    }
+                    Err(e) if e.is_panic() => {
+                        tracing::warn!("Watcher task panicked: {:?}", e);
+                    }
+                    Err(e) => {
+                        if e.is_cancelled() {
+                            // This is unexpected in our logic since we don't cancel elsewhere
+                            tracing::warn!("Watcher task was cancelled");
+                        } else {
+                            tracing::warn!("Watcher task join error: {}", e);
+                        }
+                    }
                 }
             }
-            Err(e) => {
-                if e.is_panic() {
-                    tracing::warn!("Watcher task panicked: {:?}", e);
-                } else if e.is_cancelled() {
-                    tracing::warn!(
-                        "Watcher task was aborted because it did not shut down gracefully in time"
-                    );
-                }
+            _ = tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT) => {
+                watcher_handle.abort();
+                // The aborted task still needs to be awaited to free resources
+                let _ = watcher_handle.await;
+                tracing::warn!(
+                    "Watcher task was aborted because it did not shut down gracefully in time"
+                );
             }
         }
 
