@@ -91,7 +91,7 @@ impl LiveMonitor {
                             // Check if any path is a JSONL file
                             for path in &event.paths {
                                 if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                                    should_refresh_watcher.store(true, Ordering::Relaxed);
+                                    should_refresh_watcher.store(true, Ordering::Release);
                                     let _ = tx.blocking_send(());
                                     break;
                                 }
@@ -120,7 +120,7 @@ impl LiveMonitor {
             }
 
             // Keep the watcher alive until we're told to stop
-            while !should_stop_watcher.load(Ordering::Relaxed) {
+            while !should_stop_watcher.load(Ordering::Acquire) {
                 std::thread::sleep(WATCHER_POLL_INTERVAL);
             }
 
@@ -140,16 +140,16 @@ impl LiveMonitor {
             tokio::select! {
                 _ = interval.tick() => {
                     // Regular interval refresh
-                    if should_refresh.load(Ordering::Relaxed) {
+                    if should_refresh.load(Ordering::Acquire) {
                         self.refresh_display().await?;
-                        should_refresh.store(false, Ordering::Relaxed);
+                        should_refresh.store(false, Ordering::Release);
                     }
                 }
                 _ = rx.recv() => {
                     // File change detected, wait a bit for writes to complete
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     self.refresh_display().await?;
-                    should_refresh.store(false, Ordering::Relaxed);
+                    should_refresh.store(false, Ordering::Release);
                 }
                 _ = tokio::signal::ctrl_c() => {
                     // Graceful shutdown
@@ -160,7 +160,7 @@ impl LiveMonitor {
         }
 
         // Signal the watcher thread to stop
-        should_stop.store(true, Ordering::Relaxed);
+        should_stop.store(true, Ordering::Release);
 
         // Give the watcher thread a chance to exit cleanly
         tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT).await;
