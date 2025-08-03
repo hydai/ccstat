@@ -63,6 +63,10 @@ impl LiveMonitor {
 
     /// Start the live monitoring loop
     pub async fn run(self) -> Result<()> {
+        // Constants for watcher thread management
+        const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
+        const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
+
         // Track if we need to refresh
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_refresh_watcher = should_refresh.clone();
@@ -117,7 +121,7 @@ impl LiveMonitor {
 
             // Keep the watcher alive until we're told to stop
             while !should_stop_watcher.load(Ordering::Relaxed) {
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(WATCHER_POLL_INTERVAL);
             }
 
             drop(watcher);
@@ -159,7 +163,7 @@ impl LiveMonitor {
         should_stop.store(true, Ordering::Relaxed);
 
         // Give the watcher thread a chance to exit cleanly
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT).await;
 
         // Now abort the handle if it's still running
         if !watcher_handle.is_finished() {
