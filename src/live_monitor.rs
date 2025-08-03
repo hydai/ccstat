@@ -176,6 +176,10 @@ impl LiveMonitor {
             Err(e) => {
                 if e.is_panic() {
                     tracing::warn!("Watcher task panicked: {:?}", e);
+                } else if e.is_cancelled() {
+                    tracing::warn!(
+                        "Watcher task was aborted because it did not shut down gracefully in time"
+                    );
                 }
             }
         }
