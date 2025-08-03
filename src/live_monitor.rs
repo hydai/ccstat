@@ -28,6 +28,10 @@ use tokio::{
     time::{MissedTickBehavior, interval},
 };
 
+// Constants for watcher thread management
+const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
+
 /// Live monitoring state
 pub struct LiveMonitor {
     data_loader: Arc<DataLoader>,
@@ -67,12 +71,16 @@ impl LiveMonitor {
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_refresh_watcher = should_refresh.clone();
 
+        // Track if we should stop
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_watcher = should_stop.clone();
+
         // Set up file watching
         let (tx, mut rx) = mpsc::channel(10);
         let watched_dirs = self.data_loader.get_data_directories().await?;
 
         // Create watcher in a separate task
-        let watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
             let mut watcher = RecommendedWatcher::new(
                 move |result: notify::Result<Event>| {
                     if let Ok(event) = result {
@@ -83,7 +91,7 @@ impl LiveMonitor {
                             // Check if any path is a JSONL file
                             for path in &event.paths {
                                 if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                                    should_refresh_watcher.store(true, Ordering::Relaxed);
+                                    should_refresh_watcher.store(true, Ordering::Release);
                                     let _ = tx.blocking_send(());
                                     break;
                                 }
@@ -111,10 +119,13 @@ impl LiveMonitor {
                 }
             }
 
-            // Keep the watcher alive
-            loop {
-                std::thread::sleep(Duration::from_secs(60));
+            // Keep the watcher alive until we're told to stop
+            while !should_stop_watcher.load(Ordering::Acquire) {
+                std::thread::sleep(WATCHER_POLL_INTERVAL);
             }
+
+            drop(watcher);
+            Ok(())
         });
 
         // Set up interval timer
@@ -129,16 +140,16 @@ impl LiveMonitor {
             tokio::select! {
                 _ = interval.tick() => {
                     // Regular interval refresh
-                    if should_refresh.load(Ordering::Relaxed) {
+                    if should_refresh.load(Ordering::Acquire) {
                         self.refresh_display().await?;
-                        should_refresh.store(false, Ordering::Relaxed);
+                        should_refresh.store(false, Ordering::Release);
                     }
                 }
                 _ = rx.recv() => {
                     // File change detected, wait a bit for writes to complete
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     self.refresh_display().await?;
-                    should_refresh.store(false, Ordering::Relaxed);
+                    should_refresh.store(false, Ordering::Release);
                 }
                 _ = tokio::signal::ctrl_c() => {
                     // Graceful shutdown
@@ -148,8 +159,42 @@ impl LiveMonitor {
             }
         }
 
-        // Clean up watcher
-        watcher_handle.abort();
+        // Signal the watcher thread to stop
+        should_stop.store(true, Ordering::Release);
+
+        // Wait for the watcher to finish with a timeout
+        tokio::select! {
+            res = &mut watcher_handle => {
+                match res {
+                    Ok(Ok(_)) => {
+                        tracing::debug!("Watcher task exited gracefully");
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!("Watcher task exited with an error: {}", e);
+                    }
+                    Err(e) if e.is_panic() => {
+                        tracing::warn!("Watcher task panicked: {:?}", e);
+                    }
+                    Err(e) => {
+                        // This is unexpected in our logic since we don't cancel elsewhere
+                        tracing::warn!("Watcher task was cancelled: {}", e);
+                    }
+                }
+            }
+            _ = tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT) => {
+                watcher_handle.abort();
+                // The aborted task still needs to be awaited to free resources
+                if let Err(e) = watcher_handle.await {
+                    if e.is_panic() {
+                        tracing::warn!("Watcher task panicked during forced shutdown: {:?}", e);
+                    }
+                }
+                tracing::warn!(
+                    "Watcher task was aborted because it did not shut down gracefully in time"
+                );
+            }
+        }
+
         Ok(())
     }
 
