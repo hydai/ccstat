@@ -60,23 +60,23 @@ pub fn create_full_usage_entry(
 /// Create sample pricing data for tests
 pub fn create_test_pricing() -> HashMap<String, f64> {
     let mut pricing = HashMap::new();
-    
+
     // Claude 3 models
     pricing.insert("claude-3-opus:input".to_string(), 0.000015);
     pricing.insert("claude-3-opus:output".to_string(), 0.000075);
     pricing.insert("claude-3-opus:cache_input".to_string(), 0.0000075);
     pricing.insert("claude-3-opus:cache_output".to_string(), 0.000075);
-    
+
     pricing.insert("claude-3-sonnet:input".to_string(), 0.000003);
     pricing.insert("claude-3-sonnet:output".to_string(), 0.000015);
     pricing.insert("claude-3-sonnet:cache_input".to_string(), 0.0000015);
     pricing.insert("claude-3-sonnet:cache_output".to_string(), 0.000015);
-    
+
     pricing.insert("claude-3-haiku:input".to_string(), 0.00000025);
     pricing.insert("claude-3-haiku:output".to_string(), 0.00000125);
     pricing.insert("claude-3-haiku:cache_input".to_string(), 0.000000125);
     pricing.insert("claude-3-haiku:cache_output".to_string(), 0.00000125);
-    
+
     pricing
 }
 
@@ -117,7 +117,7 @@ pub fn create_daily_entries() -> Vec<UsageEntry> {
 /// Create sample entries spanning multiple days
 pub fn create_multi_day_entries() -> Vec<UsageEntry> {
     let mut entries = Vec::new();
-    
+
     // Day 1
     entries.push(create_usage_entry(
         "session-1",
@@ -133,7 +133,7 @@ pub fn create_multi_day_entries() -> Vec<UsageEntry> {
         2000,
         1000,
     ));
-    
+
     // Day 2
     entries.push(create_usage_entry(
         "session-3",
@@ -149,7 +149,7 @@ pub fn create_multi_day_entries() -> Vec<UsageEntry> {
         4000,
         2000,
     ));
-    
+
     // Day 3
     entries.push(create_usage_entry(
         "session-5",
@@ -158,7 +158,7 @@ pub fn create_multi_day_entries() -> Vec<UsageEntry> {
         5000,
         2500,
     ));
-    
+
     entries
 }
 

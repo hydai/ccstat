@@ -378,11 +378,11 @@ mod tests {
 
     async fn create_test_setup_with_temp_dir() -> (Arc<DataLoader>, Arc<Aggregator>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a completely isolated directory structure
         let usage_dir = temp_dir.path().join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         // Set environment variables to create complete isolation
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", &usage_dir);
@@ -390,7 +390,7 @@ mod tests {
             env::set_var("USERPROFILE", temp_dir.path());
             env::set_var("XDG_DATA_HOME", temp_dir.path());
         }
-        
+
         // Create data loader using the environment variable
         let data_loader = match DataLoader::new().await {
             Ok(loader) => Arc::new(loader),
@@ -403,39 +403,39 @@ mod tests {
                 return create_minimal_test_setup().await;
             }
         };
-        
+
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator));
-        
+
         (data_loader, aggregator, temp_dir)
     }
 
     async fn create_minimal_test_setup() -> (Arc<DataLoader>, Arc<Aggregator>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a dummy directory structure
         std::fs::create_dir_all(temp_dir.path().join(".claude")).unwrap();
-        
+
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", temp_dir.path().join(".claude"));
         }
-        
+
         let data_loader = DataLoader::new().await.unwrap();
         let data_loader = Arc::new(data_loader);
-        
+
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator));
-        
+
         (data_loader, aggregator, temp_dir)
     }
-    
+
     async fn create_test_setup_with_data() -> (Arc<DataLoader>, Arc<Aggregator>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let usage_dir = temp_dir.path().join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         // Set environment variables to create complete isolation
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", &usage_dir);
@@ -443,16 +443,16 @@ mod tests {
             env::set_var("USERPROFILE", temp_dir.path());
             env::set_var("XDG_DATA_HOME", temp_dir.path());
         }
-        
+
         // Create test JSONL file
         let jsonl_path = usage_dir.join("test_data.jsonl");
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write test data
         let now = chrono::Utc::now();
         let recent = now - chrono::Duration::minutes(2);
         let old = now - chrono::Duration::hours(1);
-        
+
         let entries = vec![
             serde_json::json!({
                 "sessionId": "session-1",
@@ -484,19 +484,19 @@ mod tests {
                 "cost_usd": 0.02
             }),
         ];
-        
+
         for entry in entries {
             file.write_all(entry.to_string().as_bytes()).await.unwrap();
             file.write_all(b"\n").await.unwrap();
         }
-        
+
         let data_loader = DataLoader::new().await.unwrap();
         let data_loader = Arc::new(data_loader);
-        
+
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator));
-        
+
         (data_loader, aggregator, temp_dir)
     }
 
@@ -562,14 +562,14 @@ mod tests {
         // Test that the monitor can be created with JSON output
         assert!(monitor.json_output);
         assert_eq!(monitor.interval_secs, 5);
-        
+
         // Clean up
         cleanup_env();
     }
 
     #[tokio::test]
     async fn test_live_monitor_with_instances_mode() {
-        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;  
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
         let filter = UsageFilter::new();
 
         let monitor = LiveMonitor::new(
@@ -586,7 +586,7 @@ mod tests {
         assert!(monitor.instances);
         assert_eq!(monitor.cost_mode, CostMode::Calculate);
         assert_eq!(monitor.interval_secs, 10);
-        
+
         // Clean up
         cleanup_env();
     }
@@ -611,7 +611,7 @@ mod tests {
         assert!(monitor.instances);
         assert_eq!(monitor.cost_mode, CostMode::Display);
         assert_eq!(monitor.interval_secs, 30);
-        
+
         // Clean up
         cleanup_env();
     }
@@ -634,28 +634,28 @@ mod tests {
                 assert!(matches!(e, CcstatError::Io(_)));
             }
         }
-        
+
         // Clean up
         cleanup_env();
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_live_monitor_active_session_detection_logic() {
         // Test the active session detection logic without calling refresh_display
         let now = chrono::Utc::now();
         let recent_time = now - chrono::Duration::minutes(2); // Within 5-minute window
         let old_time = now - chrono::Duration::hours(1); // Outside 5-minute window
-        
+
         // Test that we can identify recent vs old timestamps
         let active_cutoff = now - chrono::Duration::minutes(5);
-        
+
         assert!(recent_time > active_cutoff, "Recent time should be within active window");
         assert!(old_time < active_cutoff, "Old time should be outside active window");
-        
+
         // This tests the core logic without the display complications
         let recent_duration = now - recent_time;
         let old_duration = now - old_time;
-        
+
         assert!(recent_duration < chrono::Duration::minutes(5));
         assert!(old_duration > chrono::Duration::minutes(5));
     }
@@ -693,12 +693,12 @@ mod tests {
             }
         }
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_regular_mode() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -708,22 +708,22 @@ mod tests {
             false,  // not instances
             5,
         );
-        
+
         // Test refresh_display
         let result = monitor.refresh_display().await;
         if let Err(e) = &result {
             eprintln!("refresh_display failed with: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_json_mode() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -733,22 +733,22 @@ mod tests {
             false,  // not instances
             5,
         );
-        
+
         // Test refresh_display with JSON output
         let result = monitor.refresh_display().await;
         if let Err(e) = &result {
             eprintln!("refresh_display json mode failed with: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_instances_mode() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -758,19 +758,19 @@ mod tests {
             true,   // instances mode
             5,
         );
-        
+
         // Test refresh_display with instances mode
         let result = monitor.refresh_display().await;
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_json_instances_mode() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -780,20 +780,20 @@ mod tests {
             true,   // instances mode
             5,
         );
-        
+
         // Test refresh_display with both JSON and instances mode
         let result = monitor.refresh_display().await;
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_with_filter() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
         let filter = UsageFilter::new()
             .with_project("test".to_string());
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -803,32 +803,32 @@ mod tests {
             false,
             5,
         );
-        
+
         // Test refresh_display with filter
         let result = monitor.refresh_display().await;
         if let Err(e) = &result {
             eprintln!("refresh_display with filter failed with: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_no_active_sessions() {
         let (data_loader, aggregator, temp_dir) = create_test_setup_with_temp_dir().await;
-        
+
         // Create data file with only old entries
         let usage_dir = temp_dir.path().join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", &usage_dir);
         }
-        
+
         let jsonl_path = usage_dir.join("old_data.jsonl");
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
         let entry = serde_json::json!({
             "sessionId": "old-session",
@@ -843,10 +843,10 @@ mod tests {
             },
             "cost_usd": 0.01
         });
-        
+
         file.write_all(entry.to_string().as_bytes()).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         let filter = UsageFilter::new();
         let monitor = LiveMonitor::new(
             data_loader,
@@ -857,20 +857,20 @@ mod tests {
             false,
             5,
         );
-        
+
         // Should handle case with no active sessions
         let result = monitor.refresh_display().await;
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     #[ignore] // This test is timing out in CI
     async fn test_run_method_immediate_stop() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -880,30 +880,30 @@ mod tests {
             false,
             1,     // 1 second interval
         );
-        
+
         // Run the monitor in a task that we'll cancel quickly
         let monitor_handle = tokio::spawn(async move {
             monitor.run().await
         });
-        
+
         // Give it time to start
         sleep(Duration::from_millis(100)).await;
-        
+
         // Cancel the task
         monitor_handle.abort();
-        
+
         // The task should abort cleanly
         assert!(monitor_handle.await.is_err());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     #[ignore] // This test is timing out in CI
     async fn test_run_method_with_timeout() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -913,25 +913,25 @@ mod tests {
             false,
             1,     // 1 second interval
         );
-        
+
         // Run with a timeout
         let result = timeout(Duration::from_secs(2), monitor.run()).await;
-        
+
         // Should timeout since we're not sending ctrl+c
         assert!(result.is_err());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_get_data_directories_no_directories() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Set CLAUDE_DATA_PATH to non-existent directory
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", temp_dir.path().join("nonexistent"));
         }
-        
+
         match DataLoader::new().await {
             Ok(data_loader) => {
                 let result = data_loader.get_data_directories().await;
@@ -950,18 +950,18 @@ mod tests {
                 // Expected in test environment
             }
         }
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_live_monitor_all_cost_modes() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
-        
+
         // Only test Display mode since other modes require pricing data
         for mode in [CostMode::Display] {
             let filter = UsageFilter::new();
-            
+
             let monitor = LiveMonitor::new(
                 data_loader.clone(),
                 aggregator.clone(),
@@ -971,20 +971,20 @@ mod tests {
                 false,
                 5,
             );
-            
+
             // Test refresh_display works with each cost mode
             let result = monitor.refresh_display().await;
             assert!(result.is_ok(), "Failed with mode: {:?}", mode);
         }
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_empty_data() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
         let filter = UsageFilter::new();
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -994,17 +994,17 @@ mod tests {
             false,
             5,
         );
-        
+
         // Should handle empty data gracefully
         let result = monitor.refresh_display().await;
         if let Err(e) = &result {
             eprintln!("refresh_display with empty data failed with: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_watcher_constants() {
         // Test that our constants are reasonable
@@ -1012,14 +1012,14 @@ mod tests {
         assert_eq!(WATCHER_SHUTDOWN_TIMEOUT, Duration::from_millis(200));
         assert!(WATCHER_SHUTDOWN_TIMEOUT > WATCHER_POLL_INTERVAL);
     }
-    
+
     #[tokio::test]
     async fn test_refresh_display_with_date_filter() {
         let (data_loader, aggregator, _temp_dir) = create_test_setup_with_data().await;
-        
+
         let since = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
         let filter = UsageFilter::new().with_since(since);
-        
+
         let monitor = LiveMonitor::new(
             data_loader,
             aggregator,
@@ -1029,27 +1029,27 @@ mod tests {
             true,  // instances mode
             5,
         );
-        
+
         let result = monitor.refresh_display().await;
         assert!(result.is_ok());
-        
+
         cleanup_env();
     }
-    
+
     #[tokio::test]
     async fn test_atomic_bool_operations() {
         // Test the atomic operations used in the monitor
         let should_refresh = Arc::new(AtomicBool::new(true));
         let should_stop = Arc::new(AtomicBool::new(false));
-        
+
         // Test initial values
         assert!(should_refresh.load(Ordering::Acquire));
         assert!(!should_stop.load(Ordering::Acquire));
-        
+
         // Test store and load
         should_refresh.store(false, Ordering::Release);
         assert!(!should_refresh.load(Ordering::Acquire));
-        
+
         should_stop.store(true, Ordering::Release);
         assert!(should_stop.load(Ordering::Acquire));
     }

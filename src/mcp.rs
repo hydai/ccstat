@@ -727,374 +727,374 @@ mod tests {
         assert_eq!(args.until, None);
         assert_eq!(args.project, None);
     }
-    
+
     #[tokio::test]
     async fn test_mcp_server_new_success() {
         use std::env;
         use tempfile::TempDir;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         let server = McpServer::new().await;
         assert!(server.is_ok());
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_mcp_server_new_failure() {
         use std::env;
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
         // Don't create the claude directory - this should cause an error
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         let server = McpServer::new().await;
         assert!(server.is_err());
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_daily_with_mock_data() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         // Setup test environment
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         // Create test data file
         let test_file = usage_dir.join("test.jsonl");
         let test_data = r#"{"sessionId":"test-1","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500}},"cost_usd":0.05}"#;
         fs::write(&test_file, test_data).unwrap();
-        
+
         // Create server and test handler
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Auto",
             "since": "2024-01-01",
             "until": "2024-01-31"
         });
-        
+
         let result = McpServer::handle_daily(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(response.is_object());
         assert!(response["daily"].is_array());
         assert!(response["totals"].is_object());
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_daily_invalid_date() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Auto",
             "since": "invalid-date"
         });
-        
+
         let result = McpServer::handle_daily(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code, jsonrpc_core::ErrorCode::InvalidParams);
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_monthly_success() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         // Create test data
         let test_file = usage_dir.join("test.jsonl");
         let test_data = r#"{"sessionId":"test-1","timestamp":"2024-01-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500}},"cost_usd":0.05}
 {"sessionId":"test-2","timestamp":"2024-02-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":2000,"output_tokens":1000}},"cost_usd":0.10}"#;
         fs::write(&test_file, test_data).unwrap();
-        
+
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Calculate",
             "since": "2024-01",
             "until": "2024-02"
         });
-        
+
         let result = McpServer::handle_monthly(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(response["monthly"].is_array());
         assert!(response["totals"].is_object());
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_monthly_invalid_month() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Auto",
             "since": "2024-13" // Invalid month
         });
-        
+
         let result = McpServer::handle_monthly(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, jsonrpc_core::ErrorCode::InvalidParams);
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_session_success() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         // Create test data with sessions
         let test_file = usage_dir.join("test.jsonl");
         let test_data = r#"{"sessionId":"session-1","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500}},"cost_usd":0.05}
 {"sessionId":"session-1","timestamp":"2024-01-01T10:30:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":500,"output_tokens":250}},"cost_usd":0.025}
 {"sessionId":"session-2","timestamp":"2024-01-01T14:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":300,"output_tokens":150}},"cost_usd":0.01}"#;
         fs::write(&test_file, test_data).unwrap();
-        
+
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Display",
             "since": "2024-01-01",
             "until": "2024-01-31"
         });
-        
+
         let result = McpServer::handle_session(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(response["sessions"].is_array());
         // Sessions might be empty if the data is not loaded properly
         // Just check that the response structure is correct
         assert!(response["totals"].is_object());
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_create_handler_methods() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         let server = McpServer::new().await.unwrap();
         let handler = server.create_handler();
-        
+
         // Test server_info method
         let request = r#"{"jsonrpc":"2.0","method":"server_info","id":1}"#;
         let response = handler.handle_request(request).await.unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&response).unwrap();
-        
+
         assert_eq!(parsed["id"], 1);
         assert!(parsed["result"]["name"].is_string());
         assert!(parsed["result"]["version"].is_string());
         assert!(parsed["result"]["methods"].is_array());
-        
+
         let methods = parsed["result"]["methods"].as_array().unwrap();
         assert!(methods.contains(&json!("daily")));
         assert!(methods.contains(&json!("monthly")));
         assert!(methods.contains(&json!("session")));
         assert!(methods.contains(&json!("server_info")));
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[tokio::test]
     async fn test_handle_daily_with_project_filter() {
         use tempfile::TempDir;
         use std::env;
         use std::fs;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().join(".claude");
         let usage_dir = claude_dir.join("usage");
         fs::create_dir_all(&usage_dir).unwrap();
-        
+
         unsafe {
             env::set_var("HOME", temp_dir.path());
             env::set_var("USERPROFILE", temp_dir.path());
         }
-        
+
         // Create test data with different projects
         let test_file = usage_dir.join("test.jsonl");
         let test_data = r#"{"sessionId":"test-1","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500}},"cwd":"/home/user/project-a","cost_usd":0.05}
 {"sessionId":"test-2","timestamp":"2024-01-01T11:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":2000,"output_tokens":1000}},"cwd":"/home/user/project-b","cost_usd":0.10}"#;
         fs::write(&test_file, test_data).unwrap();
-        
+
         let server = McpServer::new().await.unwrap();
         let loader = server.data_loader.clone();
         let aggregator = server.aggregator.clone();
-        
+
         let params = json!({
             "mode": "Auto",
             "project": "project-a"
         });
-        
+
         let result = McpServer::handle_daily(
             Params::Map(serde_json::from_value(params).unwrap()),
             loader,
             aggregator
         ).await;
-        
+
         assert!(result.is_ok());
         // Result should only include data from project-a
-        
+
         unsafe {
             env::remove_var("HOME");
             env::remove_var("USERPROFILE");
         }
     }
-    
+
     #[test]
     fn test_session_args_all_fields() {
         let json = json!({
@@ -1102,17 +1102,17 @@ mod tests {
             "since": "2024-01-01",
             "until": "2024-12-31"
         });
-        
+
         let args: SessionArgs = serde_json::from_value(json).unwrap();
         assert_eq!(args.mode, CostMode::Calculate);
         assert_eq!(args.since, Some("2024-01-01".to_string()));
         assert_eq!(args.until, Some("2024-12-31".to_string()));
     }
-    
+
     #[test]
     fn test_monthly_args_defaults() {
         let json = json!({});
-        
+
         let args: MonthlyArgs = serde_json::from_value(json).unwrap();
         assert_eq!(args.mode, CostMode::Auto);
         assert_eq!(args.since, None);

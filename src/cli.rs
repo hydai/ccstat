@@ -330,17 +330,17 @@ mod tests {
         assert!(parse_month_filter("2024-13").is_err());
         assert!(parse_month_filter("invalid").is_err());
     }
-    
+
     #[test]
     fn test_mcp_transport_display() {
         assert_eq!(McpTransport::Stdio.to_string(), "stdio");
         assert_eq!(McpTransport::Http.to_string(), "http");
-        
+
         // Test with format! macro
         assert_eq!(format!("{}", McpTransport::Stdio), "stdio");
         assert_eq!(format!("{}", McpTransport::Http), "http");
     }
-    
+
     #[test]
     fn test_mcp_transport_from_str() {
         assert_eq!(McpTransport::from_str("stdio").unwrap(), McpTransport::Stdio);
@@ -348,17 +348,17 @@ mod tests {
         assert_eq!(McpTransport::from_str("STDIO").unwrap(), McpTransport::Stdio);
         assert_eq!(McpTransport::from_str("HTTP").unwrap(), McpTransport::Http);
         assert_eq!(McpTransport::from_str("StDiO").unwrap(), McpTransport::Stdio);
-        
+
         // Test error case
         assert!(McpTransport::from_str("invalid").is_err());
         assert!(McpTransport::from_str("tcp").is_err());
         assert!(McpTransport::from_str("").is_err());
-        
+
         // Check error message
         let err = McpTransport::from_str("unknown").unwrap_err();
         assert!(err.contains("Invalid transport"));
     }
-    
+
     #[test]
     fn test_command_cost_mode() {
         let daily_auto = Command::Daily {
@@ -376,7 +376,7 @@ mod tests {
             verbose: false,
         };
         assert_eq!(daily_auto.cost_mode(), CostMode::Auto);
-        
+
         let monthly_calculate = Command::Monthly {
             mode: CostMode::Calculate,
             json: false,
@@ -384,7 +384,7 @@ mod tests {
             until: None,
         };
         assert_eq!(monthly_calculate.cost_mode(), CostMode::Calculate);
-        
+
         let session_display = Command::Session {
             mode: CostMode::Display,
             json: false,
@@ -392,7 +392,7 @@ mod tests {
             until: None,
         };
         assert_eq!(session_display.cost_mode(), CostMode::Display);
-        
+
         let blocks_auto = Command::Blocks {
             mode: CostMode::Auto,
             json: false,
@@ -401,14 +401,14 @@ mod tests {
             token_limit: None,
         };
         assert_eq!(blocks_auto.cost_mode(), CostMode::Auto);
-        
+
         let mcp = Command::Mcp {
             transport: McpTransport::Stdio,
             port: 8080,
         };
         assert_eq!(mcp.cost_mode(), CostMode::Auto);
     }
-    
+
     #[test]
     fn test_command_is_json() {
         let daily_json = Command::Daily {
@@ -426,7 +426,7 @@ mod tests {
             verbose: false,
         };
         assert!(daily_json.is_json());
-        
+
         let daily_no_json = Command::Daily {
             mode: CostMode::Auto,
             json: false,
@@ -442,7 +442,7 @@ mod tests {
             verbose: false,
         };
         assert!(!daily_no_json.is_json());
-        
+
         let monthly_json = Command::Monthly {
             mode: CostMode::Auto,
             json: true,
@@ -450,7 +450,7 @@ mod tests {
             until: None,
         };
         assert!(monthly_json.is_json());
-        
+
         let session_no_json = Command::Session {
             mode: CostMode::Auto,
             json: false,
@@ -458,7 +458,7 @@ mod tests {
             until: None,
         };
         assert!(!session_no_json.is_json());
-        
+
         let blocks_json = Command::Blocks {
             mode: CostMode::Auto,
             json: true,
@@ -467,33 +467,33 @@ mod tests {
             token_limit: None,
         };
         assert!(blocks_json.is_json());
-        
+
         let mcp = Command::Mcp {
             transport: McpTransport::Http,
             port: 8080,
         };
         assert!(!mcp.is_json());
     }
-    
+
     #[test]
     fn test_mcp_transport_debug() {
         // Test Debug trait implementation
         assert_eq!(format!("{:?}", McpTransport::Stdio), "Stdio");
         assert_eq!(format!("{:?}", McpTransport::Http), "Http");
     }
-    
+
     #[test]
     fn test_mcp_transport_equality() {
         assert_eq!(McpTransport::Stdio, McpTransport::Stdio);
         assert_eq!(McpTransport::Http, McpTransport::Http);
         assert_ne!(McpTransport::Stdio, McpTransport::Http);
-        
+
         // Test Clone
         let transport = McpTransport::Stdio;
         let cloned = transport.clone();
         assert_eq!(transport, cloned);
     }
-    
+
     #[test]
     fn test_cli_with_all_commands() {
         // Test that all command variants can be parsed
@@ -502,7 +502,7 @@ mod tests {
         let _ = Cli::parse_from(["ccstat", "session"]);
         let _ = Cli::parse_from(["ccstat", "blocks"]);
         let _ = Cli::parse_from(["ccstat", "mcp"]);
-        
+
         // Test with no command (default)
         let cli = Cli::parse_from(["ccstat"]);
         assert!(cli.command.is_none());

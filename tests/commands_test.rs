@@ -18,18 +18,18 @@ async fn setup_test_env() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
     let data_path = temp_dir.path().join("claude_data");
     fs::create_dir_all(&data_path).unwrap();
-    
+
     // Also clear HOME to prevent loading user's real data
     unsafe {
         env::set_var("CLAUDE_DATA_PATH", &data_path);
         env::set_var("HOME", temp_dir.path());
         env::set_var("USERPROFILE", temp_dir.path()); // Windows
     }
-    
+
     // Create a sample JSONL file
     let jsonl_path = data_path.join("usage.jsonl");
     let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-    
+
     // Write test data
     let test_data = vec![
         r#"{"sessionId":"test-session-1","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":100,"cache_read_input_tokens":50}},"cwd":"/home/user/project","cost_usd":0.05}"#,
@@ -37,12 +37,12 @@ async fn setup_test_env() -> TempDir {
         r#"{"sessionId":"test-session-2","timestamp":"2024-01-02T14:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":500,"output_tokens":250}},"cost_usd":0.02}"#,
         r#"{"sessionId":"test-session-3","timestamp":"2024-02-15T09:00:00Z","type":"assistant","message":{"model":"claude-3-haiku","usage":{"input_tokens":300,"output_tokens":150}},"cost_usd":0.01}"#,
     ];
-    
+
     for line in test_data {
         file.write_all(line.as_bytes()).await.unwrap();
         file.write_all(b"\n").await.unwrap();
     }
-    
+
     temp_dir
 }
 
@@ -58,11 +58,11 @@ fn cleanup_test_env() {
 #[serial]
 async fn test_execute_default_with_data() {
     let _temp_dir = setup_test_env().await;
-    
+
     // Capture stdout
     let result = execute_default().await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -70,7 +70,7 @@ async fn test_execute_default_with_data() {
 #[serial]
 async fn test_execute_daily_basic() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -85,10 +85,10 @@ async fn test_execute_daily_basic() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -96,7 +96,7 @@ async fn test_execute_daily_basic() {
 #[serial]
 async fn test_execute_daily_with_filters() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Calculate,
         json: true,
@@ -111,10 +111,10 @@ async fn test_execute_daily_with_filters() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -122,7 +122,7 @@ async fn test_execute_daily_with_filters() {
 #[serial]
 async fn test_execute_daily_with_instances() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: true,
@@ -137,10 +137,10 @@ async fn test_execute_daily_with_instances() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -148,7 +148,7 @@ async fn test_execute_daily_with_instances() {
 #[serial]
 async fn test_execute_daily_parallel() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -163,10 +163,10 @@ async fn test_execute_daily_parallel() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -174,7 +174,7 @@ async fn test_execute_daily_parallel() {
 #[serial]
 async fn test_execute_daily_verbose() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -189,10 +189,10 @@ async fn test_execute_daily_verbose() {
         arena: false,
         verbose: true,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -200,17 +200,17 @@ async fn test_execute_daily_verbose() {
 #[serial]
 async fn test_execute_monthly_basic() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = MonthlyConfig {
         mode: CostMode::Auto,
         json: false,
         since: None,
         until: None,
     };
-    
+
     let result = execute_monthly(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -218,17 +218,17 @@ async fn test_execute_monthly_basic() {
 #[serial]
 async fn test_execute_monthly_with_filters() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = MonthlyConfig {
         mode: CostMode::Calculate,
         json: true,
         since: Some("2024-01".to_string()),
         until: Some("2024-02".to_string()),
     };
-    
+
     let result = execute_monthly(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -236,17 +236,17 @@ async fn test_execute_monthly_with_filters() {
 #[serial]
 async fn test_execute_session_basic() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = SessionConfig {
         mode: CostMode::Auto,
         json: false,
         since: None,
         until: None,
     };
-    
+
     let result = execute_session(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -254,17 +254,17 @@ async fn test_execute_session_basic() {
 #[serial]
 async fn test_execute_session_with_filters() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = SessionConfig {
         mode: CostMode::Display,
         json: true,
         since: Some("2024-01-01".to_string()),
         until: Some("2024-01-31".to_string()),
     };
-    
+
     let result = execute_session(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -272,7 +272,7 @@ async fn test_execute_session_with_filters() {
 #[serial]
 async fn test_execute_blocks_basic() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = BlocksConfig {
         mode: CostMode::Auto,
         json: false,
@@ -280,10 +280,10 @@ async fn test_execute_blocks_basic() {
         recent: false,
         token_limit: None,
     };
-    
+
     let result = execute_blocks(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -291,7 +291,7 @@ async fn test_execute_blocks_basic() {
 #[serial]
 async fn test_execute_blocks_with_filters() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = BlocksConfig {
         mode: CostMode::Calculate,
         json: true,
@@ -299,10 +299,10 @@ async fn test_execute_blocks_with_filters() {
         recent: true,
         token_limit: Some("80%".to_string()),
     };
-    
+
     let result = execute_blocks(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -310,7 +310,7 @@ async fn test_execute_blocks_with_filters() {
 #[serial]
 async fn test_execute_blocks_with_absolute_token_limit() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = BlocksConfig {
         mode: CostMode::Auto,
         json: false,
@@ -318,10 +318,10 @@ async fn test_execute_blocks_with_absolute_token_limit() {
         recent: false,
         token_limit: Some("1000000".to_string()),
     };
-    
+
     let result = execute_blocks(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -329,7 +329,7 @@ async fn test_execute_blocks_with_absolute_token_limit() {
 #[serial]
 async fn test_daily_with_memory_optimizations() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -344,10 +344,10 @@ async fn test_daily_with_memory_optimizations() {
         arena: true,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -355,16 +355,16 @@ async fn test_daily_with_memory_optimizations() {
 #[serial]
 async fn test_daily_with_project_filter() {
     let _temp_dir = setup_test_env().await;
-    
+
     // Create data with project information
     let data_path = temp_dir_path();
     let jsonl_path = data_path.join("claude_data/project_usage.jsonl");
     let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-    
+
     let project_data = r#"{"sessionId":"proj-session","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":1000,"output_tokens":500}},"cwd":"/home/user/test-project","cost_usd":0.05}"#;
     file.write_all(project_data.as_bytes()).await.unwrap();
     file.write_all(b"\n").await.unwrap();
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -379,10 +379,10 @@ async fn test_daily_with_project_filter() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -400,7 +400,7 @@ fn temp_dir_path() -> std::path::PathBuf {
 #[serial]
 async fn test_invalid_date_filter() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: false,
@@ -415,10 +415,10 @@ async fn test_invalid_date_filter() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_err());
-    
+
     cleanup_test_env();
 }
 
@@ -426,17 +426,17 @@ async fn test_invalid_date_filter() {
 #[serial]
 async fn test_invalid_month_filter() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = MonthlyConfig {
         mode: CostMode::Auto,
         json: false,
         since: Some("2024-13".to_string()), // Invalid month
         until: None,
     };
-    
+
     let result = execute_monthly(config).await;
     assert!(result.is_err());
-    
+
     cleanup_test_env();
 }
 
@@ -444,7 +444,7 @@ async fn test_invalid_month_filter() {
 #[serial]
 async fn test_blocks_invalid_token_limit() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = BlocksConfig {
         mode: CostMode::Auto,
         json: false,
@@ -452,10 +452,10 @@ async fn test_blocks_invalid_token_limit() {
         recent: false,
         token_limit: Some("invalid".to_string()),
     };
-    
+
     let result = execute_blocks(config).await;
     assert!(result.is_err());
-    
+
     cleanup_test_env();
 }
 
@@ -463,7 +463,7 @@ async fn test_blocks_invalid_token_limit() {
 #[serial]
 async fn test_daily_instances_parallel() {
     let _temp_dir = setup_test_env().await;
-    
+
     let config = DailyConfig {
         mode: CostMode::Auto,
         json: true,
@@ -478,10 +478,10 @@ async fn test_daily_instances_parallel() {
         arena: false,
         verbose: false,
     };
-    
+
     let result = execute_daily(config).await;
     assert!(result.is_ok());
-    
+
     cleanup_test_env();
 }
 
@@ -489,7 +489,7 @@ async fn test_daily_instances_parallel() {
 #[serial]
 async fn test_all_cost_modes() {
     let _temp_dir = setup_test_env().await;
-    
+
     // Test Auto mode
     let config_auto = DailyConfig {
         mode: CostMode::Auto,
@@ -506,7 +506,7 @@ async fn test_all_cost_modes() {
         verbose: false,
     };
     assert!(execute_daily(config_auto).await.is_ok());
-    
+
     // Test Calculate mode
     let config_calc = DailyConfig {
         mode: CostMode::Calculate,
@@ -523,7 +523,7 @@ async fn test_all_cost_modes() {
         verbose: false,
     };
     assert!(execute_daily(config_calc).await.is_ok());
-    
+
     // Test Display mode
     let config_display = DailyConfig {
         mode: CostMode::Display,
@@ -540,6 +540,6 @@ async fn test_all_cost_modes() {
         verbose: false,
     };
     assert!(execute_daily(config_display).await.is_ok());
-    
+
     cleanup_test_env();
 }

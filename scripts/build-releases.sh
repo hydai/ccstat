@@ -17,29 +17,29 @@ build_target() {
     local target=$1
     local binary_name=$2
     local archive_name=$3
-    
+
     echo "Building for $target..."
-    
+
     # Add target if not already added
     rustup target add "$target" 2>/dev/null || true
-    
+
     # Build
     cargo build --release --target "$target"
-    
+
     # Create archive directory
     local archive_dir="$RELEASE_DIR/ccstat-$VERSION-$archive_name"
     mkdir -p "$archive_dir"
-    
+
     # Copy binary
     cp "target/$target/release/$binary_name" "$archive_dir/"
-    
+
     # Copy documentation
     cp README.md LICENSE CHANGELOG.md "$archive_dir/"
-    
+
     # Create usage examples
     mkdir -p "$archive_dir/examples"
     cp examples/*.rs "$archive_dir/examples/" 2>/dev/null || true
-    
+
     # Create archive
     if [[ "$archive_name" == *"windows"* ]]; then
         # Windows ZIP
@@ -48,10 +48,10 @@ build_target() {
         # Unix tar.gz
         (cd "$RELEASE_DIR" && tar czf "ccstat-$VERSION-$archive_name.tar.gz" "ccstat-$VERSION-$archive_name")
     fi
-    
+
     # Cleanup
     rm -rf "$archive_dir"
-    
+
     echo "Created $archive_name archive"
 }
 
@@ -60,7 +60,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS builds
     build_target "x86_64-apple-darwin" "ccstat" "macos-x86_64"
     build_target "aarch64-apple-darwin" "ccstat" "macos-aarch64"
-    
+
     # Create universal binary
     echo "Creating macOS universal binary..."
     mkdir -p "$RELEASE_DIR/ccstat-$VERSION-macos-universal"
@@ -71,16 +71,16 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     cp README.md LICENSE CHANGELOG.md "$RELEASE_DIR/ccstat-$VERSION-macos-universal/"
     (cd "$RELEASE_DIR" && tar czf "ccstat-$VERSION-macos-universal.tar.gz" "ccstat-$VERSION-macos-universal")
     rm -rf "$RELEASE_DIR/ccstat-$VERSION-macos-universal"
-    
+
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux builds
     build_target "x86_64-unknown-linux-gnu" "ccstat" "linux-x86_64"
-    
+
     # Try to build musl version for better compatibility
     if rustup target add x86_64-unknown-linux-musl 2>/dev/null; then
         build_target "x86_64-unknown-linux-musl" "ccstat" "linux-x86_64-musl"
     fi
-    
+
     # ARM64 if cross-compilation is set up
     if command -v aarch64-linux-gnu-gcc &> /dev/null; then
         build_target "aarch64-unknown-linux-gnu" "ccstat" "linux-aarch64"
@@ -98,7 +98,7 @@ echo "Generating checksums..."
 if command -v docker &> /dev/null; then
     echo "Building Docker image..."
     docker build -t ccstat:$VERSION -t ccstat:latest .
-    
+
     # Save Docker image
     docker save ccstat:$VERSION | gzip > "$RELEASE_DIR/ccstat-$VERSION-docker.tar.gz"
 fi

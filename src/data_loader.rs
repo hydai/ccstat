@@ -569,16 +569,16 @@ mod tests {
     #[tokio::test]
     async fn test_find_jsonl_files() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create directory structure with JSONL files and other files
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir_all(&sub_dir).unwrap();
-        
+
         // Create JSONL files
         tokio::fs::File::create(temp_dir.path().join("usage1.jsonl")).await.unwrap();
         tokio::fs::File::create(temp_dir.path().join("usage2.jsonl")).await.unwrap();
         tokio::fs::File::create(sub_dir.join("usage3.jsonl")).await.unwrap();
-        
+
         // Create non-JSONL files (should be ignored)
         tokio::fs::File::create(temp_dir.path().join("config.json")).await.unwrap();
         tokio::fs::File::create(temp_dir.path().join("readme.txt")).await.unwrap();
@@ -610,7 +610,7 @@ mod tests {
         }
 
         let paths = DataLoader::discover_claude_paths().await.unwrap();
-        
+
         // Clean up environment variable
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
@@ -623,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn test_builder_pattern() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         let loader = DataLoader {
             claude_paths: vec![temp_dir.path().to_path_buf()],
             show_progress: false,
@@ -646,7 +646,7 @@ mod tests {
     async fn test_paths_getter() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().to_path_buf();
-        
+
         let loader = DataLoader {
             claude_paths: vec![path.clone()],
             show_progress: false,
@@ -682,14 +682,14 @@ mod tests {
         let jsonl_path = temp_dir.path().join("malformed.jsonl");
 
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write valid entry
         file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         // Write malformed JSON
         file.write_all(b"invalid json line\n").await.unwrap();
-        
+
         // Write another valid entry
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
 
@@ -715,15 +715,15 @@ mod tests {
         let jsonl_path = temp_dir.path().join("dedup.jsonl");
 
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write same entry twice (should be deduplicated)
         let duplicate_entry = br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"id":"msg_123","model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"requestId":"req_456"}"#;
-        
+
         file.write_all(duplicate_entry).await.unwrap();
         file.write_all(b"\n").await.unwrap();
         file.write_all(duplicate_entry).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         // Write different entry
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
 
@@ -755,15 +755,15 @@ mod tests {
         let jsonl_path = temp_dir.path().join("dedup_direct.jsonl");
 
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write same entry twice (should be deduplicated)
         let duplicate_entry = br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"id":"msg_123","model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"requestId":"req_456"}"#;
-        
+
         file.write_all(duplicate_entry).await.unwrap();
         file.write_all(b"\n").await.unwrap();
         file.write_all(duplicate_entry).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         // Write different entry
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
 
@@ -790,15 +790,15 @@ mod tests {
         let jsonl_path = temp_dir.path().join("mixed.jsonl");
 
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write assistant entry (should be included)
         file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         // Write user entry (should be filtered out)
         file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:30Z","type":"user","message":{"content":"Hello"}}"#).await.unwrap();
         file.write_all(b"\n").await.unwrap();
-        
+
         // Write another assistant entry
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
 
@@ -859,31 +859,31 @@ mod tests {
         let files = result.find_jsonl_files().await.unwrap();
         assert_eq!(files.len(), 0);
     }
-    
+
     #[tokio::test]
     async fn test_load_usage_entries_with_arena() {
         let temp_dir = TempDir::new().unwrap();
         let jsonl_path = temp_dir.path().join("test.jsonl");
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write test data
         let entries = vec![
             r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"cwd":"/test"}"#,
             r#"{"sessionId":"session-2","timestamp":"2024-01-15T11:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#,
         ];
-        
+
         for entry in entries {
             file.write_all(entry.as_bytes()).await.unwrap();
             file.write_all(b"\n").await.unwrap();
         }
-        
+
         let loader = DataLoader {
             claude_paths: vec![jsonl_path.clone()],
             show_progress: false,
             use_interning: false,
             use_arena: true,
         };
-        
+
         // Load entries and count them
         let mut count = 0;
         let entries = loader.load_usage_entries();
@@ -894,32 +894,32 @@ mod tests {
         }
         assert_eq!(count, 2);
     }
-    
+
     #[tokio::test]
     async fn test_load_usage_entries_with_string_interning() {
         let temp_dir = TempDir::new().unwrap();
         let jsonl_path = temp_dir.path().join("test.jsonl");
         let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
-        
+
         // Write test data with repeated values
         let entries = vec![
             r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"cwd":"/test"}"#,
             r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:30:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":150,"output_tokens":75}},"cwd":"/test"}"#,
             r#"{"sessionId":"session-1","timestamp":"2024-01-15T11:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":200,"output_tokens":100}},"cwd":"/test"}"#,
         ];
-        
+
         for entry in entries {
             file.write_all(entry.as_bytes()).await.unwrap();
             file.write_all(b"\n").await.unwrap();
         }
-        
+
         let loader = DataLoader {
             claude_paths: vec![jsonl_path.clone()],
             show_progress: false,
             use_interning: true,
             use_arena: false,
         };
-        
+
         // Load entries and verify they're interned
         let mut count = 0;
         let entries = loader.load_usage_entries();
@@ -932,7 +932,7 @@ mod tests {
             }
         }
         assert_eq!(count, 3);
-        
+
         // All session IDs should point to the same memory
         assert_eq!(session_ids.len(), 3);
         assert!(session_ids.iter().all(|id| id.as_ref() == "session-1"));

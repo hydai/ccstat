@@ -18,7 +18,7 @@ TESTS_FAILED=0
 print_test_result() {
     local test_name="$1"
     local result="$2"
-    
+
     if [ "$result" = "PASS" ]; then
         echo -e "${GREEN}✓${NC} $test_name"
         ((TESTS_PASSED++))
@@ -33,9 +33,9 @@ run_test() {
     local test_name="$1"
     local command="$2"
     local expected_pattern="$3"
-    
+
     echo -n "Testing: $test_name... "
-    
+
     if output=$($command 2>&1); then
         if echo "$output" | grep -q "$expected_pattern" 2>/dev/null || [ -z "$expected_pattern" ]; then
             print_test_result "$test_name" "PASS"

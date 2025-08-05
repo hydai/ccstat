@@ -883,7 +883,7 @@ mod tests {
     fn test_session_accumulator_empty_into_session_usage() {
         let acc = SessionAccumulator::new();
         let session_id = SessionId::new("empty-session");
-        
+
         let session_usage = acc.into_session_usage(session_id);
 
         assert_eq!(session_usage.session_id.as_str(), "empty-session");
@@ -1142,13 +1142,13 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert!(blocks[0].is_active); // Recent session, should be active
     }
-    
+
     #[tokio::test]
     async fn test_aggregate_daily_with_progress() {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Aggregator::new(cost_calculator).with_progress(true);
-        
+
         let entries = vec![
             Ok(UsageEntry {
                 session_id: SessionId::new("s1"),
@@ -1169,20 +1169,20 @@ mod tests {
                 total_cost: Some(0.02),
             }),
         ];
-        
+
         let result = aggregator.aggregate_daily(stream::iter(entries), CostMode::Display).await;
         assert!(result.is_ok());
         let daily = result.unwrap();
         assert_eq!(daily.len(), 1);
         assert_eq!(daily[0].tokens.total(), 465); // 100+50+10+5+200+100
     }
-    
+
     #[tokio::test]
     async fn test_aggregate_daily_by_instance_with_progress() {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Aggregator::new(cost_calculator).with_progress(true);
-        
+
         let entries = vec![
             Ok(UsageEntry {
                 session_id: SessionId::new("s1"),
@@ -1212,24 +1212,24 @@ mod tests {
                 total_cost: Some(0.005),
             }),
         ];
-        
+
         let result = aggregator.aggregate_daily_by_instance(stream::iter(entries), CostMode::Display).await;
         assert!(result.is_ok());
         let instances = result.unwrap();
         assert_eq!(instances.len(), 3); // instance-1, instance-2, and default
-        
+
         // Check that instance_id None was converted to "default"
         let default_instance = instances.iter().find(|i| i.instance_id == "default");
         assert!(default_instance.is_some());
         assert_eq!(default_instance.unwrap().tokens.total(), 75); // 50+25
     }
-    
+
     #[tokio::test]
     async fn test_aggregate_sessions_with_progress() {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Aggregator::new(cost_calculator).with_progress(true);
-        
+
         let base_time = chrono::Utc::now() - chrono::Duration::hours(2);
         let entries = vec![
             Ok(UsageEntry {
@@ -1260,23 +1260,23 @@ mod tests {
                 total_cost: Some(0.005),
             }),
         ];
-        
+
         let result = aggregator.aggregate_sessions(stream::iter(entries), CostMode::Display).await;
         assert!(result.is_ok());
         let sessions = result.unwrap();
         assert_eq!(sessions.len(), 2);
-        
+
         let session1 = sessions.iter().find(|s| s.session_id.as_ref() == "session-1").unwrap();
         assert_eq!(session1.tokens.total(), 450); // 100+50+200+100
         assert_eq!(session1.total_cost, 0.03); // 0.01+0.02
     }
-    
+
     #[tokio::test]
     async fn test_aggregate_daily_verbose_with_progress() {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Aggregator::new(cost_calculator).with_progress(true);
-        
+
         let entries = vec![
             Ok(UsageEntry {
                 session_id: SessionId::new("s1"),
@@ -1297,28 +1297,28 @@ mod tests {
                 total_cost: Some(0.02),
             }),
         ];
-        
+
         let result = aggregator.aggregate_daily_verbose(stream::iter(entries), CostMode::Display, true).await;
         assert!(result.is_ok());
         let daily = result.unwrap();
         assert_eq!(daily.len(), 1);
-        
+
         // Check verbose data - entries should be populated
         assert!(daily[0].entries.is_some());
         let entries = daily[0].entries.as_ref().unwrap();
         assert_eq!(entries.len(), 2);
-        
+
         // In verbose mode, we should have 2 distinct entries
         let models: Vec<&str> = entries.iter().map(|e| e.model.as_str()).collect();
         assert_eq!(models.len(), 2);
     }
-    
+
     #[tokio::test]
     async fn test_aggregator_error_handling() {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Aggregator::new(cost_calculator);
-        
+
         // Test with stream containing an error
         let entries = vec![
             Ok(UsageEntry {
@@ -1332,11 +1332,11 @@ mod tests {
             }),
             Err(crate::error::CcstatError::InvalidDate("bad date".to_string())),
         ];
-        
+
         let result = aggregator.aggregate_daily(stream::iter(entries), CostMode::Display).await;
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_billing_blocks_multiple_sessions_across_blocks() {
         let base_time = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
@@ -1366,14 +1366,14 @@ mod tests {
                 model: ModelName::new("claude-3-opus"),
             },
         ];
-        
+
         let blocks = Aggregator::create_billing_blocks(&sessions);
         assert_eq!(blocks.len(), 2);
-        
+
         // First block: sessions s1 and s2
         assert_eq!(blocks[0].sessions.len(), 2);
         assert_eq!(blocks[0].tokens.total(), 450); // 100+50+200+100
-        
+
         // Second block: session s3
         assert_eq!(blocks[1].sessions.len(), 1);
         assert_eq!(blocks[1].tokens.total(), 75); // 50+25

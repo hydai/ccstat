@@ -13,11 +13,11 @@ NC='\033[0m'
 # Check for required tools
 check_tools() {
     local missing_tools=()
-    
+
     if ! command -v valgrind &> /dev/null; then
         missing_tools+=("valgrind")
     fi
-    
+
     if [ ${#missing_tools[@]} -ne 0 ]; then
         echo -e "${RED}Error: Missing required tools:${NC}"
         printf '%s\n' "${missing_tools[@]}"
@@ -33,9 +33,9 @@ check_tools() {
 run_valgrind_test() {
     local test_name="$1"
     local command="$2"
-    
+
     echo -e "\n${YELLOW}Testing: $test_name${NC}"
-    
+
     # Run with valgrind
     valgrind \
         --leak-check=full \
@@ -44,11 +44,11 @@ run_valgrind_test() {
         --verbose \
         --log-file=valgrind-$test_name.log \
         $command 2>&1 | tail -20
-    
+
     # Check results
     if grep -q "ERROR SUMMARY: 0 errors" valgrind-$test_name.log; then
         echo -e "${GREEN}✓ No memory errors detected${NC}"
-        
+
         # Check for leaks
         if grep -q "definitely lost: 0 bytes" valgrind-$test_name.log && \
            grep -q "indirectly lost: 0 bytes" valgrind-$test_name.log; then
@@ -67,14 +67,14 @@ run_valgrind_test() {
 # Function to run stress test
 run_stress_test() {
     echo -e "\n${YELLOW}=== Running Memory Stress Test ===${NC}"
-    
+
     # Generate large test dataset
     echo "Generating large test dataset..."
     ./scripts/generate-test-data.sh stress-test-data 100 20 50
-    
+
     # Monitor memory usage
     echo "Running stress test with memory monitoring..."
-    
+
     # Get initial memory
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
@@ -83,29 +83,29 @@ run_stress_test() {
         # Linux
         initial_mem=$(ps -o rss= -p $$ | awk '{print $1}')
     fi
-    
+
     # Run ccstat multiple times
     export CLAUDE_DATA_PATH=stress-test-data
     for i in {1..10}; do
         echo -n "Run $i: "
         ccstat daily --parallel --intern --arena > /dev/null 2>&1
-        
+
         # Check memory after each run
         if [[ "$OSTYPE" == "darwin"* ]]; then
             current_mem=$(ps -o rss= -p $$ | awk '{print $1}')
         else
             current_mem=$(ps -o rss= -p $$ | awk '{print $1}')
         fi
-        
+
         mem_increase=$((current_mem - initial_mem))
         echo "Memory increase: ${mem_increase}KB"
-        
+
         # If memory keeps growing significantly, there might be a leak
         if [ $mem_increase -gt 100000 ]; then
             echo -e "${RED}⚠ Significant memory increase detected${NC}"
         fi
     done
-    
+
     # Cleanup
     rm -rf stress-test-data
 }
@@ -113,18 +113,18 @@ run_stress_test() {
 # Function to test with miri (if available)
 run_miri_test() {
     echo -e "\n${YELLOW}=== Running Miri Test ===${NC}"
-    
+
     # Check if miri is installed
     if ! rustup component list | grep -q "miri.*installed"; then
         echo "Miri not installed. Install with: rustup +nightly component add miri"
         echo "Skipping miri tests..."
         return
     fi
-    
+
     # Run tests under miri
     echo "Running unit tests under miri..."
     cargo +nightly miri test --lib 2>&1 | tee miri-test.log
-    
+
     if grep -q "test result: ok" miri-test.log; then
         echo -e "${GREEN}✓ Miri tests passed${NC}"
     else
@@ -135,7 +135,7 @@ run_miri_test() {
 # Function to profile memory allocations
 profile_memory() {
     echo -e "\n${YELLOW}=== Memory Profiling ===${NC}"
-    
+
     # Use heaptrack if available
     if command -v heaptrack &> /dev/null; then
         echo "Running heaptrack profiling..."
@@ -144,7 +144,7 @@ profile_memory() {
     else
         echo "heaptrack not available. Install for detailed memory profiling."
     fi
-    
+
     # Basic memory stats using /usr/bin/time
     if command -v /usr/bin/time &> /dev/null; then
         echo -e "\nRunning with time -v for memory stats..."

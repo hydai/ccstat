@@ -8,7 +8,7 @@ use clap::Parser;
 fn test_cli_daily_command_basic() {
     let args = vec!["ccstat", "daily"];
     let cli = Cli::parse_from(args);
-    
+
     match cli.command.unwrap() {
         Command::Daily { mode, json, .. } => {
             assert_eq!(mode, CostMode::Auto);
@@ -29,7 +29,7 @@ fn test_cli_daily_with_options() {
         "--until", "2024-01-31",
         "--project", "test-project",
     ];
-    
+
     let cli = Cli::parse_from(args);
     match cli.command.unwrap() {
         Command::Daily {
@@ -58,7 +58,7 @@ fn test_cli_monthly_command() {
         "--mode", "display",
         "--json",
     ];
-    
+
     let cli = Cli::parse_from(args);
     match cli.command.unwrap() {
         Command::Monthly { mode, json, .. } => {
@@ -77,7 +77,7 @@ fn test_cli_session_command() {
         "--since", "2024-01-01",
         "--until", "2024-01-31",
     ];
-    
+
     let cli = Cli::parse_from(args);
     match cli.command.unwrap() {
         Command::Session { since, until, .. } => {
@@ -96,7 +96,7 @@ fn test_cli_blocks_command() {
         "--active",
         "--recent",
     ];
-    
+
     let cli = Cli::parse_from(args);
     match cli.command.unwrap() {
         Command::Blocks { active, recent, .. } => {
@@ -115,7 +115,7 @@ fn test_cli_mcp_command() {
         "--transport", "http",
         "--port", "8080",
     ];
-    
+
     let cli = Cli::parse_from(args);
     match cli.command.unwrap() {
         Command::Mcp { transport, port } => {
@@ -129,14 +129,14 @@ fn test_cli_mcp_command() {
 #[test]
 fn test_cost_mode_parsing() {
     let modes = ["auto", "calculate", "display"];
-    
+
     for mode_str in &modes {
         let args = vec![
             "ccstat",
             "daily",
             "--mode", mode_str,
         ];
-        
+
         let cli = Cli::parse_from(args);
         match cli.command.unwrap() {
             Command::Daily { mode, .. } => {
@@ -155,14 +155,14 @@ fn test_cost_mode_parsing() {
 #[test]
 fn test_mcp_transport_parsing() {
     let transports = [("stdio", McpTransport::Stdio), ("http", McpTransport::Http)];
-    
+
     for (transport_str, expected) in &transports {
         let args = vec![
             "ccstat",
             "mcp",
             "--transport", transport_str,
         ];
-        
+
         let cli = Cli::parse_from(args);
         match cli.command.unwrap() {
             Command::Mcp { transport, .. } => {
@@ -177,10 +177,10 @@ fn test_mcp_transport_parsing() {
 fn test_cli_help() {
     let result = Cli::try_parse_from(vec!["ccstat", "--help"]);
     assert!(result.is_err());
-    
+
     let err = result.unwrap_err();
     let help_text = err.to_string();
-    
+
     assert!(help_text.contains("ccstat"));
     assert!(help_text.contains("Commands:"));
 }
@@ -189,9 +189,9 @@ fn test_cli_help() {
 fn test_cli_version() {
     let result = Cli::try_parse_from(vec!["ccstat", "--version"]);
     assert!(result.is_err());
-    
+
     let err = result.unwrap_err();
     let version_text = err.to_string();
-    
+
     assert!(version_text.contains("ccstat"));
 }

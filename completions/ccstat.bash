@@ -6,29 +6,29 @@ _ccstat() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
+
     # Main commands
     local commands="daily monthly session blocks mcp help"
-    
+
     # Global options
     local global_opts="--help --version"
-    
+
     # Command-specific options
     local daily_opts="--since --until --project --json --mode --verbose --parallel --intern --arena --by-instance"
     local monthly_opts="--since --until --project --json --mode"
     local session_opts="--since --until --project --json --mode --models"
     local blocks_opts="--project --json --active --recent --limit"
     local mcp_opts="--transport --port"
-    
+
     # Cost modes
     local cost_modes="auto calculate display"
-    
+
     # Complete main command
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
         return 0
     fi
-    
+
     # Complete options based on command
     case "${COMP_WORDS[1]}" in
         daily)

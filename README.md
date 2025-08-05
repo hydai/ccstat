@@ -368,14 +368,14 @@ async fn main() -> ccstat::Result<()> {
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries = data_loader.load_usage_entries();
     let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
-    
+
     for day in &daily_data {
         println!("{}: {} tokens", day.date, day.tokens.total());
     }
-    
+
     Ok(())
 }
 ```

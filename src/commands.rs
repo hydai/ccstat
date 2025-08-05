@@ -131,7 +131,7 @@ pub async fn execute_daily(config: DailyConfig) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -199,7 +199,7 @@ pub async fn execute_monthly(config: MonthlyConfig) -> Result<()> {
     // Format and output
     let formatter = get_formatter(config.json);
     println!("{}", formatter.format_monthly(&monthly_data, &totals));
-    
+
     Ok(())
 }
 
@@ -247,7 +247,7 @@ pub async fn execute_session(config: SessionConfig) -> Result<()> {
     // Format and output
     let formatter = get_formatter(config.json);
     println!("{}", formatter.format_sessions(&session_data, &totals));
-    
+
     Ok(())
 }
 
@@ -298,7 +298,7 @@ pub async fn execute_blocks(config: BlocksConfig) -> Result<()> {
     // Format and output
     let formatter = get_formatter(config.json);
     println!("{}", formatter.format_blocks(&blocks));
-    
+
     Ok(())
 }
 
@@ -358,7 +358,7 @@ fn apply_token_limit_warnings(blocks: &mut [crate::aggregation::SessionBlock], l
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -385,7 +385,7 @@ pub async fn execute_default() -> Result<()> {
     // Format and output
     let formatter = get_formatter(false);
     println!("{}", formatter.format_daily(&daily_data, &totals));
-    
+
     Ok(())
 }
 
@@ -406,11 +406,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_default_no_data() {
         let _temp_dir = setup_test_environment().await;
-        
+
         // Should succeed even with no data
         let result = execute_default().await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
@@ -432,7 +432,7 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         assert_eq!(config.mode, CostMode::Auto);
         assert!(config.json);
         assert_eq!(config.interval, 5);
@@ -443,7 +443,7 @@ mod tests {
         use crate::aggregation::{SessionBlock, SessionUsage};
         use crate::types::{TokenCounts, ModelName, SessionId};
         use chrono::Utc;
-        
+
         let now = Utc::now();
         let session = SessionUsage {
             session_id: SessionId::new("test"),
@@ -453,7 +453,7 @@ mod tests {
             total_cost: 100.0,
             model: ModelName::new("claude-3-opus"),
         };
-        
+
         let mut blocks = vec![
             SessionBlock {
                 start_time: now - chrono::Duration::hours(1),
@@ -465,28 +465,28 @@ mod tests {
                 warning: None,
             },
         ];
-        
+
         // Test percentage limit
         let result = apply_token_limit_warnings(&mut blocks, "80%");
         assert!(result.is_ok());
         assert!(blocks[0].warning.is_some());
         assert!(blocks[0].warning.as_ref().unwrap().contains("exceeding threshold"));
-        
+
         // Test absolute limit
         blocks[0].warning = None;
         let result = apply_token_limit_warnings(&mut blocks, "8000000");
         assert!(result.is_ok());
         assert!(blocks[0].warning.is_some());
-        
+
         // Test invalid limit
         let result = apply_token_limit_warnings(&mut blocks, "invalid");
         assert!(result.is_err());
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_with_instances() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: true,
@@ -501,19 +501,19 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_with_verbose() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: false,
@@ -528,19 +528,19 @@ mod tests {
             arena: false,
             verbose: true,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
-    #[tokio::test] 
+
+    #[tokio::test]
     async fn test_execute_daily_with_date_filters() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Calculate,
             json: true,
@@ -555,19 +555,19 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_invalid_date() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: false,
@@ -582,76 +582,76 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_err());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_monthly_with_filters() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = MonthlyConfig {
             mode: CostMode::Calculate,
             json: true,
             since: Some("2024-01".to_string()),
             until: Some("2024-12".to_string()),
         };
-        
+
         let result = execute_monthly(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_monthly_invalid_month() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = MonthlyConfig {
             mode: CostMode::Auto,
             json: false,
             since: Some("2024-13".to_string()),
             until: None,
         };
-        
+
         let result = execute_monthly(config).await;
         assert!(result.is_err());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_session_with_filters() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = SessionConfig {
             mode: CostMode::Display,
             json: true,
             since: Some("2024-01-01".to_string()),
             until: Some("2024-12-31".to_string()),
         };
-        
+
         let result = execute_session(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_blocks_with_filters() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = BlocksConfig {
             mode: CostMode::Calculate,
             json: true,
@@ -659,19 +659,19 @@ mod tests {
             recent: true,
             token_limit: Some("80%".to_string()),
         };
-        
+
         let result = execute_blocks(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_blocks_invalid_token_limit() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = BlocksConfig {
             mode: CostMode::Auto,
             json: false,
@@ -679,19 +679,19 @@ mod tests {
             recent: false,
             token_limit: Some("not-a-number".to_string()),
         };
-        
+
         let result = execute_blocks(config).await;
         assert!(result.is_err());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_with_project_filter() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: false,
@@ -706,19 +706,19 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_parallel_with_instances() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: true,
@@ -733,19 +733,19 @@ mod tests {
             arena: false,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[tokio::test]
     async fn test_execute_daily_with_memory_opts() {
         let _temp_dir = setup_test_environment().await;
-        
+
         let config = DailyConfig {
             mode: CostMode::Auto,
             json: false,
@@ -760,21 +760,21 @@ mod tests {
             arena: true,
             verbose: false,
         };
-        
+
         let result = execute_daily(config).await;
         assert!(result.is_ok());
-        
+
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
     }
-    
+
     #[test]
     fn test_apply_token_limit_warnings_percentage() {
         use crate::aggregation::{SessionBlock, SessionUsage};
         use crate::types::{TokenCounts, ModelName, SessionId};
         use chrono::Utc;
-        
+
         let now = Utc::now();
         let session = SessionUsage {
             session_id: SessionId::new("test"),
@@ -784,7 +784,7 @@ mod tests {
             total_cost: 100.0,
             model: ModelName::new("claude-3-opus"),
         };
-        
+
         let mut blocks = vec![
             SessionBlock {
                 start_time: now - chrono::Duration::hours(1),
@@ -796,20 +796,20 @@ mod tests {
                 warning: None,
             },
         ];
-        
+
         // Test percentage approaching threshold
         let result = apply_token_limit_warnings(&mut blocks, "90%");
         assert!(result.is_ok());
         assert!(blocks[0].warning.is_some());
         assert!(blocks[0].warning.as_ref().unwrap().contains("approaching limit"));
     }
-    
+
     #[test]
     fn test_apply_token_limit_warnings_inactive_block() {
         use crate::aggregation::{SessionBlock, SessionUsage};
         use crate::types::{TokenCounts, ModelName, SessionId};
         use chrono::Utc;
-        
+
         let now = Utc::now();
         let session = SessionUsage {
             session_id: SessionId::new("test"),
@@ -819,7 +819,7 @@ mod tests {
             total_cost: 100.0,
             model: ModelName::new("claude-3-opus"),
         };
-        
+
         let mut blocks = vec![
             SessionBlock {
                 start_time: now - chrono::Duration::hours(6),
@@ -831,7 +831,7 @@ mod tests {
                 warning: None,
             },
         ];
-        
+
         // Inactive blocks should not get warnings
         let result = apply_token_limit_warnings(&mut blocks, "80%");
         assert!(result.is_ok());
