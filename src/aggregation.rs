@@ -678,6 +678,10 @@ impl Totals {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use crate::cost_calculator::CostCalculator;
+    use crate::pricing_fetcher::PricingFetcher;
+    use futures::stream;
+    use std::sync::Arc;
 
     #[test]
     fn test_daily_accumulator() {
@@ -722,6 +726,334 @@ mod tests {
     }
 
     #[test]
+    fn test_daily_accumulator_multiple_entries() {
+        let mut acc = DailyAccumulator::new(true);
+
+        let timestamp1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let timestamp2 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 11, 0, 0).unwrap();
+
+        let entry1 = UsageEntry {
+            session_id: SessionId::new("session1"),
+            timestamp: crate::types::ISOTimestamp::new(timestamp1),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        };
+
+        let entry2 = UsageEntry {
+            session_id: SessionId::new("session2"),
+            timestamp: crate::types::ISOTimestamp::new(timestamp2),
+            model: ModelName::new("claude-3-sonnet"),
+            tokens: TokenCounts::new(200, 100, 20, 10),
+            total_cost: Some(0.02),
+            project: None,
+            instance_id: None,
+        };
+
+        acc.add_entry(entry1, 0.01);
+        acc.add_entry(entry2, 0.02);
+
+        // Check accumulated values
+        assert_eq!(acc.tokens.input_tokens, 300);
+        assert_eq!(acc.tokens.output_tokens, 150);
+        assert_eq!(acc.tokens.cache_creation_tokens, 30);
+        assert_eq!(acc.tokens.cache_read_tokens, 15);
+        assert_eq!(acc.cost, 0.03);
+        assert_eq!(acc.models.len(), 2);
+
+        // Check verbose entries
+        let verbose_entries = acc.verbose_entries.unwrap();
+        assert_eq!(verbose_entries.len(), 2);
+        assert_eq!(verbose_entries[0].session_id, "session1");
+        assert_eq!(verbose_entries[1].session_id, "session2");
+    }
+
+    #[test]
+    fn test_daily_accumulator_into_daily_usage() {
+        let mut acc = DailyAccumulator::new(false);
+        let date = DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+
+        let entry = UsageEntry {
+            session_id: SessionId::new("test"),
+            timestamp: crate::types::ISOTimestamp::new(chrono::Utc::now()),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        };
+
+        acc.add_entry(entry, 0.01);
+        let daily_usage = acc.into_daily_usage(date);
+
+        assert_eq!(daily_usage.date.format("%Y-%m-%d"), "2024-01-01");
+        assert_eq!(daily_usage.tokens.input_tokens, 100);
+        assert_eq!(daily_usage.total_cost, 0.01);
+        assert_eq!(daily_usage.models_used.len(), 1);
+        assert_eq!(daily_usage.models_used[0], "claude-3-opus");
+        assert!(daily_usage.entries.is_none());
+    }
+
+    #[test]
+    fn test_session_accumulator() {
+        let mut acc = SessionAccumulator::new();
+
+        let timestamp1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let timestamp2 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 30, 0).unwrap();
+        let timestamp3 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 11, 0, 0).unwrap();
+
+        let entry1 = UsageEntry {
+            session_id: SessionId::new("session1"),
+            timestamp: crate::types::ISOTimestamp::new(timestamp2), // Middle timestamp
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        };
+
+        let entry2 = UsageEntry {
+            session_id: SessionId::new("session1"),
+            timestamp: crate::types::ISOTimestamp::new(timestamp1), // Earlier timestamp
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(200, 100, 20, 10),
+            total_cost: Some(0.02),
+            project: None,
+            instance_id: None,
+        };
+
+        let entry3 = UsageEntry {
+            session_id: SessionId::new("session1"),
+            timestamp: crate::types::ISOTimestamp::new(timestamp3), // Later timestamp
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(300, 150, 30, 15),
+            total_cost: Some(0.03),
+            project: None,
+            instance_id: None,
+        };
+
+        acc.add_entry(entry1, 0.01);
+        acc.add_entry(entry2, 0.02);
+        acc.add_entry(entry3, 0.03);
+
+        // Check accumulated values
+        assert_eq!(acc.tokens.input_tokens, 600);
+        assert_eq!(acc.tokens.output_tokens, 300);
+        assert_eq!(acc.cost, 0.06);
+
+        // Check time bounds (should be earliest to latest)
+        assert_eq!(acc.start_time, Some(timestamp1));
+        assert_eq!(acc.end_time, Some(timestamp3));
+
+        // Check primary model
+        assert_eq!(acc.primary_model.as_ref().unwrap().as_str(), "claude-3-opus");
+    }
+
+    #[test]
+    fn test_session_accumulator_into_session_usage() {
+        let mut acc = SessionAccumulator::new();
+        let session_id = SessionId::new("test-session");
+
+        let timestamp = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let entry = UsageEntry {
+            session_id: session_id.clone(),
+            timestamp: crate::types::ISOTimestamp::new(timestamp),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        };
+
+        acc.add_entry(entry, 0.01);
+        let session_usage = acc.into_session_usage(session_id);
+
+        assert_eq!(session_usage.session_id.as_str(), "test-session");
+        assert_eq!(session_usage.start_time, timestamp);
+        assert_eq!(session_usage.end_time, timestamp);
+        assert_eq!(session_usage.tokens.input_tokens, 100);
+        assert_eq!(session_usage.total_cost, 0.01);
+        assert_eq!(session_usage.model.as_str(), "claude-3-opus");
+    }
+
+    #[test]
+    fn test_session_accumulator_empty_into_session_usage() {
+        let acc = SessionAccumulator::new();
+        let session_id = SessionId::new("empty-session");
+        
+        let session_usage = acc.into_session_usage(session_id);
+
+        assert_eq!(session_usage.session_id.as_str(), "empty-session");
+        assert_eq!(session_usage.model.as_str(), "unknown");
+        assert_eq!(session_usage.tokens.input_tokens, 0);
+        assert_eq!(session_usage.total_cost, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregator_with_progress() {
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Aggregator::new(cost_calculator).with_progress(true);
+
+        assert!(aggregator.show_progress);
+
+        // Test with empty stream (should work without errors)
+        let entries: Vec<Result<UsageEntry>> = vec![];
+        let stream = stream::iter(entries);
+        let daily_data = aggregator.aggregate_daily(stream, CostMode::Auto).await.unwrap();
+        assert!(daily_data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_monthly_from_daily() {
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(100, 50, 10, 5),
+                total_cost: 0.01,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: None,
+            },
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()),
+                tokens: TokenCounts::new(200, 100, 20, 10),
+                total_cost: 0.02,
+                models_used: vec!["claude-3-sonnet".to_string()],
+                entries: None,
+            },
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 2, 1).unwrap()),
+                tokens: TokenCounts::new(300, 150, 30, 15),
+                total_cost: 0.03,
+                models_used: vec!["claude-3-haiku".to_string()],
+                entries: None,
+            },
+        ];
+
+        let monthly_data = Aggregator::aggregate_monthly(&daily_data);
+        assert_eq!(monthly_data.len(), 2);
+
+        // Check January data
+        assert_eq!(monthly_data[0].month, "2024-01");
+        assert_eq!(monthly_data[0].tokens.input_tokens, 300);
+        assert_eq!(monthly_data[0].tokens.output_tokens, 150);
+        assert_eq!(monthly_data[0].total_cost, 0.03);
+        assert_eq!(monthly_data[0].active_days, 2);
+
+        // Check February data
+        assert_eq!(monthly_data[1].month, "2024-02");
+        assert_eq!(monthly_data[1].tokens.input_tokens, 300);
+        assert_eq!(monthly_data[1].tokens.output_tokens, 150);
+        assert_eq!(monthly_data[1].total_cost, 0.03);
+        assert_eq!(monthly_data[1].active_days, 1);
+    }
+
+    #[test]
+    fn test_totals_from_daily() {
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(100, 50, 10, 5),
+                total_cost: 0.01,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: None,
+            },
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()),
+                tokens: TokenCounts::new(200, 100, 20, 10),
+                total_cost: 0.02,
+                models_used: vec!["claude-3-sonnet".to_string()],
+                entries: None,
+            },
+        ];
+
+        let totals = Totals::from_daily(&daily_data);
+        assert_eq!(totals.tokens.input_tokens, 300);
+        assert_eq!(totals.tokens.output_tokens, 150);
+        assert_eq!(totals.tokens.cache_creation_tokens, 30);
+        assert_eq!(totals.tokens.cache_read_tokens, 15);
+        assert_eq!(totals.total_cost, 0.03);
+    }
+
+    #[test]
+    fn test_totals_from_sessions() {
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("s1"),
+                start_time: chrono::Utc::now(),
+                end_time: chrono::Utc::now(),
+                tokens: TokenCounts::new(100, 50, 10, 5),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+            SessionUsage {
+                session_id: SessionId::new("s2"),
+                start_time: chrono::Utc::now(),
+                end_time: chrono::Utc::now(),
+                tokens: TokenCounts::new(200, 100, 20, 10),
+                total_cost: 0.02,
+                model: ModelName::new("claude-3-sonnet"),
+            },
+        ];
+
+        let totals = Totals::from_sessions(&sessions);
+        assert_eq!(totals.tokens.input_tokens, 300);
+        assert_eq!(totals.tokens.output_tokens, 150);
+        assert_eq!(totals.total_cost, 0.03);
+    }
+
+    #[test]
+    fn test_totals_from_monthly() {
+        let monthly_data = vec![
+            MonthlyUsage {
+                month: "2024-01".to_string(),
+                tokens: TokenCounts::new(1000, 500, 100, 50),
+                total_cost: 0.10,
+                active_days: 20,
+            },
+            MonthlyUsage {
+                month: "2024-02".to_string(),
+                tokens: TokenCounts::new(2000, 1000, 200, 100),
+                total_cost: 0.20,
+                active_days: 18,
+            },
+        ];
+
+        let totals = Totals::from_monthly(&monthly_data);
+        assert_eq!(totals.tokens.input_tokens, 3000);
+        assert_eq!(totals.tokens.output_tokens, 1500);
+        // Use approximate comparison for floating point
+        assert!((totals.total_cost - 0.30).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_totals_from_daily_instances() {
+        let instance_data = vec![
+            DailyInstanceUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                instance_id: "instance-a".to_string(),
+                tokens: TokenCounts::new(100, 50, 10, 5),
+                total_cost: 0.01,
+                models_used: vec!["claude-3-opus".to_string()],
+            },
+            DailyInstanceUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                instance_id: "instance-b".to_string(),
+                tokens: TokenCounts::new(200, 100, 20, 10),
+                total_cost: 0.02,
+                models_used: vec!["claude-3-sonnet".to_string()],
+            },
+        ];
+
+        let totals = Totals::from_daily_instances(&instance_data);
+        assert_eq!(totals.tokens.input_tokens, 300);
+        assert_eq!(totals.tokens.output_tokens, 150);
+        assert_eq!(totals.total_cost, 0.03);
+    }
+
+    #[test]
     fn test_billing_blocks() {
         let base_time = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let sessions = vec![
@@ -761,5 +1093,52 @@ mod tests {
         // Second block should contain s3
         assert_eq!(blocks[1].sessions.len(), 1);
         assert_eq!(blocks[1].tokens.input_tokens, 150);
+    }
+
+    #[test]
+    fn test_billing_blocks_empty_sessions() {
+        let sessions: Vec<SessionUsage> = vec![];
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_billing_blocks_single_session() {
+        let base_time = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("s1"),
+                start_time: base_time,
+                end_time: base_time + chrono::Duration::hours(1),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].sessions.len(), 1);
+        assert_eq!(blocks[0].tokens.input_tokens, 100);
+        assert!(!blocks[0].is_active); // Old session, not active
+    }
+
+    #[test]
+    fn test_billing_blocks_active_detection() {
+        let now = chrono::Utc::now();
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("recent"),
+                start_time: now - chrono::Duration::hours(2),
+                end_time: now - chrono::Duration::hours(1),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].is_active); // Recent session, should be active
     }
 }

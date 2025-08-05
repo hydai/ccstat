@@ -642,12 +642,20 @@ pub fn get_formatter(json: bool) -> Box<dyn OutputFormatter> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aggregation::VerboseEntry;
+    use crate::types::{DailyDate, ModelName, SessionId, TokenCounts};
+    use chrono::{TimeZone, Utc};
 
     #[test]
     fn test_number_formatting() {
         assert_eq!(TableFormatter::format_number(1234567), "1,234,567");
         assert_eq!(TableFormatter::format_number(999), "999");
         assert_eq!(TableFormatter::format_number(0), "0");
+        assert_eq!(TableFormatter::format_number(1000), "1,000");
+        assert_eq!(TableFormatter::format_number(10000), "10,000");
+        assert_eq!(TableFormatter::format_number(100000), "100,000");
+        assert_eq!(TableFormatter::format_number(1000000), "1,000,000");
+        assert_eq!(TableFormatter::format_number(u64::MAX), "18,446,744,073,709,551,615");
     }
 
     #[test]
@@ -655,5 +663,446 @@ mod tests {
         assert_eq!(TableFormatter::format_currency(12.345), "$12.35");
         assert_eq!(TableFormatter::format_currency(0.0), "$0.00");
         assert_eq!(TableFormatter::format_currency(1000.0), "$1000.00");
+        assert_eq!(TableFormatter::format_currency(0.001), "$0.00");
+        assert_eq!(TableFormatter::format_currency(0.005), "$0.01");
+        assert_eq!(TableFormatter::format_currency(0.994), "$0.99");
+        assert_eq!(TableFormatter::format_currency(0.996), "$1.00");
+        assert_eq!(TableFormatter::format_currency(99999.99), "$99999.99");
+        assert_eq!(TableFormatter::format_currency(-10.0), "$-10.00");
+    }
+
+    #[test]
+    fn test_table_formatter_daily_verbose() {
+        let formatter = TableFormatter;
+        
+        let timestamp = Utc.with_ymd_and_hms(2024, 1, 1, 10, 30, 0).unwrap();
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(1000, 500, 100, 50),
+                total_cost: 0.025,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: Some(vec![
+                    VerboseEntry {
+                        timestamp,
+                        session_id: "test-session-1".to_string(),
+                        model: "claude-3-opus".to_string(),
+                        tokens: TokenCounts::new(500, 250, 50, 25),
+                        cost: 0.0125,
+                    },
+                    VerboseEntry {
+                        timestamp: timestamp + chrono::Duration::hours(1),
+                        session_id: "test-session-2".to_string(),
+                        model: "claude-3-opus".to_string(),
+                        tokens: TokenCounts::new(500, 250, 50, 25),
+                        cost: 0.0125,
+                    },
+                ]),
+            },
+        ];
+        
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+        
+        // Check verbose output structure
+        assert!(output.contains("=== 2024-01-01 ==="));
+        assert!(output.contains("test-session-1"));
+        assert!(output.contains("test-session-2"));
+        assert!(output.contains("Day Total"));
+        assert!(output.contains("OVERALL SUMMARY"));
+    }
+
+    #[test]
+    fn test_table_formatter_sessions_duration() {
+        let formatter = TableFormatter;
+        
+        // Test various duration formats
+        let base_time = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("short-session"),
+                start_time: base_time,
+                end_time: base_time + chrono::Duration::minutes(30),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.005,
+                model: ModelName::new("claude-3-opus"),
+            },
+            SessionUsage {
+                session_id: SessionId::new("long-session"),
+                start_time: base_time,
+                end_time: base_time + chrono::Duration::hours(5) + chrono::Duration::minutes(45),
+                tokens: TokenCounts::new(1000, 500, 0, 0),
+                total_cost: 0.025,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+        
+        let totals = Totals::from_sessions(&sessions);
+        let output = formatter.format_sessions(&sessions, &totals);
+        
+        // Check duration formatting
+        assert!(output.contains("0h 30m")); // 30 minutes
+        assert!(output.contains("5h 45m")); // 5 hours 45 minutes
+    }
+
+    #[test]
+    fn test_table_formatter_blocks_time_remaining() {
+        let formatter = TableFormatter;
+        
+        let now = chrono::Utc::now();
+        let blocks = vec![
+            // Active block with time remaining
+            SessionBlock {
+                start_time: now - chrono::Duration::hours(2),
+                end_time: now + chrono::Duration::hours(3),
+                sessions: vec![],
+                tokens: TokenCounts::new(1000, 500, 0, 0),
+                total_cost: 0.025,
+                is_active: true,
+                warning: None,
+            },
+            // Active block that's expired
+            SessionBlock {
+                start_time: now - chrono::Duration::hours(6),
+                end_time: now - chrono::Duration::hours(1),
+                sessions: vec![],
+                tokens: TokenCounts::new(2000, 1000, 0, 0),
+                total_cost: 0.050,
+                is_active: true,
+                warning: None,
+            },
+            // Inactive block
+            SessionBlock {
+                start_time: now - chrono::Duration::hours(10),
+                end_time: now - chrono::Duration::hours(5),
+                sessions: vec![],
+                tokens: TokenCounts::new(3000, 1500, 0, 0),
+                total_cost: 0.075,
+                is_active: false,
+                warning: None,
+            },
+        ];
+        
+        let output = formatter.format_blocks(&blocks);
+        
+        // Check statuses and time remaining
+        assert!(output.contains("ACTIVE"));
+        assert!(output.contains("Complete"));
+        assert!(output.contains("Expired"));
+        assert!(output.contains("-")); // No time remaining for completed blocks
+    }
+
+    #[test]
+    fn test_json_formatter_daily() {
+        let formatter = JsonFormatter;
+        
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(1000, 500, 100, 50),
+                total_cost: 0.025,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: None,
+            },
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()),
+                tokens: TokenCounts::new(2000, 1000, 200, 100),
+                total_cost: 0.050,
+                models_used: vec!["claude-3-sonnet".to_string(), "claude-3-haiku".to_string()],
+                entries: None,
+            },
+        ];
+        
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+        
+        // Parse JSON to verify structure
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        // Check daily array
+        assert!(json["daily"].is_array());
+        assert_eq!(json["daily"].as_array().unwrap().len(), 2);
+        
+        // Check first day
+        assert_eq!(json["daily"][0]["date"], "2024-01-01");
+        assert_eq!(json["daily"][0]["tokens"]["input_tokens"], 1000);
+        assert_eq!(json["daily"][0]["tokens"]["output_tokens"], 500);
+        assert_eq!(json["daily"][0]["tokens"]["total"], 1650);
+        assert_eq!(json["daily"][0]["total_cost"], 0.025);
+        assert_eq!(json["daily"][0]["models_used"][0], "claude-3-opus");
+        
+        // Check totals
+        assert_eq!(json["totals"]["tokens"]["input_tokens"], 3000);
+        assert_eq!(json["totals"]["tokens"]["output_tokens"], 1500);
+        // Use approximate comparison for floating point
+        let total_cost = json["totals"]["total_cost"].as_f64().unwrap();
+        assert!((total_cost - 0.075).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_json_formatter_daily_with_verbose() {
+        let formatter = JsonFormatter;
+        
+        let timestamp = Utc.with_ymd_and_hms(2024, 1, 1, 10, 30, 0).unwrap();
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(1000, 500, 100, 50),
+                total_cost: 0.025,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: Some(vec![
+                    VerboseEntry {
+                        timestamp,
+                        session_id: "test-session-1".to_string(),
+                        model: "claude-3-opus".to_string(),
+                        tokens: TokenCounts::new(1000, 500, 100, 50),
+                        cost: 0.025,
+                    },
+                ]),
+            },
+        ];
+        
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        // Check verbose entries exist
+        assert!(json["daily"][0]["entries"].is_array());
+        assert_eq!(json["daily"][0]["entries"][0]["session_id"], "test-session-1");
+        assert_eq!(json["daily"][0]["entries"][0]["model"], "claude-3-opus");
+        assert_eq!(json["daily"][0]["entries"][0]["tokens"]["input_tokens"], 1000);
+        assert_eq!(json["daily"][0]["entries"][0]["cost"], 0.025);
+    }
+
+    #[test]
+    fn test_json_formatter_daily_by_instance() {
+        let formatter = JsonFormatter;
+        
+        let instance_data = vec![
+            DailyInstanceUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                instance_id: "instance-a".to_string(),
+                tokens: TokenCounts::new(1000, 500, 0, 0),
+                total_cost: 0.025,
+                models_used: vec!["claude-3-opus".to_string()],
+            },
+            DailyInstanceUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                instance_id: "instance-b".to_string(),
+                tokens: TokenCounts::new(2000, 1000, 0, 0),
+                total_cost: 0.050,
+                models_used: vec!["claude-3-sonnet".to_string()],
+            },
+        ];
+        
+        let totals = Totals::from_daily_instances(&instance_data);
+        let output = formatter.format_daily_by_instance(&instance_data, &totals);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        assert!(json["daily_by_instance"].is_array());
+        assert_eq!(json["daily_by_instance"].as_array().unwrap().len(), 2);
+        
+        // Check instances
+        assert_eq!(json["daily_by_instance"][0]["instance_id"], "instance-a");
+        assert_eq!(json["daily_by_instance"][1]["instance_id"], "instance-b");
+        
+        // Check totals
+        assert_eq!(json["totals"]["tokens"]["input_tokens"], 3000);
+        let total_cost = json["totals"]["total_cost"].as_f64().unwrap();
+        assert!((total_cost - 0.075).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_json_formatter_sessions() {
+        let formatter = JsonFormatter;
+        
+        let start_time = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let end_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 30, 0).unwrap();
+        
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("session-1"),
+                start_time,
+                end_time,
+                tokens: TokenCounts::new(5000, 2500, 500, 250),
+                total_cost: 0.1275,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+        
+        let totals = Totals::from_sessions(&sessions);
+        let output = formatter.format_sessions(&sessions, &totals);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        assert!(json["sessions"].is_array());
+        assert_eq!(json["sessions"][0]["session_id"], "session-1");
+        assert_eq!(json["sessions"][0]["duration_seconds"], 9000); // 2.5 hours
+        assert_eq!(json["sessions"][0]["tokens"]["input_tokens"], 5000);
+        assert_eq!(json["sessions"][0]["model"], "claude-3-opus");
+    }
+
+    #[test]
+    fn test_json_formatter_monthly() {
+        let formatter = JsonFormatter;
+        
+        let monthly_data = vec![
+            MonthlyUsage {
+                month: "2024-01".to_string(),
+                tokens: TokenCounts::new(500000, 250000, 50000, 25000),
+                total_cost: 12.75,
+                active_days: 20,
+            },
+            MonthlyUsage {
+                month: "2024-02".to_string(),
+                tokens: TokenCounts::new(600000, 300000, 60000, 30000),
+                total_cost: 15.30,
+                active_days: 18,
+            },
+        ];
+        
+        let totals = Totals::from_monthly(&monthly_data);
+        let output = formatter.format_monthly(&monthly_data, &totals);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        assert!(json["monthly"].is_array());
+        assert_eq!(json["monthly"].as_array().unwrap().len(), 2);
+        
+        // Check first month
+        assert_eq!(json["monthly"][0]["month"], "2024-01");
+        assert_eq!(json["monthly"][0]["active_days"], 20);
+        assert_eq!(json["monthly"][0]["tokens"]["input_tokens"], 500000);
+        
+        // Check totals
+        assert_eq!(json["totals"]["tokens"]["input_tokens"], 1100000);
+        assert_eq!(json["totals"]["total_cost"], 28.05);
+    }
+
+    #[test]
+    fn test_json_formatter_blocks() {
+        let formatter = JsonFormatter;
+        
+        let start_time = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
+        let end_time = start_time + chrono::Duration::hours(5);
+        
+        let blocks = vec![
+            SessionBlock {
+                start_time,
+                end_time,
+                sessions: vec![
+                    SessionUsage {
+                        session_id: SessionId::new("s1"),
+                        start_time,
+                        end_time: start_time + chrono::Duration::hours(1),
+                        tokens: TokenCounts::new(1000, 500, 0, 0),
+                        total_cost: 0.025,
+                        model: ModelName::new("claude-3-opus"),
+                    },
+                    SessionUsage {
+                        session_id: SessionId::new("s2"),
+                        start_time: start_time + chrono::Duration::hours(2),
+                        end_time: start_time + chrono::Duration::hours(3),
+                        tokens: TokenCounts::new(2000, 1000, 0, 0),
+                        total_cost: 0.050,
+                        model: ModelName::new("claude-3-opus"),
+                    },
+                ],
+                tokens: TokenCounts::new(3000, 1500, 0, 0),
+                total_cost: 0.075,
+                is_active: false,
+                warning: None,
+            },
+        ];
+        
+        let output = formatter.format_blocks(&blocks);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        assert!(json["blocks"].is_array());
+        assert_eq!(json["blocks"][0]["session_count"], 2);
+        assert_eq!(json["blocks"][0]["is_active"], false);
+        assert_eq!(json["blocks"][0]["tokens"]["input_tokens"], 3000);
+        assert_eq!(json["blocks"][0]["sessions"][0], "s1");
+        assert_eq!(json["blocks"][0]["sessions"][1], "s2");
+    }
+
+    #[test]
+    fn test_json_formatter_empty_data() {
+        let formatter = JsonFormatter;
+        
+        // Test empty daily data
+        let daily_data: Vec<DailyUsage> = vec![];
+        let totals = Totals::default();
+        let output = formatter.format_daily(&daily_data, &totals);
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["daily"].as_array().unwrap().len(), 0);
+        assert_eq!(json["totals"]["total_cost"], 0.0);
+        
+        // Test empty sessions
+        let sessions: Vec<SessionUsage> = vec![];
+        let output = formatter.format_sessions(&sessions, &totals);
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["sessions"].as_array().unwrap().len(), 0);
+        
+        // Test empty monthly
+        let monthly: Vec<MonthlyUsage> = vec![];
+        let output = formatter.format_monthly(&monthly, &totals);
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["monthly"].as_array().unwrap().len(), 0);
+        
+        // Test empty blocks
+        let blocks: Vec<SessionBlock> = vec![];
+        let output = formatter.format_blocks(&blocks);
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["blocks"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_json_formatter_large_numbers() {
+        let formatter = JsonFormatter;
+        
+        let daily_data = vec![
+            DailyUsage {
+                date: DailyDate::new(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                tokens: TokenCounts::new(10_000_000, 5_000_000, 1_000_000, 500_000),
+                total_cost: 255.50,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: None,
+            },
+        ];
+        
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+        
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        
+        // Verify large numbers are preserved accurately
+        assert_eq!(json["daily"][0]["tokens"]["input_tokens"], 10_000_000);
+        assert_eq!(json["daily"][0]["tokens"]["output_tokens"], 5_000_000);
+        assert_eq!(json["daily"][0]["tokens"]["cache_creation_tokens"], 1_000_000);
+        assert_eq!(json["daily"][0]["tokens"]["cache_read_tokens"], 500_000);
+        assert_eq!(json["daily"][0]["tokens"]["total"], 16_500_000);
+        assert_eq!(json["daily"][0]["total_cost"], 255.50);
+    }
+
+    #[test]
+    fn test_get_formatter() {
+        // Test table formatter returns correct type
+        let formatter = get_formatter(false);
+        // Verify it works by calling a method
+        let empty_daily: Vec<DailyUsage> = vec![];
+        let totals = Totals::default();
+        let output = formatter.format_daily(&empty_daily, &totals);
+        assert!(output.contains("TOTAL"));
+        
+        // Test JSON formatter returns correct type
+        let formatter = get_formatter(true);
+        let output = formatter.format_daily(&empty_daily, &totals);
+        // Verify it's valid JSON
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(json.is_object());
     }
 }

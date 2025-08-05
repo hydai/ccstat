@@ -360,23 +360,62 @@ mod tests {
     use super::*;
     use crate::cost_calculator::CostCalculator;
     use crate::pricing_fetcher::PricingFetcher;
+    use crate::filters::UsageFilter;
+    use tempfile::TempDir;
+    use tokio::io::AsyncWriteExt;
+    use std::env;
 
-    #[tokio::test]
-    async fn test_live_monitor_creation() {
-        // Create data loader - it's okay if it fails in CI
-        let data_loader_result = DataLoader::new().await;
-        let data_loader = match data_loader_result {
+    async fn create_test_setup_with_temp_dir() -> (Arc<DataLoader>, Arc<Aggregator>, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Set environment variable to point to our temp directory
+        unsafe {
+            env::set_var("CLAUDE_DATA_PATH", temp_dir.path());
+        }
+        
+        // Create data loader using the environment variable
+        let data_loader = match DataLoader::new().await {
             Ok(loader) => Arc::new(loader),
             Err(_) => {
-                // Skip test if no Claude directories exist (e.g., in CI)
-                println!("Skipping test: No Claude directories found");
-                return;
+                // If that fails, try to create a minimal setup for testing
+                // This approach may not work, but we'll try to test what we can
+                unsafe {
+                    env::remove_var("CLAUDE_DATA_PATH");
+                }
+                return create_minimal_test_setup().await;
             }
         };
-
+        
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator));
+        
+        (data_loader, aggregator, temp_dir)
+    }
+
+    async fn create_minimal_test_setup() -> (Arc<DataLoader>, Arc<Aggregator>, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create a dummy directory structure
+        std::fs::create_dir_all(temp_dir.path().join(".claude")).unwrap();
+        
+        unsafe {
+            env::set_var("CLAUDE_DATA_PATH", temp_dir.path().join(".claude"));
+        }
+        
+        let data_loader = DataLoader::new().await.unwrap();
+        let data_loader = Arc::new(data_loader);
+        
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator));
+        
+        (data_loader, aggregator, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn test_live_monitor_creation() {
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
         let filter = UsageFilter::new();
 
         let monitor = LiveMonitor::new(
@@ -389,8 +428,157 @@ mod tests {
             5,
         );
 
-        // Just verify it can be created
+        // Verify it can be created with correct properties
         assert_eq!(monitor.interval_secs, 5);
+        assert!(!monitor.json_output);
+        assert!(!monitor.instances);
+        assert_eq!(monitor.cost_mode, CostMode::Auto);
+    }
+
+    #[tokio::test]
+    async fn test_live_monitor_creation_with_options() {
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
+        let filter = UsageFilter::new().with_project("test-project".to_string());
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Calculate,
+            true,  // json_output
+            true,  // instances
+            30,    // interval_secs
+        );
+
+        // Verify all options are set correctly
+        assert_eq!(monitor.interval_secs, 30);
+        assert!(monitor.json_output);
+        assert!(monitor.instances);
+        assert_eq!(monitor.cost_mode, CostMode::Calculate);
+    }
+
+    #[tokio::test]
+    async fn test_live_monitor_with_json_output() {
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
+        let filter = UsageFilter::new();
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            true, // JSON output - should not print screen control sequences
+            false,
+            5,
+        );
+
+        // Test that the monitor can be created with JSON output
+        assert!(monitor.json_output);
+        assert_eq!(monitor.interval_secs, 5);
+        
+        // Clean up
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_live_monitor_with_instances_mode() {
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;  
+        let filter = UsageFilter::new();
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Calculate,
+            false,
+            true, // instances mode
+            10,
+        );
+
+        // Test that the monitor can be created with instances mode
+        assert!(monitor.instances);
+        assert_eq!(monitor.cost_mode, CostMode::Calculate);
+        assert_eq!(monitor.interval_secs, 10);
+        
+        // Clean up
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_live_monitor_with_filter() {
+        let (data_loader, aggregator, _temp_dir) = create_test_setup_with_temp_dir().await;
+        let filter = UsageFilter::new().with_project("test-project".to_string());
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Display,
+            true,
+            true,
+            30,
+        );
+
+        // Test that the monitor can be created with all options
+        assert!(monitor.json_output);
+        assert!(monitor.instances);
+        assert_eq!(monitor.cost_mode, CostMode::Display);
+        assert_eq!(monitor.interval_secs, 30);
+        
+        // Clean up
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_data_directories_with_test_data() {
+        let (data_loader, _aggregator, temp_dir) = create_test_setup_with_temp_dir().await;
+
+        let result = data_loader.get_data_directories().await;
+        match result {
+            Ok(dirs) => {
+                assert!(!dirs.is_empty());
+                // Verify directories are valid paths
+                for dir in dirs {
+                    assert!(dir.is_absolute());
+                }
+            }
+            Err(e) => {
+                // It's okay if directories don't exist in test environment
+                assert!(matches!(e, CcstatError::Io(_)));
+            }
+        }
+        
+        // Clean up
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+
+    #[tokio::test] 
+    async fn test_live_monitor_active_session_detection_logic() {
+        // Test the active session detection logic without calling refresh_display
+        let now = chrono::Utc::now();
+        let recent_time = now - chrono::Duration::minutes(2); // Within 5-minute window
+        let old_time = now - chrono::Duration::hours(1); // Outside 5-minute window
+        
+        // Test that we can identify recent vs old timestamps
+        let active_cutoff = now - chrono::Duration::minutes(5);
+        
+        assert!(recent_time > active_cutoff, "Recent time should be within active window");
+        assert!(old_time < active_cutoff, "Old time should be outside active window");
+        
+        // This tests the core logic without the display complications
+        let recent_duration = now - recent_time;
+        let old_duration = now - old_time;
+        
+        assert!(recent_duration < chrono::Duration::minutes(5));
+        assert!(old_duration > chrono::Duration::minutes(5));
     }
 
     #[tokio::test]

@@ -498,6 +498,8 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use tokio::io::AsyncWriteExt;
+    use std::env;
+    use std::fs;
 
     #[tokio::test]
     async fn test_jsonl_parsing() {
@@ -561,5 +563,299 @@ mod tests {
         assert!(session_ids.contains(&"test0"));
         assert!(session_ids.contains(&"test1"));
         assert!(session_ids.contains(&"test2"));
+    }
+
+    #[tokio::test]
+    async fn test_find_jsonl_files() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create directory structure with JSONL files and other files
+        let sub_dir = temp_dir.path().join("subdir");
+        fs::create_dir_all(&sub_dir).unwrap();
+        
+        // Create JSONL files
+        tokio::fs::File::create(temp_dir.path().join("usage1.jsonl")).await.unwrap();
+        tokio::fs::File::create(temp_dir.path().join("usage2.jsonl")).await.unwrap();
+        tokio::fs::File::create(sub_dir.join("usage3.jsonl")).await.unwrap();
+        
+        // Create non-JSONL files (should be ignored)
+        tokio::fs::File::create(temp_dir.path().join("config.json")).await.unwrap();
+        tokio::fs::File::create(temp_dir.path().join("readme.txt")).await.unwrap();
+
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        let files = loader.find_jsonl_files().await.unwrap();
+        assert_eq!(files.len(), 3);
+
+        // Verify all files are JSONL files
+        for file in &files {
+            assert_eq!(file.extension().unwrap(), "jsonl");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_environment_variable_override() {
+        let temp_dir = TempDir::new().unwrap();
+        tokio::fs::File::create(temp_dir.path().join("test.jsonl")).await.unwrap();
+
+        // Set environment variable
+        unsafe {
+            env::set_var("CLAUDE_DATA_PATH", temp_dir.path());
+        }
+
+        let paths = DataLoader::discover_claude_paths().await.unwrap();
+        
+        // Clean up environment variable
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+
+        // Should include the custom path
+        assert!(paths.contains(&temp_dir.path().to_path_buf()));
+    }
+
+    #[tokio::test]
+    async fn test_builder_pattern() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        // Test builder methods
+        let loader = loader
+            .with_progress(true)
+            .with_interning(true)
+            .with_arena(true);
+
+        assert!(loader.show_progress);
+        assert!(loader.use_interning);
+        assert!(loader.use_arena);
+    }
+
+    #[tokio::test]
+    async fn test_paths_getter() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+        
+        let loader = DataLoader {
+            claude_paths: vec![path.clone()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        let paths = loader.paths();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], path);
+    }
+
+    #[tokio::test]
+    async fn test_empty_jsonl_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("empty.jsonl");
+
+        // Create empty file
+        tokio::fs::File::create(&jsonl_path).await.unwrap();
+
+        let mut seen = HashSet::new();
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        tokio::pin!(stream);
+
+        // Should produce no entries
+        let result = stream.next().await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_malformed_jsonl_lines() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("malformed.jsonl");
+
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write valid entry
+        file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        
+        // Write malformed JSON
+        file.write_all(b"invalid json line\n").await.unwrap();
+        
+        // Write another valid entry
+        file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
+
+        let mut seen = HashSet::new();
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        tokio::pin!(stream);
+
+        // Should get the two valid entries, malformed line is skipped
+        let entry1 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry1.session_id.as_str(), "test1");
+
+        let entry2 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry2.session_id.as_str(), "test2");
+
+        // No more entries
+        let result = stream.next().await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_deduplication() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("dedup.jsonl");
+
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write same entry twice (should be deduplicated)
+        let duplicate_entry = br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"id":"msg_123","model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"requestId":"req_456"}"#;
+        
+        file.write_all(duplicate_entry).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        file.write_all(duplicate_entry).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        
+        // Write different entry
+        file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
+
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        // Test with the full loader which filters duplicates
+        let entries: Vec<_> = loader
+            .load_usage_entries()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        // Should only get 2 unique entries (duplicate is filtered out)
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id.as_str(), "test1");
+        assert_eq!(entries[1].session_id.as_str(), "test2");
+    }
+
+    #[tokio::test]
+    async fn test_deduplication_direct_stream() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("dedup_direct.jsonl");
+
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write same entry twice (should be deduplicated)
+        let duplicate_entry = br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"id":"msg_123","model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"requestId":"req_456"}"#;
+        
+        file.write_all(duplicate_entry).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        file.write_all(duplicate_entry).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        
+        // Write different entry
+        file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
+
+        let mut seen = HashSet::new();
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        tokio::pin!(stream);
+
+        // First entry should succeed
+        let entry1 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry1.session_id.as_str(), "test1");
+
+        // Second entry should be duplicate error
+        let result2 = stream.next().await.unwrap();
+        assert!(matches!(result2, Err(CcstatError::DuplicateEntry)));
+
+        // Third entry should succeed
+        let entry3 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry3.session_id.as_str(), "test2");
+    }
+
+    #[tokio::test]
+    async fn test_non_assistant_entries_filtered() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("mixed.jsonl");
+
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write assistant entry (should be included)
+        file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        
+        // Write user entry (should be filtered out)
+        file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:30Z","type":"user","message":{"content":"Hello"}}"#).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        
+        // Write another assistant entry
+        file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
+
+        let mut seen = HashSet::new();
+        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        tokio::pin!(stream);
+
+        // Should only get the two assistant entries
+        let entry1 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry1.session_id.as_str(), "test1");
+
+        let entry2 = stream.next().await.unwrap().unwrap();
+        assert_eq!(entry2.session_id.as_str(), "test2");
+
+        // No more entries
+        let result = stream.next().await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_loading_with_progress() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("progress.jsonl");
+
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
+
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: true, // Enable progress bar
+            use_interning: false,
+            use_arena: false,
+        };
+
+        // This should work without panicking even with progress enabled
+        let entries: Vec<_> = loader
+            .load_usage_entries()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_no_claude_directory_error() {
+        // This should fail since we're not providing any valid paths
+        let result = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
+
+        // Empty paths should be caught during creation normally, but we're testing the struct directly
+        let files = result.find_jsonl_files().await.unwrap();
+        assert_eq!(files.len(), 0);
     }
 }
