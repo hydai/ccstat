@@ -37,6 +37,7 @@
 
 pub mod aggregation;
 pub mod cli;
+pub mod commands;
 pub mod cost_calculator;
 pub mod data_loader;
 pub mod error;
