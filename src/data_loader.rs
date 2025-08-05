@@ -500,6 +500,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use std::env;
     use std::fs;
+    use futures::StreamExt;
 
     #[tokio::test]
     async fn test_jsonl_parsing() {
@@ -857,5 +858,83 @@ mod tests {
         // Empty paths should be caught during creation normally, but we're testing the struct directly
         let files = result.find_jsonl_files().await.unwrap();
         assert_eq!(files.len(), 0);
+    }
+    
+    #[tokio::test]
+    async fn test_load_usage_entries_with_arena() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("test.jsonl");
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write test data
+        let entries = vec![
+            r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"cwd":"/test"}"#,
+            r#"{"sessionId":"session-2","timestamp":"2024-01-15T11:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100}}}"#,
+        ];
+        
+        for entry in entries {
+            file.write_all(entry.as_bytes()).await.unwrap();
+            file.write_all(b"\n").await.unwrap();
+        }
+        
+        let loader = DataLoader {
+            claude_paths: vec![jsonl_path.clone()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: true,
+        };
+        
+        // Load entries and count them
+        let mut count = 0;
+        let entries = loader.load_usage_entries();
+        futures::pin_mut!(entries);
+        while let Some(result) = entries.next().await {
+            assert!(result.is_ok());
+            count += 1;
+        }
+        assert_eq!(count, 2);
+    }
+    
+    #[tokio::test]
+    async fn test_load_usage_entries_with_string_interning() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("test.jsonl");
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        
+        // Write test data with repeated values
+        let entries = vec![
+            r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}},"cwd":"/test"}"#,
+            r#"{"sessionId":"session-1","timestamp":"2024-01-15T10:30:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":150,"output_tokens":75}},"cwd":"/test"}"#,
+            r#"{"sessionId":"session-1","timestamp":"2024-01-15T11:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":200,"output_tokens":100}},"cwd":"/test"}"#,
+        ];
+        
+        for entry in entries {
+            file.write_all(entry.as_bytes()).await.unwrap();
+            file.write_all(b"\n").await.unwrap();
+        }
+        
+        let loader = DataLoader {
+            claude_paths: vec![jsonl_path.clone()],
+            show_progress: false,
+            use_interning: true,
+            use_arena: false,
+        };
+        
+        // Load entries and verify they're interned
+        let mut count = 0;
+        let entries = loader.load_usage_entries();
+        futures::pin_mut!(entries);
+        let mut session_ids = Vec::new();
+        while let Some(result) = entries.next().await {
+            if let Ok(entry) = result {
+                session_ids.push(entry.session_id.clone());
+                count += 1;
+            }
+        }
+        assert_eq!(count, 3);
+        
+        // All session IDs should point to the same memory
+        assert_eq!(session_ids.len(), 3);
+        assert!(session_ids.iter().all(|id| id.as_ref() == "session-1"));
     }
 }

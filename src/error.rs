@@ -109,4 +109,79 @@ mod tests {
         let ccstat_error: CcstatError = io_error.into();
         assert!(matches!(ccstat_error, CcstatError::Io(_)));
     }
+    
+    #[test]
+    fn test_json_error_conversion() {
+        let json_str = "{invalid json}";
+        let json_error = serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
+        let ccstat_error: CcstatError = json_error.into();
+        
+        assert!(matches!(ccstat_error, CcstatError::Json(_)));
+        assert!(ccstat_error.to_string().contains("key must be a string"));
+    }
+    
+    #[test]
+    fn test_result_type_alias() {
+        fn test_function() -> Result<i32> {
+            Ok(42)
+        }
+        
+        let result = test_function();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+        
+        fn test_error_function() -> Result<i32> {
+            Err(CcstatError::NoClaudeDirectory)
+        }
+        
+        let error_result = test_error_function();
+        assert!(error_result.is_err());
+    }
+    
+    #[test]
+    fn test_unknown_model_error() {
+        let model = ModelName::new("unknown-model");
+        let error = CcstatError::UnknownModel(model);
+        assert_eq!(error.to_string(), "Unknown model: unknown-model");
+    }
+    
+    #[test]
+    fn test_invalid_date_error() {
+        let error = CcstatError::InvalidDate("bad date format".to_string());
+        assert_eq!(error.to_string(), "Invalid date format: bad date format");
+    }
+    
+    #[test]
+    fn test_parse_error() {
+        let error = CcstatError::Parse {
+            file: PathBuf::from("/path/to/file.jsonl"),
+            error: "invalid JSON".to_string(),
+        };
+        assert!(error.to_string().contains("/path/to/file.jsonl"));
+        assert!(error.to_string().contains("invalid JSON"));
+    }
+    
+    #[test]
+    fn test_config_error() {
+        let error = CcstatError::Config("missing required field".to_string());
+        assert_eq!(error.to_string(), "Configuration error: missing required field");
+    }
+    
+    #[test]
+    fn test_invalid_argument_error() {
+        let error = CcstatError::InvalidArgument("value must be positive".to_string());
+        assert_eq!(error.to_string(), "Invalid argument: value must be positive");
+    }
+    
+    #[test]
+    fn test_mcp_server_error() {
+        let error = CcstatError::McpServer("connection failed".to_string());
+        assert_eq!(error.to_string(), "MCP server error: connection failed");
+    }
+    
+    #[test]
+    fn test_duplicate_entry_error() {
+        let error = CcstatError::DuplicateEntry;
+        assert_eq!(error.to_string(), "Duplicate entry");
+    }
 }

@@ -335,4 +335,60 @@ mod tests {
         assert!(!filter.matches(&entry_different_project));
         assert!(!filter.matches(&entry_no_project));
     }
+    
+    #[test]
+    fn test_combined_filters() {
+        let filter = UsageFilter::new()
+            .with_since(NaiveDate::from_ymd_opt(2024, 1, 10).unwrap())
+            .with_until(NaiveDate::from_ymd_opt(2024, 1, 20).unwrap())
+            .with_project("test".to_string());
+        
+        // Entry that matches all filters
+        let entry1 = UsageEntry {
+            session_id: SessionId::new("test1"),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-15T12:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: Some("test".to_string()),
+            instance_id: None,
+        };
+        assert!(filter.matches(&entry1));
+        
+        // Entry with wrong project
+        let entry2 = UsageEntry {
+            session_id: SessionId::new("test2"),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-15T12:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: Some("other".to_string()),
+            instance_id: None,
+        };
+        assert!(!filter.matches(&entry2));
+        
+        // Entry outside date range
+        let entry3 = UsageEntry {
+            session_id: SessionId::new("test3"),
+            timestamp: ISOTimestamp::new(
+                DateTime::parse_from_rfc3339("2024-01-25T12:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::default(),
+            total_cost: None,
+            project: Some("test".to_string()),
+            instance_id: None,
+        };
+        assert!(!filter.matches(&entry3));
+    }
 }

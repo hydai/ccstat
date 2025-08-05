@@ -441,7 +441,7 @@ mod tests {
     #[tokio::test]
     async fn test_apply_token_limit_warnings() {
         use crate::aggregation::{SessionBlock, SessionUsage};
-        use crate::types::{TokenCounts, ModelName, SessionId, ISOTimestamp};
+        use crate::types::{TokenCounts, ModelName, SessionId};
         use chrono::Utc;
         
         let now = Utc::now();
@@ -481,5 +481,360 @@ mod tests {
         // Test invalid limit
         let result = apply_token_limit_warnings(&mut blocks, "invalid");
         assert!(result.is_err());
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_with_instances() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: true,
+            since: None,
+            until: None,
+            instances: true,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: false,
+            intern: false,
+            arena: false,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_with_verbose() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: false,
+            since: None,
+            until: None,
+            instances: false,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: false,
+            intern: false,
+            arena: false,
+            verbose: true,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test] 
+    async fn test_execute_daily_with_date_filters() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Calculate,
+            json: true,
+            since: Some("2024-01-01".to_string()),
+            until: Some("2024-12-31".to_string()),
+            instances: false,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: false,
+            intern: false,
+            arena: false,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_invalid_date() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: false,
+            since: Some("invalid-date".to_string()),
+            until: None,
+            instances: false,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: false,
+            intern: false,
+            arena: false,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_err());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_monthly_with_filters() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = MonthlyConfig {
+            mode: CostMode::Calculate,
+            json: true,
+            since: Some("2024-01".to_string()),
+            until: Some("2024-12".to_string()),
+        };
+        
+        let result = execute_monthly(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_monthly_invalid_month() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = MonthlyConfig {
+            mode: CostMode::Auto,
+            json: false,
+            since: Some("2024-13".to_string()),
+            until: None,
+        };
+        
+        let result = execute_monthly(config).await;
+        assert!(result.is_err());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_session_with_filters() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = SessionConfig {
+            mode: CostMode::Display,
+            json: true,
+            since: Some("2024-01-01".to_string()),
+            until: Some("2024-12-31".to_string()),
+        };
+        
+        let result = execute_session(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_blocks_with_filters() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = BlocksConfig {
+            mode: CostMode::Calculate,
+            json: true,
+            active: true,
+            recent: true,
+            token_limit: Some("80%".to_string()),
+        };
+        
+        let result = execute_blocks(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_blocks_invalid_token_limit() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = BlocksConfig {
+            mode: CostMode::Auto,
+            json: false,
+            active: false,
+            recent: false,
+            token_limit: Some("not-a-number".to_string()),
+        };
+        
+        let result = execute_blocks(config).await;
+        assert!(result.is_err());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_with_project_filter() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: false,
+            since: None,
+            until: None,
+            instances: false,
+            project: Some("test-project".to_string()),
+            watch: false,
+            interval: 5,
+            parallel: false,
+            intern: false,
+            arena: false,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_parallel_with_instances() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: true,
+            since: None,
+            until: None,
+            instances: true,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: true,
+            intern: false,
+            arena: false,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_execute_daily_with_memory_opts() {
+        let _temp_dir = setup_test_environment().await;
+        
+        let config = DailyConfig {
+            mode: CostMode::Auto,
+            json: false,
+            since: None,
+            until: None,
+            instances: false,
+            project: None,
+            watch: false,
+            interval: 5,
+            parallel: true,
+            intern: true,
+            arena: true,
+            verbose: false,
+        };
+        
+        let result = execute_daily(config).await;
+        assert!(result.is_ok());
+        
+        unsafe {
+            env::remove_var("CLAUDE_DATA_PATH");
+        }
+    }
+    
+    #[test]
+    fn test_apply_token_limit_warnings_percentage() {
+        use crate::aggregation::{SessionBlock, SessionUsage};
+        use crate::types::{TokenCounts, ModelName, SessionId};
+        use chrono::Utc;
+        
+        let now = Utc::now();
+        let session = SessionUsage {
+            session_id: SessionId::new("test"),
+            start_time: now - chrono::Duration::hours(1),
+            end_time: now,
+            tokens: TokenCounts::new(8_500_000, 0, 0, 0),
+            total_cost: 100.0,
+            model: ModelName::new("claude-3-opus"),
+        };
+        
+        let mut blocks = vec![
+            SessionBlock {
+                start_time: now - chrono::Duration::hours(1),
+                end_time: now,
+                sessions: vec![session],
+                tokens: TokenCounts::new(8_500_000, 0, 0, 0),
+                total_cost: 100.0,
+                is_active: true,
+                warning: None,
+            },
+        ];
+        
+        // Test percentage approaching threshold
+        let result = apply_token_limit_warnings(&mut blocks, "90%");
+        assert!(result.is_ok());
+        assert!(blocks[0].warning.is_some());
+        assert!(blocks[0].warning.as_ref().unwrap().contains("approaching limit"));
+    }
+    
+    #[test]
+    fn test_apply_token_limit_warnings_inactive_block() {
+        use crate::aggregation::{SessionBlock, SessionUsage};
+        use crate::types::{TokenCounts, ModelName, SessionId};
+        use chrono::Utc;
+        
+        let now = Utc::now();
+        let session = SessionUsage {
+            session_id: SessionId::new("test"),
+            start_time: now - chrono::Duration::hours(6),
+            end_time: now - chrono::Duration::hours(5),
+            tokens: TokenCounts::new(12_000_000, 0, 0, 0),
+            total_cost: 100.0,
+            model: ModelName::new("claude-3-opus"),
+        };
+        
+        let mut blocks = vec![
+            SessionBlock {
+                start_time: now - chrono::Duration::hours(6),
+                end_time: now - chrono::Duration::hours(1),
+                sessions: vec![session],
+                tokens: TokenCounts::new(12_000_000, 0, 0, 0),
+                total_cost: 100.0,
+                is_active: false, // Inactive block
+                warning: None,
+            },
+        ];
+        
+        // Inactive blocks should not get warnings
+        let result = apply_token_limit_warnings(&mut blocks, "80%");
+        assert!(result.is_ok());
+        assert!(blocks[0].warning.is_none());
     }
 }
