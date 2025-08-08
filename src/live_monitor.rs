@@ -83,18 +83,18 @@ impl LiveMonitor {
         let mut watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
             let mut watcher = RecommendedWatcher::new(
                 move |result: notify::Result<Event>| {
-                    if let Ok(event) = result {
-                        if matches!(
+                    if let Ok(event) = result
+                        && matches!(
                             event.kind,
                             EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-                        ) {
-                            // Check if any path is a JSONL file
-                            for path in &event.paths {
-                                if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                                    should_refresh_watcher.store(true, Ordering::Release);
-                                    let _ = tx.blocking_send(());
-                                    break;
-                                }
+                        )
+                    {
+                        // Check if any path is a JSONL file
+                        for path in &event.paths {
+                            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                                should_refresh_watcher.store(true, Ordering::Release);
+                                let _ = tx.blocking_send(());
+                                break;
                             }
                         }
                     }
@@ -184,10 +184,10 @@ impl LiveMonitor {
             _ = tokio::time::sleep(WATCHER_SHUTDOWN_TIMEOUT) => {
                 watcher_handle.abort();
                 // The aborted task still needs to be awaited to free resources
-                if let Err(e) = watcher_handle.await {
-                    if e.is_panic() {
-                        tracing::warn!("Watcher task panicked during forced shutdown: {:?}", e);
-                    }
+                if let Err(e) = watcher_handle.await
+                    && e.is_panic()
+                {
+                    tracing::warn!("Watcher task panicked during forced shutdown: {:?}", e);
                 }
                 tracing::warn!(
                     "Watcher task was aborted because it did not shut down gracefully in time"

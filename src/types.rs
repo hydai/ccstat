@@ -471,10 +471,10 @@ impl UsageEntry {
         }
 
         // Only process entries of type "assistant" (if type is present)
-        if let Some(entry_type) = &raw.entry_type {
-            if entry_type != "assistant" {
-                return None;
-            }
+        if let Some(entry_type) = &raw.entry_type
+            && entry_type != "assistant"
+        {
+            return None;
         }
 
         // Skip synthetic models (errors, no response requested, etc.)

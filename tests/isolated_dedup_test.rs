@@ -31,12 +31,12 @@ fn test_deduplication_logic() {
     let mut entries = Vec::new();
 
     for raw in vec![raw1, raw2, raw3] {
-        if let Some(key) = UsageEntry::dedup_key(&raw) {
-            if !seen.contains(&key) {
-                seen.insert(key);
-                if let Some(entry) = UsageEntry::from_raw(raw) {
-                    entries.push(entry);
-                }
+        if let Some(key) = UsageEntry::dedup_key(&raw)
+            && !seen.contains(&key)
+        {
+            seen.insert(key);
+            if let Some(entry) = UsageEntry::from_raw(raw) {
+                entries.push(entry);
             }
         }
     }

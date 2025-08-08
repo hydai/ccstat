@@ -87,10 +87,9 @@ async fn test_monthly_aggregation_with_filter() {
             .month
             .split_once('-')
             .and_then(|(y, m)| Some((y.parse::<i32>().ok()?, m.parse::<u32>().ok()?)))
+            && let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1)
         {
-            if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1) {
-                return month_filter.matches_date(&date);
-            }
+            return month_filter.matches_date(&date);
         }
         false
     });
