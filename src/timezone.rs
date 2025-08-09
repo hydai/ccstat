@@ -12,15 +12,16 @@ use tracing::debug;
 pub struct TimezoneConfig {
     /// The timezone to use for date operations
     pub tz: Tz,
-    /// Whether UTC was explicitly requested
+    /// Whether the timezone is UTC
     pub is_utc: bool,
 }
 
 impl Default for TimezoneConfig {
     fn default() -> Self {
+        let tz = get_local_timezone();
         Self {
-            tz: get_local_timezone(),
-            is_utc: false,
+            is_utc: tz == Tz::UTC,
+            tz,
         }
     }
 }

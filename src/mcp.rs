@@ -68,9 +68,7 @@ pub struct McpServer {
     /// Data loader instance
     data_loader: Arc<RwLock<DataLoader>>,
     /// Cost calculator instance
-    _cost_calculator: Arc<CostCalculator>,
-    /// Aggregator instance
-    aggregator: Arc<Aggregator>,
+    cost_calculator: Arc<CostCalculator>,
 }
 
 /// Daily usage request parameters
@@ -81,6 +79,9 @@ struct DailyArgs {
     since: Option<String>,
     until: Option<String>,
     project: Option<String>,
+    timezone: Option<String>,
+    #[serde(default)]
+    utc: bool,
 }
 
 /// Session usage request parameters
@@ -90,6 +91,9 @@ struct SessionArgs {
     mode: CostMode,
     since: Option<String>,
     until: Option<String>,
+    timezone: Option<String>,
+    #[serde(default)]
+    utc: bool,
 }
 
 /// Monthly usage request parameters
@@ -99,6 +103,9 @@ struct MonthlyArgs {
     mode: CostMode,
     since: Option<String>,
     until: Option<String>,
+    timezone: Option<String>,
+    #[serde(default)]
+    utc: bool,
 }
 
 impl McpServer {
@@ -107,15 +114,10 @@ impl McpServer {
         let data_loader = Arc::new(RwLock::new(DataLoader::new().await?));
         let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(
-            cost_calculator.clone(),
-            TimezoneConfig::default(),
-        ));
 
         Ok(Self {
             data_loader,
-            _cost_calculator: cost_calculator,
-            aggregator,
+            cost_calculator,
         })
     }
 
@@ -125,27 +127,27 @@ impl McpServer {
 
         // Register methods
         let loader = self.data_loader.clone();
-        let aggregator = self.aggregator.clone();
+        let cost_calculator = self.cost_calculator.clone();
         handler.add_method("daily", move |params: Params| {
             let loader = loader.clone();
-            let aggregator = aggregator.clone();
-            Box::pin(async move { Self::handle_daily(params, loader, aggregator).await })
+            let cost_calculator = cost_calculator.clone();
+            Box::pin(async move { Self::handle_daily(params, loader, cost_calculator).await })
         });
 
         let loader = self.data_loader.clone();
-        let aggregator = self.aggregator.clone();
+        let cost_calculator = self.cost_calculator.clone();
         handler.add_method("session", move |params: Params| {
             let loader = loader.clone();
-            let aggregator = aggregator.clone();
-            Box::pin(async move { Self::handle_session(params, loader, aggregator).await })
+            let cost_calculator = cost_calculator.clone();
+            Box::pin(async move { Self::handle_session(params, loader, cost_calculator).await })
         });
 
         let loader = self.data_loader.clone();
-        let aggregator = self.aggregator.clone();
+        let cost_calculator = self.cost_calculator.clone();
         handler.add_method("monthly", move |params: Params| {
             let loader = loader.clone();
-            let aggregator = aggregator.clone();
-            Box::pin(async move { Self::handle_monthly(params, loader, aggregator).await })
+            let cost_calculator = cost_calculator.clone();
+            Box::pin(async move { Self::handle_monthly(params, loader, cost_calculator).await })
         });
 
         // Add server info method
@@ -164,13 +166,20 @@ impl McpServer {
     async fn handle_daily(
         params: Params,
         loader: Arc<RwLock<DataLoader>>,
-        aggregator: Arc<Aggregator>,
+        cost_calculator: Arc<CostCalculator>,
     ) -> jsonrpc_core::Result<Value> {
         let args: DailyArgs = params
             .parse()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         debug!("Handling daily request with args: {:?}", args);
+
+        // Create timezone config from request parameters
+        let timezone_config = TimezoneConfig::from_cli(args.timezone.as_deref(), args.utc)
+            .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
+
+        // Create aggregator with requested timezone
+        let aggregator = Arc::new(Aggregator::new(cost_calculator.clone(), timezone_config));
 
         // Load data
         let loader = loader.read().await;
@@ -220,13 +229,20 @@ impl McpServer {
     async fn handle_session(
         params: Params,
         loader: Arc<RwLock<DataLoader>>,
-        aggregator: Arc<Aggregator>,
+        cost_calculator: Arc<CostCalculator>,
     ) -> jsonrpc_core::Result<Value> {
         let args: SessionArgs = params
             .parse()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         debug!("Handling session request with args: {:?}", args);
+
+        // Create timezone config from request parameters
+        let timezone_config = TimezoneConfig::from_cli(args.timezone.as_deref(), args.utc)
+            .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
+
+        // Create aggregator with requested timezone
+        let aggregator = Arc::new(Aggregator::new(cost_calculator.clone(), timezone_config));
 
         // Load data
         let loader = loader.read().await;
@@ -272,13 +288,20 @@ impl McpServer {
     async fn handle_monthly(
         params: Params,
         loader: Arc<RwLock<DataLoader>>,
-        aggregator: Arc<Aggregator>,
+        cost_calculator: Arc<CostCalculator>,
     ) -> jsonrpc_core::Result<Value> {
         let args: MonthlyArgs = params
             .parse()
             .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
 
         debug!("Handling monthly request with args: {:?}", args);
+
+        // Create timezone config from request parameters
+        let timezone_config = TimezoneConfig::from_cli(args.timezone.as_deref(), args.utc)
+            .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
+
+        // Create aggregator with requested timezone
+        let aggregator = Arc::new(Aggregator::new(cost_calculator.clone(), timezone_config));
 
         // Load data
         let loader = loader.read().await;
