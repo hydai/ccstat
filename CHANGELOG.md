@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2025-08-09
+
+### Fixed
+- Billing block start times now correctly align to hour boundaries (XX:00) according to Claude Code Spec
+  - Blocks now start at the beginning of the hour rather than at the exact session start time
+  - Ensures accurate billing window tracking and time remaining calculations
+
 ## [0.1.2] - 2025-08-09
 
 ### Added
@@ -31,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/hydai/ccstat/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/hydai/ccstat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/hydai/ccstat/releases/tag/v0.1.1

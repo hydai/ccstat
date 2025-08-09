@@ -567,6 +567,16 @@ impl Aggregator {
             .collect()
     }
 
+    /// Truncate a timestamp to the hour boundary (XX:00:00)
+    fn truncate_to_hour(timestamp: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+        use chrono::Timelike;
+        timestamp
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .expect("truncating to hour should always be valid")
+    }
+
     /// Group sessions into 5-hour billing blocks
     pub fn create_billing_blocks(sessions: &[SessionUsage]) -> Vec<SessionBlock> {
         if sessions.is_empty() {
@@ -602,7 +612,8 @@ impl Aggregator {
 
             // Start new block if needed
             if current_block_start.is_none() {
-                current_block_start = Some(session.start_time);
+                // Align block start to hour boundary (XX:00)
+                current_block_start = Some(Self::truncate_to_hour(session.start_time));
             }
 
             // Add session to current block
@@ -761,5 +772,61 @@ mod tests {
         // Second block should contain s3
         assert_eq!(blocks[1].sessions.len(), 1);
         assert_eq!(blocks[1].tokens.input_tokens, 150);
+    }
+
+    #[test]
+    fn test_billing_blocks_hour_alignment() {
+        // Test that blocks are aligned to hour boundaries
+        let base_time = chrono::Utc
+            .with_ymd_and_hms(2024, 1, 1, 19, 23, 45)
+            .unwrap(); // 19:23:45
+
+        let sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("s1"),
+                start_time: base_time, // Starts at 19:23:45
+                end_time: base_time + chrono::Duration::hours(1),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+            SessionUsage {
+                session_id: SessionId::new("s2"),
+                start_time: base_time + chrono::Duration::minutes(90), // 20:53:45
+                end_time: base_time + chrono::Duration::hours(2),
+                tokens: TokenCounts::new(200, 100, 0, 0),
+                total_cost: 0.02,
+                model: ModelName::new("claude-3-opus"),
+            },
+            SessionUsage {
+                session_id: SessionId::new("s3"),
+                start_time: base_time + chrono::Duration::hours(5) + chrono::Duration::minutes(10), // 00:33:45 next day
+                end_time: base_time + chrono::Duration::hours(6),
+                tokens: TokenCounts::new(150, 75, 0, 0),
+                total_cost: 0.015,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert_eq!(blocks.len(), 2);
+
+        // First block should start at 19:00:00 (aligned to hour)
+        let expected_block1_start = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 19, 0, 0).unwrap();
+        assert_eq!(blocks[0].start_time, expected_block1_start);
+        assert_eq!(
+            blocks[0].end_time,
+            expected_block1_start + chrono::Duration::hours(5)
+        );
+        assert_eq!(blocks[0].sessions.len(), 2); // s1 and s2
+
+        // Second block should start at 00:00:00 (aligned to hour)
+        let expected_block2_start = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        assert_eq!(blocks[1].start_time, expected_block2_start);
+        assert_eq!(
+            blocks[1].end_time,
+            expected_block2_start + chrono::Duration::hours(5)
+        );
+        assert_eq!(blocks[1].sessions.len(), 1); // s3
     }
 }
