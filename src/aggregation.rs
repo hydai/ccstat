@@ -584,20 +584,20 @@ impl Aggregator {
 
         for session in sessions {
             // Check if we need to start a new block
-            if let Some(block_start) = current_block_start {
-                if session.start_time >= block_start + five_hours {
-                    // Finish current block
-                    blocks.push(SessionBlock {
-                        start_time: block_start,
-                        end_time: block_start + five_hours,
-                        sessions: std::mem::take(&mut current_sessions),
-                        tokens: std::mem::take(&mut current_tokens),
-                        total_cost: std::mem::take(&mut current_cost),
-                        is_active: false,
-                        warning: None,
-                    });
-                    current_block_start = None;
-                }
+            if let Some(block_start) = current_block_start
+                && session.start_time >= block_start + five_hours
+            {
+                // Finish current block
+                blocks.push(SessionBlock {
+                    start_time: block_start,
+                    end_time: block_start + five_hours,
+                    sessions: std::mem::take(&mut current_sessions),
+                    tokens: std::mem::take(&mut current_tokens),
+                    total_cost: std::mem::take(&mut current_cost),
+                    is_active: false,
+                    warning: None,
+                });
+                current_block_start = None;
             }
 
             // Start new block if needed

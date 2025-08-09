@@ -33,6 +33,10 @@ use clap::{Parser, Subcommand};
 #[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
+    /// Suppress informational output (only show warnings and errors)
+    #[arg(long, short = 'q', global = true)]
+    pub quiet: bool,
+
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Option<Command>,

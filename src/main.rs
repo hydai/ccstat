@@ -19,17 +19,21 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
+    // Parse CLI arguments first to check for quiet flag
+    let cli = Cli::parse();
+
+    // Initialize logging. The --quiet flag should override RUST_LOG.
+    let filter = if cli.quiet {
+        tracing_subscriber::EnvFilter::new("warn")
+    } else {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("ccstat=info"))
+    };
+
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "ccstat=info".into()),
-        )
+        .with(filter)
         .with(tracing_subscriber::fmt::layer())
         .init();
-
-    // Parse CLI arguments
-    let cli = Cli::parse();
 
     // Handle commands
     match cli.command {

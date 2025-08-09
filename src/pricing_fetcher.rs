@@ -39,10 +39,10 @@ impl PricingFetcher {
         // Check cache first
         {
             let cache = self.cache.read().await;
-            if let Some(ref pricing_map) = *cache {
-                if let Some(pricing) = Self::find_model_pricing(pricing_map, model_name) {
-                    return Ok(Some(pricing.clone()));
-                }
+            if let Some(ref pricing_map) = *cache
+                && let Some(pricing) = Self::find_model_pricing(pricing_map, model_name)
+            {
+                return Ok(Some(pricing.clone()));
             }
         }
 

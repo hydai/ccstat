@@ -85,16 +85,16 @@ impl UsageFilter {
         let daily_date = entry.timestamp.to_daily_date();
         let entry_date = daily_date.inner();
 
-        if let Some(since) = &self.since_date {
-            if entry_date < since {
-                return false;
-            }
+        if let Some(since) = &self.since_date
+            && entry_date < since
+        {
+            return false;
         }
 
-        if let Some(until) = &self.until_date {
-            if entry_date > until {
-                return false;
-            }
+        if let Some(until) = &self.until_date
+            && entry_date > until
+        {
+            return false;
         }
 
         // Check project filter
@@ -197,16 +197,16 @@ impl MonthFilter {
         let year = date.year();
         let month = date.month();
 
-        if let Some((since_year, since_month)) = self.since {
-            if year < since_year || (year == since_year && month < since_month) {
-                return false;
-            }
+        if let Some((since_year, since_month)) = self.since
+            && (year < since_year || (year == since_year && month < since_month))
+        {
+            return false;
         }
 
-        if let Some((until_year, until_month)) = self.until {
-            if year > until_year || (year == until_year && month > until_month) {
-                return false;
-            }
+        if let Some((until_year, until_month)) = self.until
+            && (year > until_year || (year == until_year && month > until_month))
+        {
+            return false;
         }
 
         true
