@@ -16,8 +16,10 @@
 //!     .with_project("my-project".to_string());
 //! ```
 
+use crate::timezone::TimezoneConfig;
 use crate::types::UsageEntry;
 use chrono::{Datelike, NaiveDate};
+use chrono_tz::Tz;
 
 /// Filter configuration for usage entries
 ///
@@ -45,7 +47,7 @@ use chrono::{Datelike, NaiveDate};
 ///
 /// assert!(filter.matches(&entry));
 /// ```
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct UsageFilter {
     /// Start date filter (inclusive)
     pub since_date: Option<NaiveDate>,
@@ -53,6 +55,19 @@ pub struct UsageFilter {
     pub until_date: Option<NaiveDate>,
     /// Project name filter (exact match)
     pub project: Option<String>,
+    /// Timezone for date comparison
+    pub timezone: Option<Tz>,
+}
+
+impl Default for UsageFilter {
+    fn default() -> Self {
+        Self {
+            since_date: None,
+            until_date: None,
+            project: None,
+            timezone: Some(TimezoneConfig::default().tz),
+        }
+    }
 }
 
 impl UsageFilter {
@@ -79,10 +94,20 @@ impl UsageFilter {
         self
     }
 
+    /// Set the timezone for date filtering
+    pub fn with_timezone(mut self, tz: Tz) -> Self {
+        self.timezone = Some(tz);
+        self
+    }
+
     /// Check if an entry passes the filter
     pub fn matches(&self, entry: &UsageEntry) -> bool {
         // Check date filters
-        let daily_date = entry.timestamp.to_daily_date();
+        let daily_date = if let Some(tz) = self.timezone {
+            entry.timestamp.to_daily_date_with_tz(&tz)
+        } else {
+            entry.timestamp.to_daily_date()
+        };
         let entry_date = daily_date.inner();
 
         if let Some(since) = &self.since_date
@@ -223,6 +248,7 @@ mod tests {
     #[test]
     fn test_date_filter() {
         let filter = UsageFilter::new()
+            .with_timezone(Tz::UTC) // Use UTC for consistent test behavior
             .with_since(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
             .with_until(NaiveDate::from_ymd_opt(2024, 1, 31).unwrap());
 

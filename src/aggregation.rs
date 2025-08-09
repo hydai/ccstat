@@ -12,6 +12,7 @@
 //!     cost_calculator::CostCalculator,
 //!     data_loader::DataLoader,
 //!     pricing_fetcher::PricingFetcher,
+//!     timezone::TimezoneConfig,
 //!     types::CostMode,
 //! };
 //! use std::sync::Arc;
@@ -19,7 +20,7 @@
 //! # async fn example() -> ccstat::Result<()> {
 //! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //! let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-//! let aggregator = Aggregator::new(cost_calculator);
+//! let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 //!
 //! let data_loader = DataLoader::new().await?;
 //! let entries = data_loader.load_usage_entries();
@@ -35,6 +36,7 @@
 
 use crate::cost_calculator::CostCalculator;
 use crate::error::Result;
+use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
 use futures::stream::{Stream, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -319,14 +321,16 @@ impl SessionAccumulator {
 pub struct Aggregator {
     cost_calculator: Arc<CostCalculator>,
     show_progress: bool,
+    timezone_config: TimezoneConfig,
 }
 
 impl Aggregator {
     /// Create a new Aggregator
-    pub fn new(cost_calculator: Arc<CostCalculator>) -> Self {
+    pub fn new(cost_calculator: Arc<CostCalculator>, timezone_config: TimezoneConfig) -> Self {
         Self {
             cost_calculator,
             show_progress: false,
+            timezone_config,
         }
     }
 
@@ -334,6 +338,11 @@ impl Aggregator {
     pub fn with_progress(mut self, show_progress: bool) -> Self {
         self.show_progress = show_progress;
         self
+    }
+
+    /// Get the timezone configuration
+    pub fn timezone_config(&self) -> &TimezoneConfig {
+        &self.timezone_config
     }
 
     /// Aggregate entries by day and instance
@@ -364,7 +373,8 @@ impl Aggregator {
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
             let entry = result?;
-            let date = DailyDate::from_timestamp(&entry.timestamp);
+            let date =
+                DailyDate::from_timestamp_with_tz(&entry.timestamp, &self.timezone_config.tz);
             let instance_id = entry
                 .instance_id
                 .clone()
@@ -442,7 +452,8 @@ impl Aggregator {
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
             let entry = result?;
-            let date = DailyDate::from_timestamp(&entry.timestamp);
+            let date =
+                DailyDate::from_timestamp_with_tz(&entry.timestamp, &self.timezone_config.tz);
 
             // Calculate cost
             let cost = self

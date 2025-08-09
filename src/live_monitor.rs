@@ -4,6 +4,8 @@
 //! usage monitoring. It watches for changes in JSONL files and refreshes
 //! the display at specified intervals.
 
+#[cfg(test)]
+use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{Aggregator, Totals},
     data_loader::DataLoader,
@@ -376,7 +378,7 @@ mod tests {
 
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
         let filter = UsageFilter::new();
 
         let monitor = LiveMonitor::new(

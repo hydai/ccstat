@@ -2,6 +2,7 @@ use ccstat::{
     aggregation::{Aggregator, DailyUsage},
     cost_calculator::CostCalculator,
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::Utc;
@@ -50,7 +51,7 @@ fn benchmark_daily_aggregation(c: &mut Criterion) {
     // Pre-create components outside the benchmark
     let pricing_fetcher = runtime.block_on(async { Arc::new(PricingFetcher::new(true).await) });
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Benchmark aggregating 100 entries
     group.bench_function("aggregate_100_entries", |b| {
@@ -121,7 +122,7 @@ fn benchmark_instance_aggregation(c: &mut Criterion) {
     // Pre-create components outside the benchmark
     let pricing_fetcher = runtime.block_on(async { Arc::new(PricingFetcher::new(true).await) });
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Benchmark aggregating by instance with 500 entries across 5 instances
     group.bench_function("aggregate_500_entries_5_instances", |b| {

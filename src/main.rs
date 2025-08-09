@@ -2,7 +2,7 @@
 
 use ccstat::{
     aggregation::{Aggregator, Totals},
-    cli::{Cli, Command, McpTransport, parse_date_filter, parse_month_filter},
+    cli::{Cli, Command, McpTransport, TimezoneArgs, parse_date_filter, parse_month_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::Result,
@@ -11,11 +11,24 @@ use ccstat::{
     mcp::McpServer,
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
 };
 use clap::Parser;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Helper function to create an aggregator with timezone configuration
+fn create_aggregator_with_timezone(
+    cost_calculator: Arc<CostCalculator>,
+    show_progress: bool,
+    timezone_args: &TimezoneArgs,
+) -> Result<Aggregator> {
+    let tz_config = TimezoneConfig::from_cli(timezone_args.timezone.as_deref(), timezone_args.utc)?;
+    info!("Using timezone: {}", tz_config.display_name());
+
+    Ok(Aggregator::new(cost_calculator, tz_config).with_progress(show_progress))
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -50,6 +63,7 @@ async fn main() -> Result<()> {
             intern,
             arena,
             verbose,
+            timezone_args,
         }) => {
             info!("Running daily usage report");
 
@@ -64,8 +78,11 @@ async fn main() -> Result<()> {
             );
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator =
-                Arc::new(Aggregator::new(cost_calculator).with_progress(show_progress));
+            let aggregator = Arc::new(create_aggregator_with_timezone(
+                cost_calculator,
+                show_progress,
+                &timezone_args,
+            )?);
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -81,6 +98,8 @@ async fn main() -> Result<()> {
             if let Some(project_name) = &project {
                 filter = filter.with_project(project_name.clone());
             }
+            // Apply timezone to filter
+            filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Check if we're in watch mode
             if watch {
@@ -154,6 +173,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            timezone_args,
         }) => {
             info!("Running monthly usage report");
 
@@ -162,7 +182,8 @@ async fn main() -> Result<()> {
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator =
+                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Build month filter
             let mut month_filter = MonthFilter::new();
@@ -216,6 +237,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            timezone_args,
         }) => {
             info!("Running session usage report");
 
@@ -224,7 +246,8 @@ async fn main() -> Result<()> {
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator =
+                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Build filter
             let mut filter = UsageFilter::new();
@@ -237,6 +260,8 @@ async fn main() -> Result<()> {
                 let until_date = parse_date_filter(until_str)?;
                 filter = filter.with_until(until_date);
             }
+            // Apply timezone to filter
+            filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Load and filter entries
             let entries = data_loader.load_usage_entries();
@@ -259,6 +284,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            timezone_args,
         }) => {
             info!("Running billing blocks report");
 
@@ -267,7 +293,8 @@ async fn main() -> Result<()> {
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator =
+                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Load entries
             let entries = data_loader.load_usage_entries();
@@ -375,7 +402,8 @@ async fn main() -> Result<()> {
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default())
+                .with_progress(show_progress);
 
             // Load entries
             let entries = data_loader.load_usage_entries();

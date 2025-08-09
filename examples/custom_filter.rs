@@ -4,7 +4,8 @@
 
 use ccstat::{
     Result, aggregation::Aggregator, cost_calculator::CostCalculator, data_loader::DataLoader,
-    filters::UsageFilter, pricing_fetcher::PricingFetcher, types::CostMode,
+    filters::UsageFilter, pricing_fetcher::PricingFetcher, timezone::TimezoneConfig,
+    types::CostMode,
 };
 use chrono::NaiveDate;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ async fn main() -> Result<()> {
     let data_loader = DataLoader::new().await?;
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Create filter for January 2024
     let filter = UsageFilter::new()

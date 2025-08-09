@@ -5,6 +5,7 @@
 //! timestamps, and token counts.
 
 use chrono::{DateTime, NaiveDate, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, AddAssign};
@@ -113,9 +114,15 @@ impl ISOTimestamp {
         &self.0
     }
 
-    /// Convert to DailyDate
+    /// Convert to DailyDate using UTC
     pub fn to_daily_date(&self) -> DailyDate {
         DailyDate::new(self.0.date_naive())
+    }
+
+    /// Convert to DailyDate using specified timezone
+    pub fn to_daily_date_with_tz(&self, tz: &Tz) -> DailyDate {
+        let local_dt = self.0.with_timezone(tz);
+        DailyDate::new(local_dt.date_naive())
     }
 }
 
@@ -157,9 +164,14 @@ impl DailyDate {
         &self.0
     }
 
-    /// Create from a timestamp
+    /// Create from a timestamp using UTC
     pub fn from_timestamp(ts: &ISOTimestamp) -> Self {
         ts.to_daily_date()
+    }
+
+    /// Create from a timestamp using specified timezone
+    pub fn from_timestamp_with_tz(ts: &ISOTimestamp, tz: &Tz) -> Self {
+        ts.to_daily_date_with_tz(tz)
     }
 
     /// Format as YYYY-MM-DD

@@ -42,6 +42,19 @@ pub struct Cli {
     pub command: Option<Command>,
 }
 
+/// Common timezone options
+#[derive(clap::Args, Debug)]
+pub struct TimezoneArgs {
+    /// Timezone for date grouping (e.g. "America/New_York", "Asia/Tokyo", "UTC")
+    /// If not specified, uses the system's local timezone
+    #[arg(long, short = 'z')]
+    pub timezone: Option<String>,
+
+    /// Use UTC for date grouping (overrides --timezone)
+    #[arg(long)]
+    pub utc: bool,
+}
+
 /// Available commands
 ///
 /// Each command provides different views and aggregations of usage data,
@@ -97,6 +110,10 @@ pub enum Command {
         /// Show detailed token information per entry
         #[arg(long, short = 'v')]
         verbose: bool,
+
+        /// Timezone options
+        #[command(flatten)]
+        timezone_args: TimezoneArgs,
     },
 
     /// Show monthly usage summary
@@ -116,6 +133,10 @@ pub enum Command {
         /// Filter by end month (YYYY-MM)
         #[arg(long)]
         until: Option<String>,
+
+        /// Timezone options
+        #[command(flatten)]
+        timezone_args: TimezoneArgs,
     },
 
     /// Show session-based usage
@@ -135,6 +156,10 @@ pub enum Command {
         /// Filter by end date
         #[arg(long)]
         until: Option<String>,
+
+        /// Timezone options
+        #[command(flatten)]
+        timezone_args: TimezoneArgs,
     },
 
     /// Show 5-hour billing blocks
@@ -158,6 +183,10 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
+
+        /// Timezone options
+        #[command(flatten)]
+        timezone_args: TimezoneArgs,
     },
 
     /// Start MCP server

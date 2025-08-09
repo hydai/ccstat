@@ -5,6 +5,7 @@ use ccstat::{
     cost_calculator::CostCalculator,
     filters::{MonthFilter, UsageFilter},
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -69,7 +70,7 @@ async fn test_monthly_aggregation_with_filter() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
@@ -173,7 +174,7 @@ async fn test_cost_calculation_modes() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Test Auto mode
     let entries_stream = stream::iter(entries.clone().into_iter().map(Ok));
@@ -309,7 +310,7 @@ async fn test_instance_grouping() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let instance_data = aggregator
@@ -352,7 +353,7 @@ async fn test_empty_data_handling() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
@@ -398,7 +399,7 @@ async fn test_session_duration_calculation() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let session_data = aggregator
@@ -465,7 +466,7 @@ async fn test_mixed_models_handling() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator
@@ -497,7 +498,7 @@ async fn test_cache_tokens_handling() {
 
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let entries_stream = stream::iter(entries.into_iter().map(Ok));
     let daily_data = aggregator

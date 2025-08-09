@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2025-08-10
+
+### Added
+- Timezone support for accurate daily aggregation
+  - New `--timezone` flag to specify custom timezone (e.g., "America/New_York", "Asia/Tokyo")
+  - New `--utc` flag to force UTC timezone
+  - Automatic local timezone detection (uses system timezone by default)
+  - Timezone-aware date filtering and aggregation
+
+### Fixed
+- Daily usage now correctly shows today's data in timezones ahead of UTC
+  - Previously, timestamps were always converted to UTC dates, causing "today's" usage to be grouped under "yesterday" in timezones ahead of UTC
+  - Now respects the configured timezone when determining which day a usage entry belongs to
+
+### Changed
+- Date aggregation now uses local timezone by default instead of UTC
+- All commands (daily, monthly, session, blocks) now support timezone configuration
+
 ## [0.1.3] - 2025-08-09
 
 ### Fixed
@@ -38,7 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/hydai/ccstat/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/hydai/ccstat/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/hydai/ccstat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/hydai/ccstat/releases/tag/v0.1.1

@@ -9,6 +9,7 @@ use ccstat::{
     data_loader::DataLoader,
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
     types::CostMode,
 };
 use std::fs;
@@ -20,7 +21,7 @@ async fn main() -> Result<()> {
     let data_loader = DataLoader::new().await?;
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and aggregate data
     println!("Loading usage data...");

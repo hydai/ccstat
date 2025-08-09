@@ -4,7 +4,7 @@
 
 use ccstat::{
     Result, aggregation::Aggregator, cost_calculator::CostCalculator, data_loader::DataLoader,
-    pricing_fetcher::PricingFetcher, types::CostMode,
+    pricing_fetcher::PricingFetcher, timezone::TimezoneConfig, types::CostMode,
 };
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     // Set up pricing and cost calculation
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load usage entries
     let entries = data_loader.load_usage_entries();
