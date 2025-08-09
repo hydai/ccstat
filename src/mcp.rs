@@ -204,6 +204,9 @@ impl McpServer {
             filter = filter.with_project(project_name.clone());
         }
 
+        // Apply timezone to filter
+        filter = filter.with_timezone(aggregator.timezone_config().tz);
+
         // Apply filters
         let filtered_entries = filter.filter_stream(entries).await;
 
@@ -262,6 +265,9 @@ impl McpServer {
                 .map_err(|e| jsonrpc_core::Error::invalid_params(e.to_string()))?;
             filter = filter.with_until(until_date);
         }
+
+        // Apply timezone to filter
+        filter = filter.with_timezone(aggregator.timezone_config().tz);
 
         // Apply filters
         let filtered_entries = filter.filter_stream(entries).await;

@@ -16,6 +16,7 @@
 //!     .with_project("my-project".to_string());
 //! ```
 
+use crate::timezone::TimezoneConfig;
 use crate::types::UsageEntry;
 use chrono::{Datelike, NaiveDate};
 use chrono_tz::Tz;
@@ -46,7 +47,7 @@ use chrono_tz::Tz;
 ///
 /// assert!(filter.matches(&entry));
 /// ```
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct UsageFilter {
     /// Start date filter (inclusive)
     pub since_date: Option<NaiveDate>,
@@ -56,6 +57,17 @@ pub struct UsageFilter {
     pub project: Option<String>,
     /// Timezone for date comparison
     pub timezone: Option<Tz>,
+}
+
+impl Default for UsageFilter {
+    fn default() -> Self {
+        Self {
+            since_date: None,
+            until_date: None,
+            project: None,
+            timezone: Some(TimezoneConfig::default().tz),
+        }
+    }
 }
 
 impl UsageFilter {
@@ -236,6 +248,7 @@ mod tests {
     #[test]
     fn test_date_filter() {
         let filter = UsageFilter::new()
+            .with_timezone(Tz::UTC) // Use UTC for consistent test behavior
             .with_since(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
             .with_until(NaiveDate::from_ymd_opt(2024, 1, 31).unwrap());
 
