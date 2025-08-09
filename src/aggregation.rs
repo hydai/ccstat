@@ -35,6 +35,7 @@
 
 use crate::cost_calculator::CostCalculator;
 use crate::error::Result;
+use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
 use futures::stream::{Stream, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -319,6 +320,7 @@ impl SessionAccumulator {
 pub struct Aggregator {
     cost_calculator: Arc<CostCalculator>,
     show_progress: bool,
+    timezone_config: TimezoneConfig,
 }
 
 impl Aggregator {
@@ -327,13 +329,25 @@ impl Aggregator {
         Self {
             cost_calculator,
             show_progress: false,
+            timezone_config: TimezoneConfig::default(),
         }
+    }
+
+    /// Create a new Aggregator with timezone configuration
+    pub fn with_timezone(mut self, config: TimezoneConfig) -> Self {
+        self.timezone_config = config;
+        self
     }
 
     /// Enable or disable progress bars
     pub fn with_progress(mut self, show_progress: bool) -> Self {
         self.show_progress = show_progress;
         self
+    }
+
+    /// Get the timezone configuration
+    pub fn timezone_config(&self) -> &TimezoneConfig {
+        &self.timezone_config
     }
 
     /// Aggregate entries by day and instance
@@ -364,7 +378,8 @@ impl Aggregator {
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
             let entry = result?;
-            let date = DailyDate::from_timestamp(&entry.timestamp);
+            let date =
+                DailyDate::from_timestamp_with_tz(&entry.timestamp, &self.timezone_config.tz);
             let instance_id = entry
                 .instance_id
                 .clone()
@@ -442,7 +457,8 @@ impl Aggregator {
         tokio::pin!(entries);
         while let Some(result) = entries.next().await {
             let entry = result?;
-            let date = DailyDate::from_timestamp(&entry.timestamp);
+            let date =
+                DailyDate::from_timestamp_with_tz(&entry.timestamp, &self.timezone_config.tz);
 
             // Calculate cost
             let cost = self

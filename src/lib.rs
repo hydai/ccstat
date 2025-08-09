@@ -47,6 +47,7 @@ pub mod memory_pool;
 pub mod output;
 pub mod pricing_fetcher;
 pub mod string_pool;
+pub mod timezone;
 pub mod types;
 
 // Re-export commonly used types

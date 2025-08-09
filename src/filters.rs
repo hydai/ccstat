@@ -18,6 +18,7 @@
 
 use crate::types::UsageEntry;
 use chrono::{Datelike, NaiveDate};
+use chrono_tz::Tz;
 
 /// Filter configuration for usage entries
 ///
@@ -53,6 +54,8 @@ pub struct UsageFilter {
     pub until_date: Option<NaiveDate>,
     /// Project name filter (exact match)
     pub project: Option<String>,
+    /// Timezone for date comparison
+    pub timezone: Option<Tz>,
 }
 
 impl UsageFilter {
@@ -79,10 +82,20 @@ impl UsageFilter {
         self
     }
 
+    /// Set the timezone for date filtering
+    pub fn with_timezone(mut self, tz: Tz) -> Self {
+        self.timezone = Some(tz);
+        self
+    }
+
     /// Check if an entry passes the filter
     pub fn matches(&self, entry: &UsageEntry) -> bool {
         // Check date filters
-        let daily_date = entry.timestamp.to_daily_date();
+        let daily_date = if let Some(tz) = self.timezone {
+            entry.timestamp.to_daily_date_with_tz(&tz)
+        } else {
+            entry.timestamp.to_daily_date()
+        };
         let entry_date = daily_date.inner();
 
         if let Some(since) = &self.since_date

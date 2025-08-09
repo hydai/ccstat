@@ -47,6 +47,10 @@ pub enum CcstatError {
     #[error("Invalid date format: {0}")]
     InvalidDate(String),
 
+    /// Invalid timezone
+    #[error("Invalid timezone: {0}")]
+    InvalidTimezone(String),
+
     /// Parse error with file context
     #[error("Parse error in {file}: {error}")]
     Parse {
