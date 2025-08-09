@@ -15,6 +15,7 @@
 //!     aggregation::Aggregator,
 //!     cost_calculator::CostCalculator,
 //!     pricing_fetcher::PricingFetcher,
+//!     timezone::TimezoneConfig,
 //!     types::CostMode,
 //! };
 //! use std::sync::Arc;
@@ -25,7 +26,7 @@
 //!     let data_loader = DataLoader::new().await?;
 //!     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //!     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-//!     let aggregator = Aggregator::new(cost_calculator);
+//!     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 //!
 //!     // Load and aggregate usage data
 //!     let entries = data_loader.load_usage_entries();

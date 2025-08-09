@@ -2,6 +2,7 @@
 
 use ccstat::{
     cost_calculator::CostCalculator,
+    timezone::TimezoneConfig,
     types::{ISOTimestamp, ModelName, ModelPricing, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::{Datelike, TimeZone, Utc};
@@ -279,7 +280,7 @@ mod aggregation_property_tests {
             rt.block_on(async {
                 let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
                 let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-                let aggregator = Aggregator::new(cost_calculator);
+                let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
                 let entries_stream = stream::iter(entries.clone().into_iter().map(Ok));
                 let daily_data = aggregator

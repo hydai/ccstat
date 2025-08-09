@@ -6,6 +6,7 @@ use ccstat::{
     aggregation::Aggregator,
     cost_calculator::CostCalculator,
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
     types::{CostMode, ISOTimestamp, ModelName, SessionId, TokenCounts, UsageEntry},
 };
 use chrono::{TimeZone, Utc};
@@ -54,7 +55,7 @@ fn benchmark_aggregation(c: &mut Criterion) {
     // Pre-create the aggregator outside the benchmark
     let pricing_fetcher = rt.block_on(async { Arc::new(PricingFetcher::new(false).await) });
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     let mut group = c.benchmark_group("aggregation");
 

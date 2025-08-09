@@ -12,6 +12,7 @@
 //!     cost_calculator::CostCalculator,
 //!     data_loader::DataLoader,
 //!     pricing_fetcher::PricingFetcher,
+//!     timezone::TimezoneConfig,
 //!     types::CostMode,
 //! };
 //! use std::sync::Arc;
@@ -19,7 +20,7 @@
 //! # async fn example() -> ccstat::Result<()> {
 //! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //! let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-//! let aggregator = Aggregator::new(cost_calculator);
+//! let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 //!
 //! let data_loader = DataLoader::new().await?;
 //! let entries = data_loader.load_usage_entries();
@@ -325,18 +326,12 @@ pub struct Aggregator {
 
 impl Aggregator {
     /// Create a new Aggregator
-    pub fn new(cost_calculator: Arc<CostCalculator>) -> Self {
+    pub fn new(cost_calculator: Arc<CostCalculator>, timezone_config: TimezoneConfig) -> Self {
         Self {
             cost_calculator,
             show_progress: false,
-            timezone_config: TimezoneConfig::default(),
+            timezone_config,
         }
-    }
-
-    /// Create a new Aggregator with timezone configuration
-    pub fn with_timezone(mut self, config: TimezoneConfig) -> Self {
-        self.timezone_config = config;
-        self
     }
 
     /// Enable or disable progress bars

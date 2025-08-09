@@ -53,6 +53,7 @@ use crate::data_loader::DataLoader;
 use crate::error::{CcstatError, Result};
 use crate::filters::{MonthFilter, UsageFilter};
 use crate::pricing_fetcher::PricingFetcher;
+use crate::timezone::TimezoneConfig;
 use crate::types::CostMode;
 use jsonrpc_core::{IoHandler, Params, Value};
 use serde::Deserialize;
@@ -106,7 +107,10 @@ impl McpServer {
         let data_loader = Arc::new(RwLock::new(DataLoader::new().await?));
         let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator.clone()));
+        let aggregator = Arc::new(Aggregator::new(
+            cost_calculator.clone(),
+            TimezoneConfig::default(),
+        ));
 
         Ok(Self {
             data_loader,

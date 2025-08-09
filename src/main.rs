@@ -27,9 +27,7 @@ fn create_aggregator_with_timezone(
     let tz_config = TimezoneConfig::from_cli(timezone_args.timezone.as_deref(), timezone_args.utc)?;
     info!("Using timezone: {}", tz_config.display_name());
 
-    Ok(Aggregator::new(cost_calculator)
-        .with_progress(show_progress)
-        .with_timezone(tz_config))
+    Ok(Aggregator::new(cost_calculator, tz_config).with_progress(show_progress))
 }
 
 #[tokio::main]
@@ -404,7 +402,8 @@ async fn main() -> Result<()> {
             let data_loader = DataLoader::new().await?.with_progress(show_progress);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator).with_progress(show_progress);
+            let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default())
+                .with_progress(show_progress);
 
             // Load entries
             let entries = data_loader.load_usage_entries();
