@@ -5,20 +5,18 @@
 //! and outputs a formatted status line with current model, session cost,
 //! daily cost percentage, and remaining time in the billing block.
 
-use crate::aggregation::Aggregator;
 use crate::cost_calculator::CostCalculator;
 use crate::data_loader::DataLoader;
 use crate::error::Result;
 use crate::pricing_fetcher::PricingFetcher;
-use crate::timezone::TimezoneConfig;
-use crate::types::{CostMode, SessionId, UsageEntry};
-use chrono::{Datelike, Local, Utc};
+use crate::types::{CostMode, SessionId};
+use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use colored::*;
 use futures::stream::StreamExt;
 use serde::Deserialize;
-use std::io::{self, Read};
-use std::process::Command;
 use std::sync::Arc;
+use tokio::io::{self, AsyncReadExt};
+use tokio::process::Command;
 
 /// Input structure from Claude Code
 #[derive(Debug, Deserialize)]
@@ -45,6 +43,14 @@ pub struct ModelInfo {
 pub struct WorkspaceInfo {
     pub current_dir: Option<String>,
     pub project_dir: Option<String>,
+}
+
+/// Remaining time information
+#[derive(Debug, Clone)]
+enum RemainingTime {
+    NoActiveBlock,
+    Expired,
+    TimeLeft(Duration),
 }
 
 /// Color configuration for statusline elements
@@ -140,7 +146,6 @@ impl ColorConfig {
 pub struct StatuslineHandler {
     data_loader: Arc<DataLoader>,
     cost_calculator: Arc<CostCalculator>,
-    aggregator: Arc<Aggregator>,
     monthly_fee: f64,
     no_color: bool,
     show_date: bool,
@@ -158,17 +163,12 @@ impl StatuslineHandler {
     ) -> Result<Self> {
         // Disable progress and quiet mode for statusline
         let data_loader = Arc::new(DataLoader::new().await?.with_progress(false));
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await); // quiet mode
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await); // offline mode
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(
-            Aggregator::new(cost_calculator.clone(), TimezoneConfig::default())
-                .with_progress(false),
-        );
 
         Ok(Self {
             data_loader,
             cost_calculator,
-            aggregator,
             monthly_fee,
             no_color,
             show_date,
@@ -178,9 +178,9 @@ impl StatuslineHandler {
     }
 
     /// Read and parse JSON input from stdin
-    pub fn read_input() -> Result<StatuslineInput> {
+    pub async fn read_input() -> Result<StatuslineInput> {
         let mut buffer = String::new();
-        io::stdin().read_to_string(&mut buffer)?;
+        io::stdin().read_to_string(&mut buffer).await?;
         let input: StatuslineInput = serde_json::from_str(&buffer)?;
         Ok(input)
     }
@@ -188,54 +188,96 @@ impl StatuslineHandler {
     /// Generate the statusline output
     pub async fn generate(&self, input: StatuslineInput) -> Result<String> {
         // Extract session ID
-        let session_id = SessionId::new(input.session_id);
+        let session_id = SessionId::new(input.session_id.clone());
 
         // Get model display name (simplified)
         let model_display = self.format_model(&input.model.display_name);
 
-        // Load all usage entries
-        let entries_stream = self.data_loader.load_usage_entries();
-
-        // Collect entries for processing
-        let mut all_entries = Vec::new();
-        let mut session_entries = Vec::new();
-        let mut today_entries = Vec::new();
+        // PERFORMANCE OPTIMIZATION: Only load data from today for statusline
+        // This significantly improves performance for users with large history
+        // by only loading JSONL files that have been modified today or later.
 
         let today = Local::now().date_naive();
+        let mut session_cost = 0.0;
+        let mut daily_cost = 0.0;
+        let mut session_start_time: Option<chrono::DateTime<Utc>> = None;
 
+        // Only load entries from files modified since start of today (in UTC)
+        // This filters out old files at the filesystem level before parsing
+        let today_start_local = today.and_hms_opt(0, 0, 0).ok_or_else(|| {
+            crate::error::CcstatError::InvalidDate("Invalid time components".to_string())
+        })?;
+
+        let today_start_utc = Local
+            .from_local_datetime(&today_start_local)
+            .single()
+            .ok_or_else(|| {
+                crate::error::CcstatError::InvalidDate(
+                    "Could not determine local start of day (DST ambiguity)".to_string(),
+                )
+            })?
+            .with_timezone(&Utc);
+
+        // Process stream of recent entries only
+        let entries_stream = self.data_loader.load_recent_usage_entries(today_start_utc);
         tokio::pin!(entries_stream);
+
         while let Some(result) = entries_stream.next().await {
             if let Ok(entry) = result {
-                // Check if this is for our session
-                if entry.session_id == session_id {
-                    session_entries.push(entry.clone());
-                }
-
-                // Check if this is from today (in local timezone)
                 let entry_date = entry.timestamp.inner().with_timezone(&Local).date_naive();
-                if entry_date == today {
-                    today_entries.push(entry.clone());
+
+                // Calculate cost for this entry
+                let cost = match self
+                    .cost_calculator
+                    .calculate_with_mode(
+                        &entry.tokens,
+                        &entry.model,
+                        entry.total_cost,
+                        CostMode::Auto,
+                    )
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(crate::error::CcstatError::UnknownModel(_)) => {
+                        entry.total_cost.unwrap_or(0.0)
+                    }
+                    Err(e) => return Err(e),
+                };
+
+                // Accumulate session cost and track start time
+                if entry.session_id == session_id {
+                    if session_start_time.is_none()
+                        || entry.timestamp.inner() < &session_start_time.unwrap()
+                    {
+                        session_start_time = Some(*entry.timestamp.inner());
+                    }
+                    session_cost += cost;
                 }
 
-                all_entries.push(entry);
+                // Accumulate daily cost
+                if entry_date == today {
+                    daily_cost += cost;
+                }
             }
         }
 
-        // Calculate session cost (handle case where session has no entries)
-        let session_cost = if session_entries.is_empty() {
-            0.0
+        // Calculate daily percentage
+        let now = Local::now();
+        let days_in_month = Self::days_in_month(now.year(), now.month());
+        let daily_budget = self.monthly_fee / days_in_month as f64;
+        let daily_percentage = if daily_budget > 0.0 {
+            (daily_cost / daily_budget) * 100.0
         } else {
-            self.calculate_session_cost(&session_entries).await?
+            0.0
         };
 
-        // Calculate daily cost and percentage
-        let (_daily_cost, daily_percentage) =
-            self.calculate_daily_percentage(&today_entries).await?;
-
-        // Calculate remaining time in billing block
-        let remaining_time = self
-            .calculate_remaining_time(&all_entries, &session_id)
-            .await?;
+        // Calculate remaining time in billing block (optimized)
+        let remaining_time = if let Some(start_time) = session_start_time {
+            self.calculate_remaining_time_optimized(start_time, &session_id)
+                .await?
+        } else {
+            RemainingTime::NoActiveBlock
+        };
 
         // Build status line components
         let mut components = Vec::new();
@@ -248,7 +290,7 @@ impl StatuslineHandler {
 
         // Add git branch if requested
         if self.show_git {
-            let branch = self.get_git_branch(&input.workspace);
+            let branch = self.get_git_branch(&input).await;
             components.push(branch);
         }
 
@@ -270,17 +312,21 @@ impl StatuslineHandler {
     }
 
     /// Get git branch for current directory
-    fn get_git_branch(&self, workspace: &Option<WorkspaceInfo>) -> String {
-        let cwd = workspace
+    async fn get_git_branch(&self, input: &StatuslineInput) -> String {
+        // Fix: Check both workspace.current_dir and input.cwd
+        let cwd = input
+            .workspace
             .as_ref()
             .and_then(|w| w.current_dir.as_ref())
+            .or(input.cwd.as_ref())
             .map(|s| s.as_str())
             .unwrap_or(".");
 
         let output = Command::new("git")
             .args(["symbolic-ref", "--short", "HEAD"])
             .current_dir(cwd)
-            .output();
+            .output()
+            .await;
 
         let branch = match output {
             Ok(out) if out.status.success() => {
@@ -305,15 +351,19 @@ impl StatuslineHandler {
     /// Extract key part of model name (without emoji)
     fn extract_model_name(display_name: &str) -> String {
         // Extract key part of model name
-        let name = if display_name.to_lowercase().contains("opus") {
+        let lower_name = display_name.to_lowercase();
+        let name = if lower_name.contains("opus") {
             "Opus"
-        } else if display_name.to_lowercase().contains("sonnet") {
+        } else if lower_name.contains("sonnet") {
             "Sonnet"
-        } else if display_name.to_lowercase().contains("haiku") {
+        } else if lower_name.contains("haiku") {
             "Haiku"
         } else {
-            // Take the last significant part after "-" or use full name
-            display_name.split('-').next_back().unwrap_or(display_name)
+            // Take the last significant part after "-" or "/" or use full name
+            display_name
+                .split(&['-', '/'][..])
+                .next_back()
+                .unwrap_or(display_name)
         };
 
         name.to_string()
@@ -360,18 +410,14 @@ impl StatuslineHandler {
     }
 
     /// Format remaining time with color
-    fn format_remaining_time(&self, time_str: &str) -> String {
-        // Parse the time string to determine color
-        let (text, color) = if time_str == "No active block" {
-            ("no block".to_string(), self.colors.muted)
-        } else if time_str == "expired" {
-            ("expired".to_string(), self.colors.time_error)
-        } else if time_str.contains(':') {
-            // Parse HH:MM:SS format and convert to human-readable
-            let parts: Vec<&str> = time_str.split(':').collect();
-            if parts.len() == 3 {
-                let hours: i32 = parts[0].parse().unwrap_or(0);
-                let minutes: i32 = parts[1].parse().unwrap_or(0);
+    fn format_remaining_time(&self, remaining: &RemainingTime) -> String {
+        // Use structured data instead of parsing strings
+        let (text, color) = match remaining {
+            RemainingTime::NoActiveBlock => ("no block".to_string(), self.colors.muted),
+            RemainingTime::Expired => ("expired".to_string(), self.colors.time_error),
+            RemainingTime::TimeLeft(duration) => {
+                let hours = duration.num_hours();
+                let minutes = (duration.num_minutes() % 60).abs();
 
                 let formatted = if hours == 0 {
                     format!("{}m left", minutes)
@@ -386,11 +432,7 @@ impl StatuslineHandler {
                 };
 
                 (formatted, color)
-            } else {
-                (time_str.to_string(), self.colors.muted)
             }
-        } else {
-            (time_str.to_string(), self.colors.muted)
         };
 
         self.apply_color(&text, color)
@@ -405,154 +447,61 @@ impl StatuslineHandler {
         }
     }
 
-    /// Calculate cost for the current session
-    async fn calculate_session_cost(&self, entries: &[UsageEntry]) -> Result<f64> {
-        let mut total_cost = 0.0;
-
-        for entry in entries {
-            // Use calculate_with_mode to handle unknown models gracefully
-            // Skip entries with unknown models when in Auto mode without pre-calculated cost
-            let cost = match self
-                .cost_calculator
-                .calculate_with_mode(
-                    &entry.tokens,
-                    &entry.model,
-                    entry.total_cost,
-                    CostMode::Auto,
-                )
-                .await
-            {
-                Ok(c) => c,
-                Err(crate::error::CcstatError::UnknownModel(_)) => {
-                    // Skip unknown models, use pre-calculated cost if available
-                    entry.total_cost.unwrap_or(0.0)
-                }
-                Err(e) => return Err(e),
-            };
-            total_cost += cost;
-        }
-
-        Ok(total_cost)
-    }
-
-    /// Calculate daily cost and percentage of monthly fee
-    async fn calculate_daily_percentage(&self, entries: &[UsageEntry]) -> Result<(f64, f64)> {
-        let mut daily_cost = 0.0;
-
-        for entry in entries {
-            // Use calculate_with_mode to handle unknown models gracefully
-            // Skip entries with unknown models when in Auto mode without pre-calculated cost
-            let cost = match self
-                .cost_calculator
-                .calculate_with_mode(
-                    &entry.tokens,
-                    &entry.model,
-                    entry.total_cost,
-                    CostMode::Auto,
-                )
-                .await
-            {
-                Ok(c) => c,
-                Err(crate::error::CcstatError::UnknownModel(_)) => {
-                    // Skip unknown models, use pre-calculated cost if available
-                    entry.total_cost.unwrap_or(0.0)
-                }
-                Err(e) => return Err(e),
-            };
-            daily_cost += cost;
-        }
-
-        // Calculate days in current month
-        let now = Local::now();
-        let days_in_month = Self::days_in_month(now.year(), now.month());
-
-        // Calculate daily budget (monthly fee / days in month)
-        let daily_budget = self.monthly_fee / days_in_month as f64;
-
-        // Calculate percentage
-        let percentage = if daily_budget > 0.0 {
-            (daily_cost / daily_budget) * 100.0
-        } else {
-            0.0
-        };
-
-        Ok((daily_cost, percentage))
-    }
-
-    /// Calculate remaining time in the current billing block
-    async fn calculate_remaining_time(
+    /// Calculate remaining time in the current billing block (optimized)
+    async fn calculate_remaining_time_optimized(
         &self,
-        entries: &[UsageEntry],
-        session_id: &SessionId,
-    ) -> Result<String> {
-        // If no entries, return no active block
-        if entries.is_empty() {
-            return Ok("No active block".to_string());
-        }
-
-        // Convert entries to stream for aggregation
-        let entries_stream = futures::stream::iter(entries.iter().cloned().map(Ok));
-
-        // Aggregate sessions - this might fail for unknown models, so handle gracefully
-        let sessions = match self
-            .aggregator
-            .aggregate_sessions(entries_stream, CostMode::Auto)
-            .await
-        {
-            Ok(s) => s,
-            Err(crate::error::CcstatError::UnknownModel(_)) => {
-                // If aggregation fails due to unknown models, return no active block
-                return Ok("No active block".to_string());
-            }
-            Err(e) => return Err(e),
-        };
-
-        // Create billing blocks
-        let blocks = Aggregator::create_billing_blocks(&sessions);
-
-        // Find active block containing our session
+        session_start_time: chrono::DateTime<Utc>,
+        _session_id: &SessionId,
+    ) -> Result<RemainingTime> {
+        // Determine the billing block for this session
+        // Billing blocks are 8-hour periods
         let now = Utc::now();
+        let block_duration = Duration::hours(8);
 
-        for block in blocks {
-            if block.is_active {
-                // Check if our session is in this block
-                let has_session = block.sessions.iter().any(|s| s.session_id == *session_id);
+        // Calculate block start time (floor to nearest 8-hour boundary)
+        let hours_since_epoch = session_start_time.timestamp() / 3600;
+        let block_start_hours = (hours_since_epoch / 8) * 8;
+        let Some(block_start) = Utc.timestamp_opt(block_start_hours * 3600, 0).single() else {
+            return Ok(RemainingTime::NoActiveBlock);
+        };
+        let block_end = block_start + block_duration;
 
-                if has_session || (block.start_time <= now && now < block.end_time) {
-                    // Calculate remaining time
-                    let remaining = block.end_time - now;
-
-                    if remaining.num_seconds() > 0 {
-                        let hours = remaining.num_hours();
-                        let minutes = (remaining.num_minutes() % 60).abs();
-                        let seconds = (remaining.num_seconds() % 60).abs();
-
-                        return Ok(format!("{:02}:{:02}:{:02}", hours, minutes, seconds));
-                    } else {
-                        return Ok("expired".to_string());
-                    }
-                }
-            }
+        // Check if we're still in the active block
+        if now >= block_end {
+            return Ok(RemainingTime::Expired);
         }
 
-        // No active block found
-        Ok("No active block".to_string())
+        if now < block_start {
+            // Shouldn't happen, but handle gracefully
+            return Ok(RemainingTime::NoActiveBlock);
+        }
+
+        // Calculate remaining time
+        let remaining = block_end - now;
+        if remaining.num_seconds() > 0 {
+            Ok(RemainingTime::TimeLeft(remaining))
+        } else {
+            Ok(RemainingTime::Expired)
+        }
     }
 
     /// Get number of days in a month
     fn days_in_month(year: i32, month: u32) -> u32 {
-        match month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-            4 | 6 | 9 | 11 => 30,
-            2 => {
-                if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
-                    29
-                } else {
-                    28
-                }
-            }
-            _ => 30, // Default fallback
-        }
+        use chrono::{Datelike, NaiveDate};
+
+        // To get the number of days in a month, we find the first day of the next month
+        // and then get the day of the previous day
+        let (next_year, next_month) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
+
+        NaiveDate::from_ymd_opt(next_year, next_month, 1)
+            .unwrap()
+            .pred_opt()
+            .unwrap()
+            .day()
     }
 }
 
@@ -564,7 +513,7 @@ pub async fn run(monthly_fee: f64, no_color: bool, show_date: bool, show_git: bo
     }
 
     // Read input from stdin
-    let input = StatuslineHandler::read_input()?;
+    let input = StatuslineHandler::read_input().await?;
 
     // Create handler
     let handler = StatuslineHandler::new(monthly_fee, no_color, show_date, show_git).await?;

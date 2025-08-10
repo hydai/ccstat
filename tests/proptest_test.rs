@@ -314,6 +314,7 @@ mod aggregation_property_tests {
 
             rt.block_on(async {
                 let filter = UsageFilter::new()
+                    .with_timezone(chrono_tz::Tz::UTC)
                     .with_since(filter_date);
 
                 let entries_stream = stream::iter(entries.into_iter().map(Ok));
