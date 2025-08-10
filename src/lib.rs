@@ -47,6 +47,7 @@ pub mod mcp;
 pub mod memory_pool;
 pub mod output;
 pub mod pricing_fetcher;
+pub mod statusline;
 pub mod string_pool;
 pub mod timezone;
 pub mod types;

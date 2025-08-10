@@ -22,6 +22,7 @@ iana-time-zone = "0.1"
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
 prettytable-rs = "0.10"
+colored = "2.1"
 
 # Async
 futures = "0.3"

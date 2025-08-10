@@ -35,18 +35,23 @@ async fn main() -> Result<()> {
     // Parse CLI arguments first to check for quiet flag
     let cli = Cli::parse();
 
-    // Initialize logging. The --quiet flag should override RUST_LOG.
-    let filter = if cli.quiet {
-        tracing_subscriber::EnvFilter::new("warn")
-    } else {
-        tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("ccstat=info"))
-    };
+    // Skip logging initialization for statusline command
+    let is_statusline = matches!(cli.command, Some(Command::Statusline { .. }));
 
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    if !is_statusline {
+        // Initialize logging. The --quiet flag should override RUST_LOG.
+        let filter = if cli.quiet {
+            tracing_subscriber::EnvFilter::new("warn")
+        } else {
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("ccstat=info"))
+        };
+
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+    }
 
     // Handle commands
     match cli.command {
@@ -391,6 +396,16 @@ async fn main() -> Result<()> {
                     server.run_http(port).await?;
                 }
             }
+        }
+
+        Some(Command::Statusline {
+            monthly_fee,
+            no_color,
+            show_date,
+            show_git,
+        }) => {
+            // Run statusline handler
+            ccstat::statusline::run(monthly_fee, no_color, show_date, show_git).await?;
         }
 
         None => {
