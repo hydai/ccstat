@@ -148,6 +148,50 @@ impl DataLoader {
         Ok(paths)
     }
 
+    /// Helper to find JSONL files with optional filtering
+    ///
+    /// This internal method handles the common logic for finding JSONL files,
+    /// with an optional filter function for additional criteria like modification time.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - Optional filter closure to apply additional criteria to files
+    ///
+    /// # Returns
+    ///
+    /// A vector of paths to JSONL files that match the filter criteria
+    async fn find_jsonl_files_with_filter<F>(&self, filter: F) -> Result<Vec<PathBuf>>
+    where
+        F: Fn(&std::path::Path) -> bool + Send + Sync + 'static + Clone,
+    {
+        let mut jsonl_files = Vec::new();
+
+        for base_path in &self.claude_paths {
+            let path_clone = base_path.clone();
+            let filter_clone = filter.clone();
+            let files = tokio::task::spawn_blocking(move || {
+                use walkdir::WalkDir;
+                let mut files = Vec::new();
+
+                for entry in WalkDir::new(path_clone).into_iter().filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
+                        && filter_clone(path)
+                    {
+                        files.push(path.to_path_buf());
+                    }
+                }
+                files
+            })
+            .await
+            .map_err(|e| CcstatError::Io(std::io::Error::other(e.to_string())))?;
+
+            jsonl_files.extend(files);
+        }
+
+        Ok(jsonl_files)
+    }
+
     /// Find all JSONL files in the discovered directories
     ///
     /// Recursively searches for `.jsonl` files in all discovered Claude directories.
@@ -156,31 +200,48 @@ impl DataLoader {
     ///
     /// A vector of paths to JSONL files found
     pub async fn find_jsonl_files(&self) -> Result<Vec<PathBuf>> {
-        let mut jsonl_files = Vec::new();
+        let files = self.find_jsonl_files_with_filter(|_| true).await?;
+        info!("Found {} JSONL files to process", files.len());
+        Ok(files)
+    }
 
-        for base_path in &self.claude_paths {
-            // Use walkdir for synchronous recursive traversal
-            let path_clone = base_path.clone();
-            let files = tokio::task::spawn_blocking(move || {
-                use walkdir::WalkDir;
-                let mut files = Vec::new();
+    /// Find JSONL files modified since a given date
+    ///
+    /// This is useful for performance optimization when you only need recent data,
+    /// such as for statusline generation which only needs today's data.
+    ///
+    /// # Arguments
+    ///
+    /// * `since` - Only include files modified after this time
+    ///
+    /// # Returns
+    ///
+    /// A vector of paths to JSONL files modified since the given date
+    pub async fn find_recent_jsonl_files(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<PathBuf>> {
+        let since_std = std::time::SystemTime::from(since);
 
-                for entry in WalkDir::new(path_clone).into_iter().filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                        files.push(path.to_path_buf());
-                    }
+        let files = self
+            .find_jsonl_files_with_filter(move |path| {
+                // Check modification time
+                if let Ok(metadata) = path.metadata()
+                    && let Ok(modified) = metadata.modified()
+                {
+                    modified >= since_std
+                } else {
+                    false
                 }
-                files
             })
-            .await
-            .map_err(|e| CcstatError::Io(std::io::Error::other(e)))?;
+            .await?;
 
-            jsonl_files.extend(files);
-        }
-
-        info!("Found {} JSONL files to process", jsonl_files.len());
-        Ok(jsonl_files)
+        info!(
+            "Found {} recent JSONL files to process (since {})",
+            files.len(),
+            since
+        );
+        Ok(files)
     }
 
     /// Enable or disable progress bars
@@ -326,6 +387,115 @@ impl DataLoader {
         }
     }
 
+    /// Helper method to process JSONL files as a stream
+    ///
+    /// This internal method handles the common logic for loading and processing
+    /// JSONL files, used by both load_usage_entries and load_recent_usage_entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - Vector of paths to JSONL files to process
+    /// * `progress_message` - Message to display in the progress bar
+    ///
+    /// # Returns
+    ///
+    /// An async stream of `Result<UsageEntry>` items
+    fn process_jsonl_files(
+        &self,
+        files: Vec<PathBuf>,
+        progress_message: &str,
+    ) -> impl Stream<Item = Result<UsageEntry>> + '_ {
+        let progress_msg = progress_message.to_string();
+        async_stream::stream! {
+            // Create progress bar if enabled
+            let progress = if self.show_progress {
+                let pb = ProgressBar::new(files.len() as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{msg} [{bar:40.cyan/blue}] {pos}/{len} files")
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+                pb.set_message(progress_msg.clone());
+                Some(pb)
+            } else {
+                None
+            };
+
+            // Deduplication set
+            let mut seen_entries = HashSet::new();
+            let mut total_duplicates = 0;
+
+            for (idx, file_path) in files.into_iter().enumerate() {
+                if let Some(ref pb) = progress {
+                    pb.set_position(idx as u64);
+                }
+
+                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref(), &mut seen_entries);
+                tokio::pin!(entries);
+                while let Some(result) = entries.next().await {
+                    match &result {
+                        Ok(_) => yield result,
+                        Err(e) => {
+                            if let CcstatError::DuplicateEntry = e {
+                                total_duplicates += 1;
+                            } else {
+                                yield result;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if total_duplicates > 0 {
+                info!("Skipped {} duplicate entries", total_duplicates);
+            }
+
+            if let Some(pb) = progress {
+                pb.finish_with_message("Loading complete");
+            }
+        }
+    }
+
+    /// Load recent usage entries as an async stream
+    ///
+    /// This method provides a stream of usage entries parsed from JSONL files
+    /// modified since the given date. It's optimized for scenarios where you
+    /// only need recent data, such as statusline generation.
+    ///
+    /// # Arguments
+    ///
+    /// * `since` - Only load entries from files modified after this time
+    ///
+    /// # Returns
+    ///
+    /// An async stream of `Result<UsageEntry>` items from recent files
+    pub fn load_recent_usage_entries(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> impl Stream<Item = Result<UsageEntry>> + '_ {
+        async_stream::stream! {
+            let files = match self.find_recent_jsonl_files(since).await {
+                Ok(files) => files,
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            };
+
+            if files.is_empty() {
+                debug!("No recent files found since {}", since);
+                return;
+            }
+
+            let entries = self.process_jsonl_files(files, "Loading recent data");
+            tokio::pin!(entries);
+            while let Some(result) = entries.next().await {
+                yield result;
+            }
+        }
+    }
+
     /// Load usage entries as an async stream
     ///
     /// This method provides a stream of usage entries parsed from all discovered
@@ -365,52 +535,10 @@ impl DataLoader {
                 }
             };
 
-            // Create progress bar if enabled
-            let progress = if self.show_progress {
-                let pb = ProgressBar::new(files.len() as u64);
-                pb.set_style(
-                    ProgressStyle::default_bar()
-                        .template("{msg} [{bar:40.cyan/blue}] {pos}/{len} files")
-                        .unwrap()
-                        .progress_chars("#>-"),
-                );
-                pb.set_message("Loading usage data");
-                Some(pb)
-            } else {
-                None
-            };
-
-            // Deduplication set
-            let mut seen_entries = HashSet::new();
-            let mut total_duplicates = 0;
-
-            for (idx, file_path) in files.into_iter().enumerate() {
-                if let Some(ref pb) = progress {
-                    pb.set_position(idx as u64);
-                }
-
-                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref(), &mut seen_entries);
-                tokio::pin!(entries);
-                while let Some(result) = entries.next().await {
-                    match &result {
-                        Ok(_) => yield result,
-                        Err(e) => {
-                            if let CcstatError::DuplicateEntry = e {
-                                total_duplicates += 1;
-                            } else {
-                                yield result;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if total_duplicates > 0 {
-                info!("Skipped {} duplicate entries", total_duplicates);
-            }
-
-            if let Some(pb) = progress {
-                pb.finish_with_message("Loading complete");
+            let entries = self.process_jsonl_files(files, "Loading usage data");
+            tokio::pin!(entries);
+            while let Some(result) = entries.next().await {
+                yield result;
             }
         }
     }

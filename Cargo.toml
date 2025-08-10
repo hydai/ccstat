@@ -1,6 +1,6 @@
 [package]
 name = "ccstat"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 authors = ["hydai"]
 description = "Analyze Claude Code usage data from local JSONL files"
@@ -22,6 +22,7 @@ iana-time-zone = "0.1"
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
 prettytable-rs = "0.10"
+colored = "2.1"
 
 # Async
 futures = "0.3"

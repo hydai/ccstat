@@ -199,6 +199,25 @@ pub enum Command {
         #[arg(long, default_value = "8080")]
         port: u16,
     },
+
+    /// Generate statusline output for Claude Code
+    Statusline {
+        /// Monthly subscription fee in USD (default: 200)
+        #[arg(long, default_value = "200")]
+        monthly_fee: f64,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+
+        /// Show date and time
+        #[arg(long)]
+        show_date: bool,
+
+        /// Show git branch
+        #[arg(long)]
+        show_git: bool,
+    },
 }
 
 /// MCP transport options
@@ -242,6 +261,7 @@ impl Command {
             Self::Session { mode, .. } => *mode,
             Self::Blocks { mode, .. } => *mode,
             Self::Mcp { .. } => CostMode::Auto,
+            Self::Statusline { .. } => CostMode::Auto,
         }
     }
 
@@ -253,6 +273,7 @@ impl Command {
             Self::Session { json, .. } => *json,
             Self::Blocks { json, .. } => *json,
             Self::Mcp { .. } => false,
+            Self::Statusline { .. } => false,
         }
     }
 }
