@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2025-08-11
+
+### Added
+- Simplified model name display with `--full-model-names` option
+  - Shows shortened model names by default for better readability
+  - Full model names available via flag when needed
+
+### Fixed
+- Display correct timezone in blocks and sessions command output
+  - Session start/end times now respect the configured timezone
+  - Billing block times properly show in the user's timezone
+
 ## [0.1.6] - 2025-08-11
 
 ### Fixed
@@ -80,7 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/hydai/ccstat/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/hydai/ccstat/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/hydai/ccstat/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/hydai/ccstat/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/hydai/ccstat/compare/v0.1.2...v0.1.3
