@@ -10,7 +10,7 @@ use crate::data_loader::DataLoader;
 use crate::error::Result;
 use crate::pricing_fetcher::PricingFetcher;
 use crate::types::{CostMode, SessionId};
-use chrono::{Datelike, Duration, Local, TimeZone, Utc};
+use chrono::{Datelike, Duration, Local, TimeZone, Timelike, Utc};
 use colored::*;
 use futures::stream::StreamExt;
 use serde::Deserialize;
@@ -447,6 +447,15 @@ impl StatuslineHandler {
         }
     }
 
+    /// Truncate a timestamp to the hour boundary (XX:00:00)
+    fn truncate_to_hour(timestamp: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
+        timestamp
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .expect("truncating to hour should always be valid")
+    }
+
     /// Calculate remaining time in the current billing block (optimized)
     async fn calculate_remaining_time_optimized(
         &self,
@@ -454,16 +463,12 @@ impl StatuslineHandler {
         _session_id: &SessionId,
     ) -> Result<RemainingTime> {
         // Determine the billing block for this session
-        // Billing blocks are 8-hour periods
+        // Billing blocks are 5-hour periods as per Claude's billing model
         let now = Utc::now();
-        let block_duration = Duration::hours(8);
+        let block_duration = Duration::hours(5);
 
-        // Calculate block start time (floor to nearest 8-hour boundary)
-        let hours_since_epoch = session_start_time.timestamp() / 3600;
-        let block_start_hours = (hours_since_epoch / 8) * 8;
-        let Some(block_start) = Utc.timestamp_opt(block_start_hours * 3600, 0).single() else {
-            return Ok(RemainingTime::NoActiveBlock);
-        };
+        // Align block start to hour boundary (XX:00) similar to aggregation.rs
+        let block_start = Self::truncate_to_hour(session_start_time);
         let block_end = block_start + block_duration;
 
         // Check if we're still in the active block
