@@ -110,6 +110,11 @@ cargo run -- daily --project my-project
 - `--show-date` - Show date and time in statusline
 - `--show-git` - Show git branch in statusline
 
+**Important**: The statusline command is designed to be called by Claude Code and expects JSON input from stdin. It will:
+- Return an error immediately if run interactively in a terminal
+- Timeout after 5 seconds if stdin doesn't provide input
+- Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
+
 #### MCP Command
 - `--transport` - Transport type: stdio or http (default: stdio)
 - `--port` - Port for HTTP transport (default: 8080)
@@ -148,6 +153,8 @@ The project includes several performance optimization features:
 - Optimized specifically for Claude Code integration
 - Minimal memory footprint and fast response times
 - Caches recent data for instant updates
+- Includes TTY detection to prevent hanging when run interactively
+- Has a 5-second timeout to prevent indefinite waiting for input
 
 ## Rust Best Practices
 - Always run cargo clippy --all-targets --all-features -- -D warnings to follow the Rust best practices
