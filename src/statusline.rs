@@ -448,16 +448,12 @@ impl StatuslineHandler {
     }
 
     /// Truncate a timestamp to the hour boundary (XX:00:00)
-    fn truncate_to_hour(&self, timestamp: chrono::DateTime<Utc>) -> Result<chrono::DateTime<Utc>> {
+    fn truncate_to_hour(timestamp: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
         timestamp
             .with_minute(0)
             .and_then(|t| t.with_second(0))
             .and_then(|t| t.with_nanosecond(0))
-            .ok_or_else(|| {
-                crate::error::CcstatError::InvalidDate(
-                    "Failed to truncate to hour boundary".to_string(),
-                )
-            })
+            .expect("truncating to hour should always be valid")
     }
 
     /// Calculate remaining time in the current billing block (optimized)
@@ -472,7 +468,7 @@ impl StatuslineHandler {
         let block_duration = Duration::hours(5);
 
         // Align block start to hour boundary (XX:00) similar to aggregation.rs
-        let block_start = self.truncate_to_hour(session_start_time)?;
+        let block_start = Self::truncate_to_hour(session_start_time);
         let block_end = block_start + block_duration;
 
         // Check if we're still in the active block
