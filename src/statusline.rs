@@ -10,7 +10,7 @@ use crate::data_loader::DataLoader;
 use crate::error::Result;
 use crate::pricing_fetcher::PricingFetcher;
 use crate::types::{CostMode, SessionId};
-use chrono::{Datelike, Duration, Local, TimeZone, Utc};
+use chrono::{Datelike, Duration, Local, TimeZone, Timelike, Utc};
 use colored::*;
 use futures::stream::StreamExt;
 use serde::Deserialize;
@@ -447,6 +447,19 @@ impl StatuslineHandler {
         }
     }
 
+    /// Truncate a timestamp to the hour boundary (XX:00:00)
+    fn truncate_to_hour(&self, timestamp: chrono::DateTime<Utc>) -> Result<chrono::DateTime<Utc>> {
+        timestamp
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or_else(|| {
+                crate::error::CcstatError::InvalidDate(
+                    "Failed to truncate to hour boundary".to_string(),
+                )
+            })
+    }
+
     /// Calculate remaining time in the current billing block (optimized)
     async fn calculate_remaining_time_optimized(
         &self,
@@ -459,16 +472,7 @@ impl StatuslineHandler {
         let block_duration = Duration::hours(5);
 
         // Align block start to hour boundary (XX:00) similar to aggregation.rs
-        use chrono::Timelike;
-        let block_start = session_start_time
-            .with_minute(0)
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .ok_or_else(|| {
-                crate::error::CcstatError::InvalidDate(
-                    "Failed to truncate to hour boundary".to_string(),
-                )
-            })?;
+        let block_start = self.truncate_to_hour(session_start_time)?;
         let block_end = block_start + block_duration;
 
         // Check if we're still in the active block
