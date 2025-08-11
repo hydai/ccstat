@@ -92,8 +92,7 @@ ccusage/
 │   ├── cost_calculator.rs # Cost calculations
 │   ├── aggregation.rs   # Data aggregation
 │   ├── cli.rs           # CLI parsing
-│   ├── output.rs        # Output formatting
-│   └── mcp.rs           # MCP server
+│   └── output.rs        # Output formatting
 ├── tests/               # Integration tests
 ├── benches/             # Benchmarks
 ├── examples/            # Example usage

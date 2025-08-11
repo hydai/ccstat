@@ -115,10 +115,6 @@ cargo run -- daily --project my-project
 - Timeout after 5 seconds if stdin doesn't provide input
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
-#### MCP Command
-- `--transport` - Transport type: stdio or http (default: stdio)
-- `--port` - Port for HTTP transport (default: 8080)
-
 ## Important Notes
 - Current version: 0.1.7
 - The project requires Rust 1.75 or later

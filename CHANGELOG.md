@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- MCP (Model Context Protocol) server functionality - no longer on roadmap
+
 ## [0.1.7] - 2025-08-11
 
 ### Added

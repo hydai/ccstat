@@ -9,7 +9,6 @@
 //! - `monthly` - Show monthly rollups with month filters
 //! - `session` - Show individual session details
 //! - `blocks` - Show 5-hour billing blocks
-//! - `mcp` - Start an MCP server for API access
 //!
 //! # Example
 //!
@@ -213,17 +212,6 @@ pub enum Command {
         timezone_args: TimezoneArgs,
     },
 
-    /// Start MCP server
-    Mcp {
-        /// Transport type
-        #[arg(long, value_enum, default_value = "stdio")]
-        transport: McpTransport,
-
-        /// Port for HTTP transport
-        #[arg(long, default_value = "8080")]
-        port: u16,
-    },
-
     /// Generate statusline output for Claude Code
     Statusline {
         /// Monthly subscription fee in USD (default: 200)
@@ -244,38 +232,6 @@ pub enum Command {
     },
 }
 
-/// MCP transport options
-///
-/// Defines how the MCP server communicates with clients.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum McpTransport {
-    /// Standard input/output - for direct process communication
-    Stdio,
-    /// HTTP server - for network-based access
-    Http,
-}
-
-impl std::fmt::Display for McpTransport {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stdio => write!(f, "stdio"),
-            Self::Http => write!(f, "http"),
-        }
-    }
-}
-
-impl std::str::FromStr for McpTransport {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "stdio" => Ok(Self::Stdio),
-            "http" => Ok(Self::Http),
-            _ => Err(format!("Invalid transport: {s}")),
-        }
-    }
-}
-
 impl Command {
     /// Get the cost mode for this command
     pub fn cost_mode(&self) -> CostMode {
@@ -284,7 +240,6 @@ impl Command {
             Self::Monthly { mode, .. } => *mode,
             Self::Session { mode, .. } => *mode,
             Self::Blocks { mode, .. } => *mode,
-            Self::Mcp { .. } => CostMode::Auto,
             Self::Statusline { .. } => CostMode::Auto,
         }
     }
@@ -296,7 +251,6 @@ impl Command {
             Self::Monthly { json, .. } => *json,
             Self::Session { json, .. } => *json,
             Self::Blocks { json, .. } => *json,
-            Self::Mcp { .. } => false,
             Self::Statusline { .. } => false,
         }
     }

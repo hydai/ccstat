@@ -72,10 +72,6 @@ pub enum CcstatError {
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 
-    /// MCP server error
-    #[error("MCP server error: {0}")]
-    McpServer(String),
-
     /// Duplicate entry found
     #[error("Duplicate entry")]
     DuplicateEntry,

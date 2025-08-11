@@ -19,7 +19,6 @@ This document outlines the release process for ccstat.
 - [ ] Cost calculations match TypeScript implementation
 - [ ] All CLI flags work as documented
 - [ ] JSON output format is correct
-- [ ] MCP server starts and responds correctly
 
 ### Cross-Platform Testing
 - [ ] macOS (x86_64)

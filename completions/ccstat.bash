@@ -8,7 +8,7 @@ _ccstat() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
     # Main commands
-    local commands="daily monthly session blocks mcp help"
+    local commands="daily monthly session blocks help"
     
     # Global options
     local global_opts="--help --version"
@@ -18,7 +18,6 @@ _ccstat() {
     local monthly_opts="--since --until --project --json --mode"
     local session_opts="--since --until --project --json --mode --models"
     local blocks_opts="--project --json --active --recent --limit"
-    local mcp_opts="--transport --port"
     
     # Cost modes
     local cost_modes="auto calculate display"
@@ -74,16 +73,6 @@ _ccstat() {
             ;;
         blocks)
             COMPREPLY=( $(compgen -W "${blocks_opts}" -- ${cur}) )
-            ;;
-        mcp)
-            case "${prev}" in
-                --transport)
-                    COMPREPLY=( $(compgen -W "stdio http" -- ${cur}) )
-                    ;;
-                *)
-                    COMPREPLY=( $(compgen -W "${mcp_opts}" -- ${cur}) )
-                    ;;
-            esac
             ;;
         *)
             COMPREPLY=( $(compgen -W "${global_opts}" -- ${cur}) )

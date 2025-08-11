@@ -32,7 +32,6 @@ async-trait = "0.1"
 
 # HTTP
 reqwest = { version = "0.12", features = ["json"] }
-warp = { version = "0.4", features = ["server"] }
 
 # Error handling
 thiserror = "2.0"
@@ -41,9 +40,6 @@ anyhow = "1.0"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# MCP/JSON-RPC
-jsonrpc-core = "18.0"
 
 # Performance
 smallvec = "1.13"

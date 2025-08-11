@@ -247,40 +247,6 @@ ccstat daily --json | jq -r '
 
 ## Advanced Features
 
-### MCP Server Integration
-
-Use ccstat as an MCP server for integration with other tools:
-
-```bash
-# Start MCP server on stdio
-ccstat mcp
-
-# HTTP server mode
-ccstat mcp --transport http --port 8080
-```
-
-Example client request:
-
-```python
-import requests
-import json
-
-# Query daily usage via MCP
-response = requests.post('http://localhost:8080/mcp', json={
-    'jsonrpc': '2.0',
-    'method': 'daily',
-    'params': {
-        'since': '2024-01-01',
-        'until': '2024-01-31',
-        'costMode': 'calculate'
-    },
-    'id': 1
-})
-
-data = response.json()
-print(f"Total cost: ${data['result']['totals']['total_cost']:.2f}")
-```
-
 ### Performance Optimization
 
 For large datasets (millions of entries):

@@ -9,7 +9,6 @@ _ccstat() {
         'monthly:Show monthly usage summary'
         'session:Show session-based usage'
         'blocks:Show 5-hour billing blocks'
-        'mcp:Start MCP server'
         'help:Show help information'
     )
     
@@ -62,11 +61,6 @@ _ccstat() {
                 '--active[Show only active blocks]' \
                 '--recent[Show blocks from last 24 hours]' \
                 '--limit=[Token limit for warnings]:limit:'
-            ;;
-        mcp)
-            _arguments \
-                '--transport=[Transport type]:transport:(stdio http)' \
-                '--port=[HTTP port]:port:'
             ;;
         *)
             _arguments -C \

@@ -4,7 +4,6 @@
 //! - Parse JSONL usage logs from multiple Claude data directories
 //! - Calculate token costs using LiteLLM pricing data
 //! - Generate reports in table and JSON formats
-//! - Provide MCP server support for API access
 //! - Support live monitoring mode for active sessions
 //!
 //! # Examples
@@ -43,7 +42,6 @@ pub mod data_loader;
 pub mod error;
 pub mod filters;
 pub mod live_monitor;
-pub mod mcp;
 pub mod memory_pool;
 pub mod model_formatter;
 pub mod output;
