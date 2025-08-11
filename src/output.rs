@@ -62,7 +62,7 @@ use serde_json::json;
 ///         format!("Total instances: {}", data.len())
 ///     }
 ///     
-///     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String {
+///     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals, _tz: &chrono_tz::Tz) -> String {
 ///         format!("Total sessions: {}", data.len())
 ///     }
 ///     
@@ -70,7 +70,7 @@ use serde_json::json;
 ///         format!("Total months: {}", data.len())
 ///     }
 ///     
-///     fn format_blocks(&self, data: &[SessionBlock]) -> String {
+///     fn format_blocks(&self, data: &[SessionBlock], _tz: &chrono_tz::Tz) -> String {
 ///         format!("Total blocks: {}", data.len())
 ///     }
 /// }
@@ -83,13 +83,14 @@ pub trait OutputFormatter {
     fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String;
 
     /// Format session usage data with totals
-    fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String;
+    fn format_sessions(&self, data: &[SessionUsage], totals: &Totals, tz: &chrono_tz::Tz)
+    -> String;
 
     /// Format monthly usage data with totals
     fn format_monthly(&self, data: &[MonthlyUsage], totals: &Totals) -> String;
 
     /// Format billing blocks (5-hour windows)
-    fn format_blocks(&self, data: &[SessionBlock]) -> String;
+    fn format_blocks(&self, data: &[SessionBlock], tz: &chrono_tz::Tz) -> String;
 }
 
 /// Table formatter for human-readable output
@@ -140,6 +141,11 @@ impl TableFormatter {
             b -> Self::format_currency(totals.total_cost),
             ""
         ]
+    }
+
+    /// Format a datetime with the specified timezone
+    fn format_datetime_with_tz(dt: &chrono::DateTime<chrono::Utc>, tz: &chrono_tz::Tz) -> String {
+        dt.with_timezone(tz).format("%Y-%m-%d %H:%M %Z").to_string()
     }
 }
 
@@ -288,7 +294,12 @@ impl OutputFormatter for TableFormatter {
         table.to_string()
     }
 
-    fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String {
+    fn format_sessions(
+        &self,
+        data: &[SessionUsage],
+        totals: &Totals,
+        tz: &chrono_tz::Tz,
+    ) -> String {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
 
@@ -308,9 +319,11 @@ impl OutputFormatter for TableFormatter {
             let duration_str =
                 format!("{}h {}m", duration.num_hours(), duration.num_minutes() % 60);
 
+            let formatted_start = Self::format_datetime_with_tz(&session.start_time, tz);
+
             table.add_row(row![
                 session.session_id.as_str(),
-                session.start_time.format("%Y-%m-%d %H:%M"),
+                formatted_start,
                 duration_str,
                 r -> Self::format_number(session.tokens.input_tokens),
                 r -> Self::format_number(session.tokens.output_tokens),
@@ -375,7 +388,7 @@ impl OutputFormatter for TableFormatter {
         table.to_string()
     }
 
-    fn format_blocks(&self, data: &[SessionBlock]) -> String {
+    fn format_blocks(&self, data: &[SessionBlock], tz: &chrono_tz::Tz) -> String {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
 
@@ -411,8 +424,10 @@ impl OutputFormatter for TableFormatter {
                 "-".to_string()
             };
 
+            let formatted_start = Self::format_datetime_with_tz(&block.start_time, tz);
+
             table.add_row(row![
-                block.start_time.format("%Y-%m-%d %H:%M"),
+                formatted_start,
                 status,
                 c -> block.sessions.len(),
                 r -> Self::format_number(block.tokens.input_tokens),
@@ -515,7 +530,12 @@ impl OutputFormatter for JsonFormatter {
         serde_json::to_string_pretty(&output).unwrap()
     }
 
-    fn format_sessions(&self, data: &[SessionUsage], totals: &Totals) -> String {
+    fn format_sessions(
+        &self,
+        data: &[SessionUsage],
+        totals: &Totals,
+        _tz: &chrono_tz::Tz,
+    ) -> String {
         let output = json!({
             "sessions": data.iter().map(|s| json!({
                 "session_id": s.session_id.as_str(),
@@ -576,7 +596,7 @@ impl OutputFormatter for JsonFormatter {
         serde_json::to_string_pretty(&output).unwrap()
     }
 
-    fn format_blocks(&self, data: &[SessionBlock]) -> String {
+    fn format_blocks(&self, data: &[SessionBlock], _tz: &chrono_tz::Tz) -> String {
         let output = json!({
             "blocks": data.iter().map(|b| json!({
                 "start_time": b.start_time.to_rfc3339(),
