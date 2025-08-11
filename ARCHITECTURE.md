@@ -239,22 +239,6 @@ let stream = futures::stream::iter(files)
 - Properly handles path separators
 - Windows credential store (future)
 
-## MCP Server Architecture
-
-The MCP (Model Context Protocol) server provides API access:
-
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│ MCP Client  │────▶│  MCP Server  │────▶│  Aggregator  │
-└─────────────┘     └──────────────┘     └──────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │   Transport   │
-                    │ (stdio/HTTP)  │
-                    └──────────────┘
-```
-
 ## Conclusion
 
 ccstat's architecture balances performance, maintainability, and extensibility. The modular design allows for easy testing and future enhancements while the streaming architecture ensures scalability to large datasets.

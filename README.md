@@ -22,7 +22,6 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 - 🔍 **Automatic Discovery**: Finds Claude data directories across platforms
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
-- 🔌 **MCP Server**: JSON-RPC API for tool integrations
 - 👀 **Live Monitoring**: Real-time usage tracking with auto-refresh
 - ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
 - 🔧 **Advanced Filtering**: By date, project, instance, and more
@@ -361,35 +360,6 @@ ccstat daily --parallel --intern --arena
 }
 ```
 
-### MCP Server Mode
-
-Run ccstat as an MCP (Model Context Protocol) server for integration with other tools:
-
-```bash
-# Start MCP server on stdio
-ccstat mcp
-
-# Start MCP server on HTTP
-ccstat mcp --transport http --port 8080
-```
-
-The MCP server exposes the following methods:
-- `daily` - Get daily usage data
-- `session` - Get session data
-- `monthly` - Get monthly aggregated data
-
-Example MCP request:
-```json
-{
-  "method": "daily",
-  "params": {
-    "since": "2024-01-01",
-    "until": "2024-01-31",
-    "costMode": "calculate"
-  }
-}
-```
-
 ## Configuration
 
 ### Environment Variables
@@ -476,7 +446,6 @@ The project follows a modular architecture:
 - `aggregation.rs` - Time-based data aggregation
 - `cli.rs` - Command-line interface
 - `output.rs` - Table and JSON formatters
-- `mcp.rs` - MCP server implementation
 - `statusline.rs` - Statusline command for Claude Code integration
 - `timezone.rs` - Timezone support and configuration
 - `model_formatter.rs` - Model name formatting utilities

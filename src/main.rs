@@ -2,13 +2,12 @@
 
 use ccstat::{
     aggregation::{Aggregator, Totals},
-    cli::{Cli, Command, McpTransport, TimezoneArgs, parse_date_filter, parse_month_filter},
+    cli::{Cli, Command, TimezoneArgs, parse_date_filter, parse_month_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::Result,
     filters::{MonthFilter, UsageFilter},
     live_monitor::LiveMonitor,
-    mcp::McpServer,
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
     timezone::TimezoneConfig,
@@ -392,21 +391,6 @@ async fn main() -> Result<()> {
                 "{}",
                 formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
             );
-        }
-
-        Some(Command::Mcp { transport, port }) => {
-            info!("Starting MCP server");
-
-            let server = McpServer::new().await?;
-
-            match transport {
-                McpTransport::Stdio => {
-                    server.run_stdio().await?;
-                }
-                McpTransport::Http => {
-                    server.run_http(port).await?;
-                }
-            }
         }
 
         Some(Command::Statusline {
