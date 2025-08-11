@@ -284,7 +284,10 @@ async fn main() -> Result<()> {
 
             // Format and output
             let formatter = get_formatter(json, model_display_args.full_model_names);
-            println!("{}", formatter.format_sessions(&session_data, &totals));
+            println!(
+                "{}",
+                formatter.format_sessions(&session_data, &totals, &aggregator.timezone_config().tz)
+            );
         }
 
         Some(Command::Blocks {
@@ -385,7 +388,10 @@ async fn main() -> Result<()> {
 
             // Format and output
             let formatter = get_formatter(json, model_display_args.full_model_names);
-            println!("{}", formatter.format_blocks(&blocks));
+            println!(
+                "{}",
+                formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
+            );
         }
 
         Some(Command::Mcp { transport, port }) => {
