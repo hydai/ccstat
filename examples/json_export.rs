@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     let totals = Totals::from_daily(&daily_data);
 
     // Export to JSON
-    let json_formatter = get_formatter(true);
+    let json_formatter = get_formatter(true, false);
     let json_output = json_formatter.format_daily(&daily_data, &totals);
 
     // Save to file

@@ -45,6 +45,7 @@ pub mod filters;
 pub mod live_monitor;
 pub mod mcp;
 pub mod memory_pool;
+pub mod model_formatter;
 pub mod output;
 pub mod pricing_fetcher;
 pub mod statusline;
@@ -82,7 +83,7 @@ mod tests {
 
         // Verify module paths are valid
         let _ = crate::filters::UsageFilter::new();
-        let _ = crate::output::TableFormatter;
+        let _ = crate::output::TableFormatter::new(false);
         let _ = crate::output::JsonFormatter;
         let _ = crate::types::CostMode::Auto;
     }

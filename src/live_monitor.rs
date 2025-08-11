@@ -43,10 +43,12 @@ pub struct LiveMonitor {
     json_output: bool,
     instances: bool,
     interval_secs: u64,
+    full_model_names: bool,
 }
 
 impl LiveMonitor {
     /// Create a new live monitor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_loader: Arc<DataLoader>,
         aggregator: Arc<Aggregator>,
@@ -55,6 +57,7 @@ impl LiveMonitor {
         json_output: bool,
         instances: bool,
         interval_secs: u64,
+        full_model_names: bool,
     ) -> Self {
         Self {
             data_loader,
@@ -64,6 +67,7 @@ impl LiveMonitor {
             json_output,
             instances,
             interval_secs,
+            full_model_names,
         }
     }
 
@@ -255,7 +259,7 @@ impl LiveMonitor {
                 )
                 .await?;
             let totals = Totals::from_daily_instances(&instance_data);
-            let formatter = get_formatter(self.json_output);
+            let formatter = get_formatter(self.json_output, self.full_model_names);
 
             if self.json_output {
                 println!(
@@ -286,7 +290,7 @@ impl LiveMonitor {
                 )
                 .await?;
             let totals = Totals::from_daily(&daily_data);
-            let formatter = get_formatter(self.json_output);
+            let formatter = get_formatter(self.json_output, self.full_model_names);
 
             if self.json_output {
                 println!("{}", formatter.format_daily(&daily_data, &totals));
@@ -389,6 +393,7 @@ mod tests {
             false,
             false,
             5,
+            false,
         );
 
         // Just verify it can be created
