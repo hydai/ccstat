@@ -55,6 +55,14 @@ pub struct TimezoneArgs {
     pub utc: bool,
 }
 
+/// Common model display options
+#[derive(clap::Args, Debug)]
+pub struct ModelDisplayArgs {
+    /// Show full model names instead of shortened versions
+    #[arg(long)]
+    pub full_model_names: bool,
+}
+
 /// Available commands
 ///
 /// Each command provides different views and aggregations of usage data,
@@ -111,6 +119,10 @@ pub enum Command {
         #[arg(long, short = 'v')]
         verbose: bool,
 
+        /// Model display options
+        #[command(flatten)]
+        model_display_args: ModelDisplayArgs,
+
         /// Timezone options
         #[command(flatten)]
         timezone_args: TimezoneArgs,
@@ -134,6 +146,10 @@ pub enum Command {
         #[arg(long)]
         until: Option<String>,
 
+        /// Model display options
+        #[command(flatten)]
+        model_display_args: ModelDisplayArgs,
+
         /// Timezone options
         #[command(flatten)]
         timezone_args: TimezoneArgs,
@@ -156,6 +172,10 @@ pub enum Command {
         /// Filter by end date
         #[arg(long)]
         until: Option<String>,
+
+        /// Model display options
+        #[command(flatten)]
+        model_display_args: ModelDisplayArgs,
 
         /// Timezone options
         #[command(flatten)]
@@ -183,6 +203,10 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
+
+        /// Model display options
+        #[command(flatten)]
+        model_display_args: ModelDisplayArgs,
 
         /// Timezone options
         #[command(flatten)]

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2025-08-11
+
+### Fixed
+- Fixed billing block detection in statusline command
+  - Corrected block duration from 8 hours back to 5 hours (Claude's actual billing period)
+  - Fixed block start time alignment to hour boundaries (XX:00) instead of 8-hour epochs
+  - Now matches the behavior in aggregation.rs::create_billing_blocks
+
 ## [0.1.5] - 2025-08-10
 
 ### Added

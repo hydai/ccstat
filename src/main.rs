@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
             intern,
             arena,
             verbose,
+            model_display_args,
             timezone_args,
         }) => {
             info!("Running daily usage report");
@@ -117,6 +118,7 @@ async fn main() -> Result<()> {
                     json,
                     instances,
                     interval,
+                    model_display_args.full_model_names,
                 );
                 monitor.run().await?;
             } else {
@@ -130,7 +132,7 @@ async fn main() -> Result<()> {
                             .aggregate_daily_by_instance(filtered_entries, mode)
                             .await?;
                         let totals = Totals::from_daily_instances(&instance_data);
-                        let formatter = get_formatter(json);
+                        let formatter = get_formatter(json, model_display_args.full_model_names);
                         println!(
                             "{}",
                             formatter.format_daily_by_instance(&instance_data, &totals)
@@ -142,7 +144,7 @@ async fn main() -> Result<()> {
                             .aggregate_daily_by_instance(filtered_entries, mode)
                             .await?;
                         let totals = Totals::from_daily_instances(&instance_data);
-                        let formatter = get_formatter(json);
+                        let formatter = get_formatter(json, model_display_args.full_model_names);
                         println!(
                             "{}",
                             formatter.format_daily_by_instance(&instance_data, &totals)
@@ -157,7 +159,7 @@ async fn main() -> Result<()> {
                             .aggregate_daily_verbose(filtered_entries, mode, verbose)
                             .await?;
                         let totals = Totals::from_daily(&daily_data);
-                        let formatter = get_formatter(json);
+                        let formatter = get_formatter(json, model_display_args.full_model_names);
                         println!("{}", formatter.format_daily(&daily_data, &totals));
                     } else {
                         let entries = data_loader.load_usage_entries();
@@ -166,7 +168,7 @@ async fn main() -> Result<()> {
                             .aggregate_daily_verbose(filtered_entries, mode, verbose)
                             .await?;
                         let totals = Totals::from_daily(&daily_data);
-                        let formatter = get_formatter(json);
+                        let formatter = get_formatter(json, model_display_args.full_model_names);
                         println!("{}", formatter.format_daily(&daily_data, &totals));
                     }
                 }
@@ -178,6 +180,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            model_display_args,
             timezone_args,
         }) => {
             info!("Running monthly usage report");
@@ -233,7 +236,7 @@ async fn main() -> Result<()> {
             }
 
             // Format and output
-            let formatter = get_formatter(json);
+            let formatter = get_formatter(json, model_display_args.full_model_names);
             println!("{}", formatter.format_monthly(&monthly_data, &totals));
         }
 
@@ -242,6 +245,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            model_display_args,
             timezone_args,
         }) => {
             info!("Running session usage report");
@@ -279,7 +283,7 @@ async fn main() -> Result<()> {
             let totals = Totals::from_sessions(&session_data);
 
             // Format and output
-            let formatter = get_formatter(json);
+            let formatter = get_formatter(json, model_display_args.full_model_names);
             println!("{}", formatter.format_sessions(&session_data, &totals));
         }
 
@@ -289,6 +293,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            model_display_args,
             timezone_args,
         }) => {
             info!("Running billing blocks report");
@@ -379,7 +384,7 @@ async fn main() -> Result<()> {
             }
 
             // Format and output
-            let formatter = get_formatter(json);
+            let formatter = get_formatter(json, model_display_args.full_model_names);
             println!("{}", formatter.format_blocks(&blocks));
         }
 
@@ -430,7 +435,7 @@ async fn main() -> Result<()> {
             let totals = Totals::from_daily(&daily_data);
 
             // Format and output
-            let formatter = get_formatter(false);
+            let formatter = get_formatter(false, false);
             println!("{}", formatter.format_daily(&daily_data, &totals));
         }
     }

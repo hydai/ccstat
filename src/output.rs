@@ -25,17 +25,18 @@
 //! let totals = Totals::from_daily(&daily_data);
 //!
 //! // Get table formatter for human-readable output
-//! let formatter = get_formatter(false);
+//! let formatter = get_formatter(false, false);
 //! println!("{}", formatter.format_daily(&daily_data, &totals));
 //!
 //! // Get JSON formatter for machine-readable output
-//! let json_formatter = get_formatter(true);
+//! let json_formatter = get_formatter(true, false);
 //! println!("{}", json_formatter.format_daily(&daily_data, &totals));
 //! ```
 
 use crate::aggregation::{
     DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals,
 };
+use crate::model_formatter::{format_model_list, format_model_name};
 use prettytable::{Cell, Row, Table, format, row};
 use serde_json::json;
 
@@ -96,9 +97,17 @@ pub trait OutputFormatter {
 /// Produces nicely formatted ASCII tables suitable for terminal display.
 /// Numbers are formatted with thousands separators and costs are shown
 /// with dollar signs for clarity.
-pub struct TableFormatter;
+pub struct TableFormatter {
+    /// Whether to show full model names or shortened versions
+    pub full_model_names: bool,
+}
 
 impl TableFormatter {
+    /// Create a new TableFormatter
+    pub fn new(full_model_names: bool) -> Self {
+        Self { full_model_names }
+    }
+
     /// Format a number with thousands separators
     fn format_number(n: u64) -> String {
         let s = n.to_string();
@@ -167,7 +176,7 @@ impl OutputFormatter for TableFormatter {
                         table.add_row(row![
                             entry.timestamp.format("%H:%M:%S"),
                             entry.session_id,
-                            entry.model,
+                            format_model_name(&entry.model, self.full_model_names),
                             r -> Self::format_number(entry.tokens.input_tokens),
                             r -> Self::format_number(entry.tokens.output_tokens),
                             r -> Self::format_number(entry.tokens.cache_creation_tokens),
@@ -216,7 +225,7 @@ impl OutputFormatter for TableFormatter {
                 r -> Self::format_number(entry.tokens.cache_read_tokens),
                 r -> Self::format_number(entry.tokens.total()),
                 r -> Self::format_currency(entry.total_cost),
-                entry.models_used.join(", ")
+                format_model_list(&entry.models_used, self.full_model_names, ", ")
             ]);
         }
 
@@ -256,7 +265,7 @@ impl OutputFormatter for TableFormatter {
                 r -> Self::format_number(entry.tokens.cache_read_tokens),
                 r -> Self::format_number(entry.tokens.total()),
                 r -> Self::format_currency(entry.total_cost),
-                entry.models_used.join(", ")
+                format_model_list(&entry.models_used, self.full_model_names, ", ")
             ]);
         }
 
@@ -307,7 +316,7 @@ impl OutputFormatter for TableFormatter {
                 r -> Self::format_number(session.tokens.output_tokens),
                 r -> Self::format_number(session.tokens.total()),
                 r -> Self::format_currency(session.total_cost),
-                session.model.as_str()
+                format_model_name(session.model.as_str(), self.full_model_names)
             ]);
         }
 
@@ -598,6 +607,7 @@ impl OutputFormatter for JsonFormatter {
 /// # Arguments
 ///
 /// * `json` - If true, returns a JSON formatter; otherwise returns a table formatter
+/// * `full_model_names` - If true, shows full model names; otherwise shows shortened versions
 ///
 /// # Returns
 ///
@@ -612,10 +622,10 @@ impl OutputFormatter for JsonFormatter {
 /// use chrono::NaiveDate;
 ///
 /// // Get table formatter for human-readable output
-/// let formatter = get_formatter(false);
+/// let formatter = get_formatter(false, false);
 ///
 /// // Get JSON formatter for machine-readable output
-/// let json_formatter = get_formatter(true);
+/// let json_formatter = get_formatter(true, false);
 ///
 /// // Use with data
 /// let daily_data = vec![
@@ -631,11 +641,11 @@ impl OutputFormatter for JsonFormatter {
 ///
 /// let output = formatter.format_daily(&daily_data, &totals);
 /// ```
-pub fn get_formatter(json: bool) -> Box<dyn OutputFormatter> {
+pub fn get_formatter(json: bool, full_model_names: bool) -> Box<dyn OutputFormatter> {
     if json {
         Box::new(JsonFormatter)
     } else {
-        Box::new(TableFormatter)
+        Box::new(TableFormatter::new(full_model_names))
     }
 }
 
