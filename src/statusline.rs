@@ -454,16 +454,21 @@ impl StatuslineHandler {
         _session_id: &SessionId,
     ) -> Result<RemainingTime> {
         // Determine the billing block for this session
-        // Billing blocks are 8-hour periods
+        // Billing blocks are 5-hour periods as per Claude's billing model
         let now = Utc::now();
-        let block_duration = Duration::hours(8);
+        let block_duration = Duration::hours(5);
 
-        // Calculate block start time (floor to nearest 8-hour boundary)
-        let hours_since_epoch = session_start_time.timestamp() / 3600;
-        let block_start_hours = (hours_since_epoch / 8) * 8;
-        let Some(block_start) = Utc.timestamp_opt(block_start_hours * 3600, 0).single() else {
-            return Ok(RemainingTime::NoActiveBlock);
-        };
+        // Align block start to hour boundary (XX:00) similar to aggregation.rs
+        use chrono::Timelike;
+        let block_start = session_start_time
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or_else(|| {
+                crate::error::CcstatError::InvalidDate(
+                    "Failed to truncate to hour boundary".to_string(),
+                )
+            })?;
         let block_end = block_start + block_duration;
 
         // Check if we're still in the active block
