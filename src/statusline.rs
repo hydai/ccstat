@@ -17,6 +17,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tokio::io::{self, AsyncReadExt};
 use tokio::process::Command;
+use tokio::time::timeout;
 
 /// Input structure from Claude Code
 #[derive(Debug, Deserialize)]
@@ -179,8 +180,31 @@ impl StatuslineHandler {
 
     /// Read and parse JSON input from stdin
     pub async fn read_input() -> Result<StatuslineInput> {
+        // Check if stdin is a terminal (TTY)
+        if is_terminal::is_terminal(std::io::stdin()) {
+            return Err(crate::error::CcstatError::InvalidArgument(
+                "The statusline command expects JSON input from stdin.\n\
+                 It is designed to be called by Claude Code, not run interactively.\n\
+                 \n\
+                 Example usage:\n\
+                 echo '{\"session_id\": \"test\", \"model\": {\"id\": \"claude-3-opus\", \"display_name\": \"Claude 3 Opus\"}}' | ccstat statusline"
+                    .to_string(),
+            ));
+        }
+
+        // Read with timeout to prevent indefinite hanging
+        const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
         let mut buffer = String::new();
-        io::stdin().read_to_string(&mut buffer).await?;
+        timeout(READ_TIMEOUT, io::stdin().read_to_string(&mut buffer))
+            .await
+            .map_err(|_| {
+                crate::error::CcstatError::InvalidArgument(
+                    "Timeout waiting for input. The statusline command expects JSON input from stdin."
+                        .to_string(),
+                )
+            })??;
+
         let input: StatuslineInput = serde_json::from_str(&buffer)?;
         Ok(input)
     }

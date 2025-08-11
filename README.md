@@ -274,8 +274,8 @@ ccstat daily --verbose --since 2024-01-15 --until 2024-01-15
 Real-time usage monitoring for Claude Code integration:
 
 ```bash
-# Basic statusline output
-ccstat statusline
+# Basic statusline output (requires JSON input from stdin)
+echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline
 
 # Customize monthly fee (default: $200)
 ccstat statusline --monthly-fee 250
@@ -289,6 +289,11 @@ ccstat statusline --show-date
 # Show git branch
 ccstat statusline --show-git
 ```
+
+**Important**: The statusline command is designed to be called by Claude Code and expects JSON input from stdin. It will:
+- Return an error immediately if run interactively in a terminal (TTY detection)
+- Timeout after 5 seconds if stdin doesn't provide input
+- Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
 The statusline command is optimized for minimal memory footprint and fast response times, making it ideal for integration with Claude Code's status bar.
 
