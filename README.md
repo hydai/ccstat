@@ -26,6 +26,9 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 - 👀 **Live Monitoring**: Real-time usage tracking with auto-refresh
 - ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
 - 🔧 **Advanced Filtering**: By date, project, instance, and more
+- 🌍 **Timezone Support**: Accurate daily aggregation across different timezones
+- 📊 **Statusline Integration**: Real-time usage monitoring for Claude Code status bar
+- 🎯 **Model Name Simplification**: Shortened model names with `--full-model-names` option
 
 ## Installation
 
@@ -94,6 +97,9 @@ ccstat monthly
 # View all sessions with costs
 ccstat session
 
+# Show statusline for Claude Code integration
+ccstat statusline
+
 # Export data as JSON for further processing
 ccstat daily --json > usage.json
 ```
@@ -119,6 +125,13 @@ ccstat daily --instances
 
 # Filter by project
 ccstat daily --project my-project
+
+# Timezone configuration
+ccstat daily --timezone "America/New_York"  # Use specific timezone
+ccstat daily --utc                          # Force UTC timezone
+
+# Model display options
+ccstat daily --full-model-names             # Show full model names
 
 # Live monitoring mode (auto-refresh)
 ccstat daily --watch
@@ -154,6 +167,13 @@ ccstat monthly --project my-project
 
 # Show per-instance breakdown
 ccstat monthly --instances
+
+# Timezone configuration
+ccstat monthly --timezone "Asia/Tokyo"      # Use specific timezone
+ccstat monthly --utc                        # Force UTC timezone
+
+# Model display options  
+ccstat monthly --full-model-names           # Show full model names
 ```
 
 ### Session Analysis
@@ -175,6 +195,13 @@ ccstat session --project my-project
 
 # Show detailed models per session
 ccstat session --models
+
+# Timezone configuration
+ccstat session --timezone "Europe/London"   # Use specific timezone
+ccstat session --utc                        # Force UTC timezone
+
+# Model display options
+ccstat session --full-model-names           # Show full model names
 
 # Different cost calculation modes
 ccstat session --mode calculate   # Always calculate from tokens
@@ -200,6 +227,16 @@ ccstat blocks --json
 
 # Filter by project
 ccstat blocks --project my-project
+
+# Set token limit for warnings
+ccstat blocks --token-limit "80%"
+
+# Timezone configuration
+ccstat blocks --timezone "America/New_York"  # Use specific timezone
+ccstat blocks --utc                          # Force UTC timezone
+
+# Model display options
+ccstat blocks --full-model-names            # Show full model names
 ```
 
 ### Cost Calculation Modes
@@ -231,6 +268,29 @@ ccstat daily --verbose --json
 # Verbose mode for specific date
 ccstat daily --verbose --since 2024-01-15 --until 2024-01-15
 ```
+
+### Statusline Command
+
+Real-time usage monitoring for Claude Code integration:
+
+```bash
+# Basic statusline output
+ccstat statusline
+
+# Customize monthly fee (default: $200)
+ccstat statusline --monthly-fee 250
+
+# Disable colored output
+ccstat statusline --no-color
+
+# Show date and time
+ccstat statusline --show-date
+
+# Show git branch
+ccstat statusline --show-git
+```
+
+The statusline command is optimized for minimal memory footprint and fast response times, making it ideal for integration with Claude Code's status bar.
 
 ### Performance Options
 
@@ -346,7 +406,7 @@ ccstat can also be used as a Rust library. Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ccstat = "0.1.0"
+ccstat = "0.1.7"
 ```
 
 Example usage:
@@ -412,6 +472,13 @@ The project follows a modular architecture:
 - `cli.rs` - Command-line interface
 - `output.rs` - Table and JSON formatters
 - `mcp.rs` - MCP server implementation
+- `statusline.rs` - Statusline command for Claude Code integration
+- `timezone.rs` - Timezone support and configuration
+- `model_formatter.rs` - Model name formatting utilities
+- `filters.rs` - Data filtering logic
+- `live_monitor.rs` - Live monitoring with auto-refresh
+- `memory_pool.rs` - Memory pool optimization
+- `string_pool.rs` - String interning for memory efficiency
 
 ### Contributing
 
