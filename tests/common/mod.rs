@@ -194,6 +194,8 @@ pub async fn create_test_data_dir(entries: Vec<String>) -> (TempDir, DataLoader)
 
         // Create DataLoader with test directory
         let original_home = std::env::var("HOME").ok();
+        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
+        // We use a mutex to ensure thread safety, but the functions still require unsafe blocks
         unsafe {
             std::env::set_var("HOME", "/nonexistent");
             std::env::set_var("CLAUDE_DATA_PATH", path.to_str().unwrap());

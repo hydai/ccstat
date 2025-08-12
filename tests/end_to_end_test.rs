@@ -442,6 +442,8 @@ async fn test_error_handling_workflow() {
     {
         let _lock = common::ENV_MUTEX.lock().await;
 
+        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
+        // We use a mutex to ensure thread safety, but the functions still require unsafe blocks
         unsafe {
             std::env::set_var("CLAUDE_DATA_PATH", "/nonexistent/path");
         }

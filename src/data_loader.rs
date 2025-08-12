@@ -629,7 +629,8 @@ mod tests {
     use tempfile::TempDir;
     use tokio::io::AsyncWriteExt;
 
-    // Global mutex to serialize environment variable modifications in tests
+    // Mutex to serialize environment variable modifications in unit tests
+    // Note: This is local to unit tests. Integration tests use the shared mutex in tests/common/mod.rs
     static ENV_MUTEX: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
     #[tokio::test]
@@ -704,6 +705,7 @@ mod tests {
         let custom_path = temp_dir.path().to_path_buf();
 
         // Set environment variable
+        // Note: env::set_var is unsafe in Rust 1.82+ due to thread-safety concerns
         unsafe {
             env::set_var("CLAUDE_DATA_PATH", custom_path.to_str().unwrap());
         }
@@ -712,6 +714,7 @@ mod tests {
         assert!(paths.contains(&custom_path));
 
         // Clean up
+        // Note: env::remove_var is unsafe in Rust 1.82+ due to thread-safety concerns
         unsafe {
             env::remove_var("CLAUDE_DATA_PATH");
         }
@@ -1054,6 +1057,7 @@ mod tests {
 
         // Try to discover paths in a location that doesn't exist
         let _original_home = env::var("HOME").ok();
+        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
         unsafe {
             env::set_var("HOME", "/nonexistent");
             env::remove_var("CLAUDE_DATA_PATH");
@@ -1064,6 +1068,7 @@ mod tests {
 
         // Restore original HOME if it existed
         if let Some(home) = _original_home {
+            // Note: env::set_var is unsafe in Rust 1.82+ due to thread-safety concerns
             unsafe {
                 env::set_var("HOME", home);
             }

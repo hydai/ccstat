@@ -18,7 +18,6 @@ use chrono::Local;
 use futures::StreamExt;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -83,7 +82,7 @@ impl LiveMonitor {
 
         // Set up file watching
         let (tx, mut rx) = mpsc::channel(10);
-        let watched_dirs = self.data_loader.get_data_directories().await?;
+        let watched_dirs = self.data_loader.paths().to_vec();
 
         // Create watcher in a separate task
         let mut watcher_handle = tokio::task::spawn_blocking(move || -> Result<()> {
@@ -312,55 +311,6 @@ impl LiveMonitor {
     }
 }
 
-/// Helper extension for DataLoader to get data directories
-impl DataLoader {
-    async fn get_data_directories(&self) -> Result<Vec<PathBuf>> {
-        // This would need to be implemented in DataLoader to expose the directories
-        // For now, we'll use a placeholder implementation
-        let mut dirs = Vec::new();
-
-        // Get platform-specific directories
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(home) = dirs::home_dir() {
-                let claude_dir = home.join("Library/Application Support/Claude");
-                if claude_dir.exists() {
-                    dirs.push(claude_dir);
-                }
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            if let Some(data_dir) = dirs::data_dir() {
-                let claude_dir = data_dir.join("Claude");
-                if claude_dir.exists() {
-                    dirs.push(claude_dir);
-                }
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(data_dir) = dirs::data_dir() {
-                let claude_dir = data_dir.join("Claude");
-                if claude_dir.exists() {
-                    dirs.push(claude_dir);
-                }
-            }
-        }
-
-        if dirs.is_empty() {
-            return Err(CcstatError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No Claude data directories found",
-            )));
-        }
-
-        Ok(dirs)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,24 +366,11 @@ mod tests {
         // Try to create data loader
         match DataLoader::new().await {
             Ok(data_loader) => {
-                let dirs = data_loader.get_data_directories().await;
+                let dirs = data_loader.paths();
 
-                // Should either find directories or return an error
-                match dirs {
-                    Ok(directories) => {
-                        // Ensure we get at least one directory on supported platforms
-                        #[cfg(any(
-                            target_os = "macos",
-                            target_os = "linux",
-                            target_os = "windows"
-                        ))]
-                        assert!(!directories.is_empty());
-                    }
-                    Err(e) => {
-                        // It's okay if directories don't exist
-                        assert!(matches!(e, CcstatError::Io(_)));
-                    }
-                }
+                // Ensure we get at least one directory on supported platforms
+                #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+                assert!(!dirs.is_empty());
             }
             Err(CcstatError::NoClaudeDirectory) => {
                 // This is expected in CI environments
@@ -717,32 +654,6 @@ mod tests {
         // Test setting back to false
         should_refresh.store(false, Ordering::Release);
         assert!(!should_refresh.load(Ordering::Acquire));
-    }
-
-    #[tokio::test]
-    async fn test_data_directories_on_different_platforms() {
-        // Test the get_data_directories method through the actual loader
-        match DataLoader::new().await {
-            Ok(data_loader) => {
-                // Test that get_data_directories handles missing directories gracefully
-                let result = data_loader.get_data_directories().await;
-
-                // On any platform, we should either get directories or an error
-                match result {
-                    Ok(dirs) => {
-                        // If successful, we should have at least one directory
-                        assert!(!dirs.is_empty());
-                    }
-                    Err(e) => {
-                        // Error is acceptable if no Claude directories exist
-                        assert!(matches!(e, CcstatError::Io(_)));
-                    }
-                }
-            }
-            Err(_) => {
-                println!("Skipping test: No Claude directories found");
-            }
-        }
     }
 
     #[tokio::test]
