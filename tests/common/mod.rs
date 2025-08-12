@@ -263,11 +263,13 @@ pub fn generate_date_range_data(
     sessions_per_day: usize,
 ) -> Vec<String> {
     let mut entries = Vec::new();
-    let mut current_date = start_date;
     let mut days_generated = 0;
 
-    let mut day_number = 0;
-    while current_date <= end_date {
+    for (day_number, current_date) in start_date
+        .iter_days()
+        .take_while(|d| *d <= end_date)
+        .enumerate()
+    {
         days_generated += 1;
         for session in 0..sessions_per_day {
             let hour = 9 + (session * 4) % 15; // Distribute across working hours
@@ -312,13 +314,6 @@ pub fn generate_date_range_data(
 
             entries.push(entry);
         }
-
-        // Only increment if we haven't reached the end date
-        if current_date >= end_date {
-            break;
-        }
-        current_date = current_date.succ_opt().unwrap_or(current_date);
-        day_number += 1;
     }
 
     eprintln!(

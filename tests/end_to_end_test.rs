@@ -438,20 +438,22 @@ async fn test_error_handling_workflow() {
         // Use RAII guard for safe environment variable manipulation
         let mut env_guard = common::EnvVarGuard::new();
         env_guard.set("CLAUDE_DATA_PATH", "/nonexistent/path");
+        // Also override HOME to prevent finding real config directories in test environments
+        let temp_home = TempDir::new().expect("Failed to create temp dir");
+        env_guard.set("HOME", temp_home.path().to_str().unwrap());
+        env_guard.remove("XDG_CONFIG_HOME");
 
         let loader_result = DataLoader::new().await;
-        // DataLoader might create the directory or use fallback paths
-        // We just want to ensure it handles the non-existent path gracefully
-        match loader_result {
-            Ok(loader) => {
-                // If it succeeds, verify it has some valid paths
-                assert!(!loader.paths().is_empty());
+        // With no valid paths, this should consistently fail
+        assert!(
+            matches!(loader_result, Err(CcstatError::NoClaudeDirectory)),
+            "Expected NoClaudeDirectory error, but got {}",
+            if loader_result.is_ok() {
+                "Ok(DataLoader)"
+            } else {
+                "unexpected error"
             }
-            Err(e) => {
-                // If it fails, it should be because no Claude directory was found
-                assert!(matches!(e, CcstatError::NoClaudeDirectory));
-            }
-        }
+        );
 
         // Environment variables will be automatically restored when env_guard drops
     }
