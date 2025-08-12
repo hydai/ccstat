@@ -467,9 +467,19 @@ mod tests {
         // Test refresh_display doesn't panic
         let result = monitor.refresh_display().await;
 
-        // It might fail if no data is available, but shouldn't panic
+        // refresh_display might fail with unknown models in test data, but shouldn't panic
+        // We accept UnknownModel errors since test data might contain future model names
         if let Err(e) = result {
-            println!("Expected error in test environment: {}", e);
+            match e {
+                crate::error::CcstatError::UnknownModel(_) => {
+                    // This is acceptable in tests with real data that might have newer models
+                    println!(
+                        "Test data contains unknown model (expected in test environment): {}",
+                        e
+                    );
+                }
+                _ => panic!("refresh_display failed unexpectedly: {}", e),
+            }
         }
     }
 

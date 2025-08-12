@@ -802,7 +802,7 @@ mod tests {
             match result {
                 Ok(entry) => entries.push(entry),
                 Err(CcstatError::DuplicateEntry) => error_count += 1,
-                Err(_) => {}
+                Err(e) => panic!("Unexpected error in stream: {:?}", e),
             }
         }
 
