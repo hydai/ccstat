@@ -16,6 +16,11 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+// Note: This duplicates code from src/test_utils.rs
+// Integration tests need their own copy since they can't access #[cfg(test)] modules
+// from the main crate. This is intentional and necessary due to Rust's compilation model.
+// Unit tests use src/test_utils.rs, integration tests use this copy.
+
 // Global mutex to serialize environment variable modifications in tests
 pub static ENV_MUTEX: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 

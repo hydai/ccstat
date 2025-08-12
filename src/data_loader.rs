@@ -624,54 +624,9 @@ impl DataLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
-    use std::env;
+    use crate::test_utils::{ENV_MUTEX, EnvVarGuard};
     use tempfile::TempDir;
     use tokio::io::AsyncWriteExt;
-
-    // Mutex to serialize environment variable modifications in unit tests
-    // Note: This is local to unit tests. Integration tests use the shared mutex in tests/common/mod.rs
-    static ENV_MUTEX: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
-
-    /// RAII guard for environment variable manipulation in tests
-    struct EnvVarGuard {
-        vars: Vec<(String, Option<String>)>,
-    }
-
-    impl EnvVarGuard {
-        fn new() -> Self {
-            Self { vars: Vec::new() }
-        }
-
-        fn set(&mut self, key: &str, value: &str) {
-            let original = env::var(key).ok();
-            self.vars.push((key.to_string(), original));
-            unsafe {
-                env::set_var(key, value);
-            }
-        }
-
-        fn remove(&mut self, key: &str) {
-            let original = env::var(key).ok();
-            self.vars.push((key.to_string(), original));
-            unsafe {
-                env::remove_var(key);
-            }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            for (key, value) in self.vars.iter().rev() {
-                unsafe {
-                    match value {
-                        Some(v) => env::set_var(key, v),
-                        None => env::remove_var(key),
-                    }
-                }
-            }
-        }
-    }
 
     #[tokio::test]
     async fn test_jsonl_parsing() {
