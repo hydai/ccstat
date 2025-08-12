@@ -175,7 +175,7 @@ mod tests {
     async fn test_pricing_fetcher_creation() {
         let fetcher = PricingFetcher::new(true).await;
         assert!(fetcher.offline_mode);
-        
+
         let online_fetcher = PricingFetcher::new(false).await;
         assert!(!online_fetcher.offline_mode);
     }
@@ -203,11 +203,14 @@ mod tests {
     #[tokio::test]
     async fn test_get_model_pricing_offline() {
         let fetcher = PricingFetcher::new(true).await;
-        
+
         // Test getting pricing for a known model
-        let pricing = fetcher.get_model_pricing("claude-3-opus-20240229").await.unwrap();
+        let pricing = fetcher
+            .get_model_pricing("claude-3-opus-20240229")
+            .await
+            .unwrap();
         assert!(pricing.is_some());
-        
+
         let pricing = pricing.unwrap();
         assert!(pricing.input_cost_per_token.is_some());
         assert!(pricing.output_cost_per_token.is_some());
@@ -216,24 +219,33 @@ mod tests {
     #[tokio::test]
     async fn test_get_model_pricing_unknown_model() {
         let fetcher = PricingFetcher::new(true).await;
-        
+
         // Test getting pricing for an unknown model
-        let pricing = fetcher.get_model_pricing("unknown-model-xyz").await.unwrap();
+        let pricing = fetcher
+            .get_model_pricing("unknown-model-xyz")
+            .await
+            .unwrap();
         assert!(pricing.is_none());
     }
 
     #[tokio::test]
     async fn test_cache_functionality() {
         let fetcher = PricingFetcher::new(true).await;
-        
+
         // First call should load the cache
-        let pricing1 = fetcher.get_model_pricing("claude-3-opus-20240229").await.unwrap();
+        let pricing1 = fetcher
+            .get_model_pricing("claude-3-opus-20240229")
+            .await
+            .unwrap();
         assert!(pricing1.is_some());
-        
+
         // Second call should use cached data
-        let pricing2 = fetcher.get_model_pricing("claude-3-opus-20240229").await.unwrap();
+        let pricing2 = fetcher
+            .get_model_pricing("claude-3-opus-20240229")
+            .await
+            .unwrap();
         assert!(pricing2.is_some());
-        
+
         // Both should be the same
         assert_eq!(pricing1, pricing2);
     }
@@ -241,16 +253,22 @@ mod tests {
     #[tokio::test]
     async fn test_refresh_cache() {
         let fetcher = PricingFetcher::new(true).await;
-        
+
         // Load initial pricing
-        let pricing1 = fetcher.get_model_pricing("claude-3-opus-20240229").await.unwrap();
+        let pricing1 = fetcher
+            .get_model_pricing("claude-3-opus-20240229")
+            .await
+            .unwrap();
         assert!(pricing1.is_some());
-        
+
         // Refresh the cache
         fetcher.refresh().await.unwrap();
-        
+
         // Should still get pricing after refresh
-        let pricing2 = fetcher.get_model_pricing("claude-3-opus-20240229").await.unwrap();
+        let pricing2 = fetcher
+            .get_model_pricing("claude-3-opus-20240229")
+            .await
+            .unwrap();
         assert!(pricing2.is_some());
     }
 
@@ -258,10 +276,10 @@ mod tests {
     fn test_parse_embedded_pricing() {
         let result = PricingFetcher::parse_embedded_pricing();
         assert!(result.is_ok());
-        
+
         let pricing_map = result.unwrap();
         assert!(!pricing_map.is_empty());
-        
+
         // Check that some known models exist (using actual model names from embedded data)
         let known_models = vec![
             "claude-3-opus",
@@ -269,7 +287,7 @@ mod tests {
             "claude-3-haiku",
             "claude-3.5-sonnet",
         ];
-        
+
         for model in known_models {
             assert!(pricing_map.contains_key(model), "Missing model: {}", model);
         }
@@ -278,7 +296,7 @@ mod tests {
     #[test]
     fn test_model_variations_matching() {
         let mut pricing_map = HashMap::new();
-        
+
         // Add different model name formats
         pricing_map.insert(
             "anthropic/claude-3-opus".to_string(),
@@ -289,7 +307,7 @@ mod tests {
                 cache_read_input_token_cost: None,
             },
         );
-        
+
         pricing_map.insert(
             "claude-3.5-sonnet".to_string(),
             ModelPricing {
@@ -299,7 +317,7 @@ mod tests {
                 cache_read_input_token_cost: None,
             },
         );
-        
+
         // Test various matching patterns
         assert!(PricingFetcher::find_model_pricing(&pricing_map, "claude-3-opus").is_some());
         assert!(PricingFetcher::find_model_pricing(&pricing_map, "claude-3.5-sonnet").is_some());
@@ -309,7 +327,7 @@ mod tests {
     #[test]
     fn test_parse_pricing_data() {
         let mut data = HashMap::new();
-        
+
         // Valid pricing data
         data.insert(
             "model1".to_string(),
@@ -320,7 +338,7 @@ mod tests {
                 "cache_read_input_token_cost": 0.000001
             }),
         );
-        
+
         // Invalid data (should be skipped)
         data.insert(
             "model2".to_string(),
@@ -328,21 +346,26 @@ mod tests {
                 "invalid_field": "test"
             }),
         );
-        
+
         let pricing_map = PricingFetcher::parse_pricing_data(data);
-        
+
         // Should have model1, model2 might parse with default values
         assert!(pricing_map.contains_key("model1"));
-        
+
         let model1_pricing = &pricing_map["model1"];
         assert_eq!(model1_pricing.input_cost_per_token, Some(0.00001));
         assert_eq!(model1_pricing.output_cost_per_token, Some(0.00002));
-        assert_eq!(model1_pricing.cache_creation_input_token_cost, Some(0.000015));
+        assert_eq!(
+            model1_pricing.cache_creation_input_token_cost,
+            Some(0.000015)
+        );
         assert_eq!(model1_pricing.cache_read_input_token_cost, Some(0.000001));
-        
+
         // Check that model2 is parsed with None values for invalid fields
         assert!(pricing_map.contains_key("model2"));
-        let model2_pricing = pricing_map.get("model2").expect("model2 should be in the map");
+        let model2_pricing = pricing_map
+            .get("model2")
+            .expect("model2 should be in the map");
         assert!(model2_pricing.input_cost_per_token.is_none());
         assert!(model2_pricing.output_cost_per_token.is_none());
         assert!(model2_pricing.cache_creation_input_token_cost.is_none());
@@ -353,20 +376,22 @@ mod tests {
     async fn test_concurrent_cache_access() {
         use std::sync::Arc;
         use tokio::task;
-        
+
         let fetcher = Arc::new(PricingFetcher::new(true).await);
-        
+
         // Spawn multiple tasks accessing the cache concurrently
         let mut handles = vec![];
-        
+
         for _ in 0..10 {
             let fetcher_clone = fetcher.clone();
             let handle = task::spawn(async move {
-                fetcher_clone.get_model_pricing("claude-3-opus-20240229").await
+                fetcher_clone
+                    .get_model_pricing("claude-3-opus-20240229")
+                    .await
             });
             handles.push(handle);
         }
-        
+
         // All tasks should succeed
         for handle in handles {
             let result = handle.await.unwrap();
@@ -378,7 +403,7 @@ mod tests {
     #[test]
     fn test_partial_matching_priority() {
         let mut pricing_map = HashMap::new();
-        
+
         // Add models with overlapping names
         pricing_map.insert(
             "claude-3-opus".to_string(),
@@ -389,7 +414,7 @@ mod tests {
                 cache_read_input_token_cost: None,
             },
         );
-        
+
         pricing_map.insert(
             "claude-3-opus-20240229".to_string(),
             ModelPricing {
@@ -399,12 +424,12 @@ mod tests {
                 cache_read_input_token_cost: None,
             },
         );
-        
+
         // Exact match should take priority
         let pricing = PricingFetcher::find_model_pricing(&pricing_map, "claude-3-opus-20240229");
         assert!(pricing.is_some());
         assert_eq!(pricing.unwrap().input_cost_per_token, Some(0.00003));
-        
+
         // Exact match for shorter name
         let pricing = PricingFetcher::find_model_pricing(&pricing_map, "claude-3-opus");
         assert!(pricing.is_some());

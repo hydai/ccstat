@@ -20,16 +20,11 @@ use chrono::{Datelike, NaiveDate};
 use futures::StreamExt;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
 
 /// Helper to create a test DataLoader with sample JSONL files
 async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
     // Generate diverse test data using common utilities
-    let mut entries = Vec::new();
-    
-    // Add data for multiple dates and models
-    entries.push(
+    let entries = vec![
         common::UsageEntryBuilder::new()
             .with_session_id("session1")
             .with_date(2024, 1, 1, 10)
@@ -38,10 +33,7 @@ async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
             .with_cache_tokens(100, 50)
             .with_project("project-a")
             .with_cost(0.05)
-            .to_jsonl()
-    );
-    
-    entries.push(
+            .to_jsonl(),
         common::UsageEntryBuilder::new()
             .with_session_id("session1")
             .with_date(2024, 1, 1, 11)
@@ -49,10 +41,7 @@ async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
             .with_tokens(2000, 1000)
             .with_project("project-a")
             .with_cost(0.10)
-            .to_jsonl()
-    );
-    
-    entries.push(
+            .to_jsonl(),
         common::UsageEntryBuilder::new()
             .with_session_id("session2")
             .with_date(2024, 1, 2, 10)
@@ -60,10 +49,7 @@ async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
             .with_tokens(500, 250)
             .with_project("project-b")
             .with_cost(0.02)
-            .to_jsonl()
-    );
-    
-    entries.push(
+            .to_jsonl(),
         common::UsageEntryBuilder::new()
             .with_session_id("session3")
             .with_date(2024, 2, 1, 10)
@@ -71,10 +57,7 @@ async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
             .with_tokens(3000, 1500)
             .with_project("project-c")
             .with_cost(0.01)
-            .to_jsonl()
-    );
-    
-    entries.push(
+            .to_jsonl(),
         common::UsageEntryBuilder::new()
             .with_session_id("session4")
             .with_date(2024, 2, 15, 10)
@@ -82,9 +65,9 @@ async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
             .with_tokens(5000, 2500)
             .with_instance("instance-1")
             .with_cost(0.25)
-            .to_jsonl()
-    );
-    
+            .to_jsonl(),
+    ];
+
     // Create test data directory using common utilities
     let (temp_dir, loader) = common::create_test_data_dir(entries).await;
     Some((loader, temp_dir))
@@ -99,30 +82,36 @@ async fn test_daily_command() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load and aggregate daily data
     let entries = data_loader.load_usage_entries();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await
         .unwrap();
-    
+
     // Verify we have daily data
     assert!(!daily_data.is_empty());
-    
+
     // Check that dates are correct (convert to string for comparison)
-    let dates: Vec<_> = daily_data.iter().map(|d| d.date.format("%Y-%m-%d")).collect();
+    let dates: Vec<_> = daily_data
+        .iter()
+        .map(|d| d.date.format("%Y-%m-%d"))
+        .collect();
     assert!(dates.contains(&"2024-01-01".to_string()));
     assert!(dates.contains(&"2024-01-02".to_string()));
     assert!(dates.contains(&"2024-02-01".to_string()));
     assert!(dates.contains(&"2024-02-15".to_string()));
-    
+
     // Verify token counts
-    let jan1_data = daily_data.iter().find(|d| d.date.format("%Y-%m-%d") == "2024-01-01").unwrap();
+    let jan1_data = daily_data
+        .iter()
+        .find(|d| d.date.format("%Y-%m-%d") == "2024-01-01")
+        .unwrap();
     assert_eq!(jan1_data.tokens.input_tokens, 3000); // 1000 + 2000
     assert_eq!(jan1_data.tokens.output_tokens, 1500); // 500 + 1000
 }
@@ -136,11 +125,11 @@ async fn test_monthly_command() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load and aggregate monthly data
     let entries = data_loader.load_usage_entries();
     let daily_data = aggregator
@@ -148,15 +137,15 @@ async fn test_monthly_command() {
         .await
         .unwrap();
     let monthly_data = Aggregator::aggregate_monthly(&daily_data);
-    
+
     // Verify we have monthly data
     assert!(!monthly_data.is_empty());
-    
+
     // Check months
     let months: Vec<_> = monthly_data.iter().map(|m| &m.month).collect();
     assert!(months.contains(&&"2024-01".to_string()));
     assert!(months.contains(&&"2024-02".to_string()));
-    
+
     // Verify aggregation
     let jan_data = monthly_data.iter().find(|m| m.month == "2024-01").unwrap();
     assert_eq!(jan_data.tokens.input_tokens, 3500); // 1000 + 2000 + 500
@@ -172,28 +161,28 @@ async fn test_session_command() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load and aggregate session data
     let entries = data_loader.load_usage_entries();
     let session_data = aggregator
         .aggregate_sessions(entries, CostMode::Auto)
         .await
         .unwrap();
-    
+
     // Verify we have session data
     assert!(!session_data.is_empty());
-    
+
     // Check sessions
     let session_ids: Vec<_> = session_data.iter().map(|s| s.session_id.as_str()).collect();
     assert!(session_ids.contains(&"session1"));
     assert!(session_ids.contains(&"session2"));
     assert!(session_ids.contains(&"session3"));
     assert!(session_ids.contains(&"session4"));
-    
+
     // Verify session1 aggregation (has 2 entries)
     let session1 = session_data
         .iter()
@@ -212,11 +201,11 @@ async fn test_blocks_command() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load and create billing blocks
     let entries = data_loader.load_usage_entries();
     let session_data = aggregator
@@ -224,10 +213,10 @@ async fn test_blocks_command() {
         .await
         .unwrap();
     let blocks = Aggregator::create_billing_blocks(&session_data);
-    
+
     // Verify we have billing blocks
     assert!(!blocks.is_empty());
-    
+
     // Check that blocks are 5 hours long
     for block in &blocks {
         let duration = block.end_time - block.start_time;
@@ -242,7 +231,7 @@ async fn test_date_filter_parsing() {
     assert_eq!(date.year(), 2024);
     assert_eq!(date.month(), 1);
     assert_eq!(date.day(), 15);
-    
+
     // Test invalid date format
     assert!(parse_date_filter("invalid-date").is_err());
     assert!(parse_date_filter("2024-13-01").is_err()); // Invalid month
@@ -255,11 +244,11 @@ async fn test_month_filter_parsing() {
     let (year, month) = parse_month_filter("2024-01").unwrap();
     assert_eq!(year, 2024);
     assert_eq!(month, 1);
-    
+
     let (year, month) = parse_month_filter("2024-12").unwrap();
     assert_eq!(year, 2024);
     assert_eq!(month, 12);
-    
+
     // Test invalid month format
     assert!(parse_month_filter("2024").is_err());
     assert!(parse_month_filter("2024-13").is_err());
@@ -276,9 +265,9 @@ async fn test_filter_with_project() {
             return;
         }
     };
-    
+
     let filter = UsageFilter::new().with_project("project-a".to_string());
-    
+
     // Load and filter entries
     let entries = data_loader.load_usage_entries();
     let filtered_entries: Vec<_> = filter
@@ -289,7 +278,7 @@ async fn test_filter_with_project() {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    
+
     // Should only have entries from project-a
     assert_eq!(filtered_entries.len(), 2); // session1 has 2 entries in project-a
     for entry in &filtered_entries {
@@ -306,11 +295,11 @@ async fn test_filter_with_date_range() {
             return;
         }
     };
-    
+
     let filter = UsageFilter::new()
         .with_since(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
         .with_until(NaiveDate::from_ymd_opt(2024, 1, 31).unwrap());
-    
+
     // Load and filter entries
     let entries = data_loader.load_usage_entries();
     let filtered_entries: Vec<_> = filter
@@ -321,7 +310,7 @@ async fn test_filter_with_date_range() {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    
+
     // Should only have January entries
     assert_eq!(filtered_entries.len(), 3); // 2 from session1, 1 from session2
     for entry in &filtered_entries {
@@ -335,10 +324,10 @@ async fn test_filter_with_date_range() {
 async fn test_timezone_configuration() {
     let tz_config = TimezoneConfig::from_cli(Some("America/New_York"), false).unwrap();
     assert_eq!(tz_config.display_name(), "America/New_York");
-    
+
     let tz_config = TimezoneConfig::from_cli(None, true).unwrap();
     assert_eq!(tz_config.display_name(), "UTC");
-    
+
     // Test invalid timezone
     assert!(TimezoneConfig::from_cli(Some("Invalid/Timezone"), false).is_err());
 }
@@ -352,22 +341,19 @@ async fn test_cost_modes() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Test all cost modes
-    for mode in vec![CostMode::Auto, CostMode::Calculate, CostMode::Display] {
+    for mode in &[CostMode::Auto, CostMode::Calculate, CostMode::Display] {
         let entries = data_loader.load_usage_entries();
-        let daily_data = aggregator
-            .aggregate_daily(entries, mode)
-            .await
-            .unwrap();
-        
+        let daily_data = aggregator.aggregate_daily(entries, *mode).await.unwrap();
+
         // All modes should produce results
         assert!(!daily_data.is_empty(), "No daily data for mode {:?}", mode);
-        
+
         // Verify costs are calculated/displayed appropriately
         for day in &daily_data {
             match mode {
@@ -396,26 +382,26 @@ async fn test_instance_grouping() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load and aggregate by instance
     let entries = data_loader.load_usage_entries();
     let instance_data = aggregator
         .aggregate_daily_by_instance(entries, CostMode::Auto)
         .await
         .unwrap();
-    
+
     // Verify we have instance data
     assert!(!instance_data.is_empty());
-    
+
     // Check that we have both default and instance-1
     let instance_ids: Vec<_> = instance_data.iter().map(|i| &i.instance_id).collect();
     assert!(instance_ids.contains(&&"default".to_string()));
     assert!(instance_ids.contains(&&"instance-1".to_string()));
-    
+
     // Verify instance-1 data
     let instance1 = instance_data
         .iter()
@@ -434,25 +420,25 @@ async fn test_output_formatters() {
             return;
         }
     };
-    
+
     let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
-    
+
     // Load data
     let entries = data_loader.load_usage_entries();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await
         .unwrap();
-    
+
     // Test table formatter
     let table_formatter = get_formatter(false, false);
     let totals = ccstat::aggregation::Totals::from_daily(&daily_data);
     let table_output = table_formatter.format_daily(&daily_data, &totals);
     assert!(!table_output.is_empty());
     assert!(table_output.contains("Date")); // Table should have headers
-    
+
     // Test JSON formatter
     let json_formatter = get_formatter(true, false);
     let json_output = json_formatter.format_daily(&daily_data, &totals);
@@ -465,9 +451,12 @@ async fn test_output_formatters() {
 async fn test_all_cost_modes() {
     // Test parsing from string
     assert_eq!("auto".parse::<CostMode>().unwrap(), CostMode::Auto);
-    assert_eq!("calculate".parse::<CostMode>().unwrap(), CostMode::Calculate);
+    assert_eq!(
+        "calculate".parse::<CostMode>().unwrap(),
+        CostMode::Calculate
+    );
     assert_eq!("display".parse::<CostMode>().unwrap(), CostMode::Display);
-    
+
     // Test invalid mode
     assert!("invalid".parse::<CostMode>().is_err());
 }

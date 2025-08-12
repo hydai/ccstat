@@ -465,7 +465,7 @@ mod tests {
             aggregator.clone(),
             filter.clone(),
             CostMode::Auto,
-            true,  // json_output
+            true, // json_output
             false,
             10,
             false,
@@ -480,7 +480,7 @@ mod tests {
             filter.clone(),
             CostMode::Calculate,
             false,
-            true,  // instances
+            true, // instances
             15,
             false,
         );
@@ -496,7 +496,7 @@ mod tests {
             false,
             false,
             20,
-            true,  // full_model_names
+            true, // full_model_names
         );
         assert!(monitor_full_names.full_model_names);
         assert_eq!(monitor_full_names.cost_mode, CostMode::Display);
@@ -529,7 +529,7 @@ mod tests {
 
         // Test refresh_display doesn't panic
         let result = monitor.refresh_display().await;
-        
+
         // It might fail if no data is available, but shouldn't panic
         if let Err(e) = result {
             println!("Expected error in test environment: {}", e);
@@ -548,7 +548,7 @@ mod tests {
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
         let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        
+
         // Create filter with specific project
         let filter = UsageFilter::new().with_project("test-project".to_string());
 
@@ -572,7 +572,7 @@ mod tests {
         // Test that watcher constants are properly configured
         assert_eq!(WATCHER_POLL_INTERVAL, Duration::from_millis(100));
         assert_eq!(WATCHER_SHUTDOWN_TIMEOUT, Duration::from_millis(200));
-        
+
         // Ensure shutdown timeout is greater than poll interval
         assert!(WATCHER_SHUTDOWN_TIMEOUT > WATCHER_POLL_INTERVAL);
     }
@@ -593,7 +593,7 @@ mod tests {
 
         // Test all cost modes
         let modes = vec![CostMode::Auto, CostMode::Calculate, CostMode::Display];
-        
+
         for mode in modes {
             let monitor = LiveMonitor::new(
                 data_loader.clone(),
@@ -625,7 +625,7 @@ mod tests {
 
         // Test various interval configurations
         let intervals = vec![1, 5, 10, 30, 60];
-        
+
         for interval in intervals {
             let monitor = LiveMonitor::new(
                 data_loader.clone(),
@@ -652,7 +652,7 @@ mod tests {
         };
         let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
         let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        
+
         // Test with specific timezone
         let tz_config = TimezoneConfig::from_cli(Some("America/New_York"), false).unwrap();
         let aggregator = Arc::new(Aggregator::new(cost_calculator, tz_config));
@@ -685,7 +685,7 @@ mod tests {
             project: None,
             instance_id: None,
         };
-        
+
         let old_entry = UsageEntry {
             session_id: SessionId::new("old"),
             timestamp: ISOTimestamp::new(now - chrono::Duration::hours(1)),
@@ -699,21 +699,21 @@ mod tests {
         // Test that recent entry is considered active
         let active_cutoff = now - chrono::Duration::minutes(5);
         assert!(recent_entry.timestamp.as_ref() > &active_cutoff);
-        assert!(!(old_entry.timestamp.as_ref() > &active_cutoff));
+        assert!(old_entry.timestamp.as_ref() <= &active_cutoff);
     }
 
     #[test]
     fn test_atomic_bool_operations() {
         // Test atomic bool operations used for signaling
         let should_refresh = Arc::new(AtomicBool::new(false));
-        
+
         // Test initial state
         assert!(!should_refresh.load(Ordering::Acquire));
-        
+
         // Test setting to true
         should_refresh.store(true, Ordering::Release);
         assert!(should_refresh.load(Ordering::Acquire));
-        
+
         // Test setting back to false
         should_refresh.store(false, Ordering::Release);
         assert!(!should_refresh.load(Ordering::Acquire));
@@ -726,7 +726,7 @@ mod tests {
             Ok(data_loader) => {
                 // Test that get_data_directories handles missing directories gracefully
                 let result = data_loader.get_data_directories().await;
-                
+
                 // On any platform, we should either get directories or an error
                 match result {
                     Ok(dirs) => {
@@ -765,7 +765,7 @@ mod tests {
             aggregator,
             filter,
             CostMode::Auto,
-            true,  // json_output
+            true, // json_output
             false,
             5,
             false,
@@ -773,7 +773,7 @@ mod tests {
 
         // Verify JSON output flag is set
         assert!(monitor.json_output);
-        
+
         // In JSON mode, screen clearing should not happen
         // This is tested implicitly by the refresh_display method
     }
