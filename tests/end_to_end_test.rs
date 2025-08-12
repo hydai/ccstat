@@ -10,6 +10,7 @@ use ccstat::{
     cli::{parse_date_filter, parse_month_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
+    error::CcstatError,
     filters::UsageFilter,
     output::get_formatter,
     timezone::TimezoneConfig,
@@ -120,7 +121,7 @@ async fn test_full_month_workflow() {
 
 #[tokio::test]
 async fn test_filtering_workflow() {
-    let (data_loader, _temp_dir, cost_calculator) = match setup_test_environment().await {
+    let (data_loader, _temp_dir, _cost_calculator) = match setup_test_environment().await {
         Some(env) => env,
         None => {
             println!("Skipping test: Unable to set up test environment");
@@ -128,14 +129,9 @@ async fn test_filtering_workflow() {
         }
     };
 
-    // Use UTC for consistent test behavior across timezones
-    let _aggregator = Aggregator::new(
-        cost_calculator,
-        TimezoneConfig::from_cli(None, true).unwrap(), // Use UTC
-    );
-
-    // Test date range filtering
+    // Test date range filtering with UTC timezone for deterministic behavior
     let filter = UsageFilter::new()
+        .with_timezone(TimezoneConfig::from_cli(None, true).unwrap().tz)
         .with_since(NaiveDate::from_ymd_opt(2024, 1, 10).unwrap())
         .with_until(NaiveDate::from_ymd_opt(2024, 1, 20).unwrap());
 
@@ -155,13 +151,10 @@ async fn test_filtering_workflow() {
     );
 
     // Verify all entries are within the date range
-    // Note: Due to timezone conversion, we might get entries from adjacent days
-    // when filtering. We'll accept dates within 1 day of the range.
     for entry in &filtered_entries {
         let date = entry.timestamp.as_ref().date_naive();
-        // Allow 1 day buffer for timezone differences
-        assert!(date >= NaiveDate::from_ymd_opt(2024, 1, 9).unwrap());
-        assert!(date <= NaiveDate::from_ymd_opt(2024, 1, 21).unwrap());
+        assert!(date >= NaiveDate::from_ymd_opt(2024, 1, 10).unwrap());
+        assert!(date <= NaiveDate::from_ymd_opt(2024, 1, 20).unwrap());
     }
 
     // Test project filtering
@@ -449,14 +442,16 @@ async fn test_error_handling_workflow() {
         }
 
         let loader_result = DataLoader::new().await;
-        // DataLoader might succeed even with non-existent path (creates directory or uses fallback)
-        // Just ensure it doesn't panic
+        // DataLoader might create the directory or use fallback paths
+        // We just want to ensure it handles the non-existent path gracefully
         match loader_result {
-            Ok(_) => {
-                // It's ok if it succeeds - might create the directory
+            Ok(loader) => {
+                // If it succeeds, verify it has some valid paths
+                assert!(!loader.paths().is_empty());
             }
-            Err(_) => {
-                // It's also ok if it fails
+            Err(e) => {
+                // If it fails, it should be because no Claude directory was found
+                assert!(matches!(e, CcstatError::NoClaudeDirectory));
             }
         }
 
