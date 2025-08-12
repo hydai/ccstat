@@ -145,6 +145,18 @@ pub enum Command {
         #[arg(long)]
         until: Option<String>,
 
+        /// Use parallel file processing
+        #[arg(long)]
+        parallel: bool,
+
+        /// Enable string interning for memory optimization
+        #[arg(long)]
+        intern: bool,
+
+        /// Enable arena allocation for parsing
+        #[arg(long)]
+        arena: bool,
+
         /// Model display options
         #[command(flatten)]
         model_display_args: ModelDisplayArgs,
@@ -171,6 +183,18 @@ pub enum Command {
         /// Filter by end date
         #[arg(long)]
         until: Option<String>,
+
+        /// Use parallel file processing
+        #[arg(long)]
+        parallel: bool,
+
+        /// Enable string interning for memory optimization
+        #[arg(long)]
+        intern: bool,
+
+        /// Enable arena allocation for parsing
+        #[arg(long)]
+        arena: bool,
 
         /// Model display options
         #[command(flatten)]
@@ -202,6 +226,18 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
+
+        /// Use parallel file processing
+        #[arg(long)]
+        parallel: bool,
+
+        /// Enable string interning for memory optimization
+        #[arg(long)]
+        intern: bool,
+
+        /// Enable arena allocation for parsing
+        #[arg(long)]
+        arena: bool,
 
         /// Model display options
         #[command(flatten)]

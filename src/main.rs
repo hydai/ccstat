@@ -179,6 +179,9 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            parallel,
+            intern,
+            arena,
             model_display_args,
             timezone_args,
         }) => {
@@ -186,7 +189,11 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new().await?.with_progress(show_progress);
+            let data_loader = DataLoader::new()
+                .await?
+                .with_progress(show_progress)
+                .with_interning(intern)
+                .with_arena(arena);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -204,11 +211,14 @@ async fn main() -> Result<()> {
                 month_filter = month_filter.with_until(year, month);
             }
 
-            // Load entries
-            let entries = data_loader.load_usage_entries();
-
-            // Aggregate data
-            let daily_data = aggregator.aggregate_daily(entries, mode).await?;
+            // Load entries and aggregate data
+            let daily_data = if parallel {
+                let entries = data_loader.load_usage_entries_parallel();
+                aggregator.aggregate_daily(entries, mode).await?
+            } else {
+                let entries = data_loader.load_usage_entries();
+                aggregator.aggregate_daily(entries, mode).await?
+            };
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
             // Apply month filter to aggregated monthly data
@@ -244,6 +254,9 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
+            parallel,
+            intern,
+            arena,
             model_display_args,
             timezone_args,
         }) => {
@@ -251,7 +264,11 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new().await?.with_progress(show_progress);
+            let data_loader = DataLoader::new()
+                .await?
+                .with_progress(show_progress)
+                .with_interning(intern)
+                .with_arena(arena);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -271,14 +288,20 @@ async fn main() -> Result<()> {
             // Apply timezone to filter
             filter = filter.with_timezone(aggregator.timezone_config().tz);
 
-            // Load and filter entries
-            let entries = data_loader.load_usage_entries();
-            let filtered_entries = filter.filter_stream(entries).await;
-
-            // Aggregate data
-            let session_data = aggregator
-                .aggregate_sessions(filtered_entries, mode)
-                .await?;
+            // Load, filter and aggregate data
+            let session_data = if parallel {
+                let entries = data_loader.load_usage_entries_parallel();
+                let filtered_entries = filter.filter_stream(entries).await;
+                aggregator
+                    .aggregate_sessions(filtered_entries, mode)
+                    .await?
+            } else {
+                let entries = data_loader.load_usage_entries();
+                let filtered_entries = filter.filter_stream(entries).await;
+                aggregator
+                    .aggregate_sessions(filtered_entries, mode)
+                    .await?
+            };
             let totals = Totals::from_sessions(&session_data);
 
             // Format and output
@@ -295,6 +318,9 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            parallel,
+            intern,
+            arena,
             model_display_args,
             timezone_args,
         }) => {
@@ -302,17 +328,24 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new().await?.with_progress(show_progress);
+            let data_loader = DataLoader::new()
+                .await?
+                .with_progress(show_progress)
+                .with_interning(intern)
+                .with_arena(arena);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
                 create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
-            // Load entries
-            let entries = data_loader.load_usage_entries();
-
-            // Aggregate sessions first
-            let session_data = aggregator.aggregate_sessions(entries, mode).await?;
+            // Load entries and aggregate sessions
+            let session_data = if parallel {
+                let entries = data_loader.load_usage_entries_parallel();
+                aggregator.aggregate_sessions(entries, mode).await?
+            } else {
+                let entries = data_loader.load_usage_entries();
+                aggregator.aggregate_sessions(entries, mode).await?
+            };
 
             // Create billing blocks
             let mut blocks = Aggregator::create_billing_blocks(&session_data);
