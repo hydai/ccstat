@@ -3,6 +3,8 @@
 //! These tests verify the main.rs functionality by testing the various commands
 //! with mock data and ensuring they work correctly end-to-end.
 
+mod common;
+
 use ccstat::{
     aggregation::Aggregator,
     cli::{parse_date_filter, parse_month_filter},
@@ -23,56 +25,69 @@ use tokio::io::AsyncWriteExt;
 
 /// Helper to create a test DataLoader with sample JSONL files
 async fn create_test_data_loader() -> Option<(DataLoader, TempDir)> {
-    let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().to_path_buf();
+    // Generate diverse test data using common utilities
+    let mut entries = Vec::new();
     
-    // Create test JSONL files with various entries
-    let jsonl_path = path.join("test_data.jsonl");
-    let mut file = fs::File::create(&jsonl_path).await.unwrap();
+    // Add data for multiple dates and models
+    entries.push(
+        common::UsageEntryBuilder::new()
+            .with_session_id("session1")
+            .with_date(2024, 1, 1, 10)
+            .with_model("claude-3-opus-20240229")
+            .with_tokens(1000, 500)
+            .with_cache_tokens(100, 50)
+            .with_project("project-a")
+            .with_cost(0.05)
+            .to_jsonl()
+    );
     
-    // Write multiple test entries with known models
-    let entries = vec![
-        r#"{"sessionId":"session1","timestamp":"2024-01-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus-20240229","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":100,"cache_read_input_tokens":50}},"cwd":"/home/user/project-a","costUSD":0.05}"#,
-        r#"{"sessionId":"session1","timestamp":"2024-01-01T11:00:00Z","type":"assistant","message":{"model":"claude-3-opus-20240229","usage":{"input_tokens":2000,"output_tokens":1000}},"cwd":"/home/user/project-a","costUSD":0.10}"#,
-        r#"{"sessionId":"session2","timestamp":"2024-01-02T10:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet-20240229","usage":{"input_tokens":500,"output_tokens":250}},"cwd":"/home/user/project-b","costUSD":0.02}"#,
-        r#"{"sessionId":"session3","timestamp":"2024-02-01T10:00:00Z","type":"assistant","message":{"model":"claude-3-haiku-20240307","usage":{"input_tokens":3000,"output_tokens":1500}},"cwd":"/home/user/project-c","costUSD":0.01}"#,
-        r#"{"sessionId":"session4","timestamp":"2024-02-15T10:00:00Z","type":"assistant","message":{"model":"claude-3-opus-20240229","usage":{"input_tokens":5000,"output_tokens":2500}},"uuid":"instance-1","costUSD":0.25}"#,
-    ];
+    entries.push(
+        common::UsageEntryBuilder::new()
+            .with_session_id("session1")
+            .with_date(2024, 1, 1, 11)
+            .with_model("claude-3-opus-20240229")
+            .with_tokens(2000, 1000)
+            .with_project("project-a")
+            .with_cost(0.10)
+            .to_jsonl()
+    );
     
-    for entry in entries {
-        file.write_all(entry.as_bytes()).await.unwrap();
-        file.write_all(b"\n").await.unwrap();
-    }
+    entries.push(
+        common::UsageEntryBuilder::new()
+            .with_session_id("session2")
+            .with_date(2024, 1, 2, 10)
+            .with_model("claude-3-sonnet-20240229")
+            .with_tokens(500, 250)
+            .with_project("project-b")
+            .with_cost(0.02)
+            .to_jsonl()
+    );
     
-    drop(file); // Ensure file is closed before DataLoader reads it
+    entries.push(
+        common::UsageEntryBuilder::new()
+            .with_session_id("session3")
+            .with_date(2024, 2, 1, 10)
+            .with_model("claude-3-haiku-20240307")
+            .with_tokens(3000, 1500)
+            .with_project("project-c")
+            .with_cost(0.01)
+            .to_jsonl()
+    );
     
-    // Create a temporary HOME to isolate from real Claude directories
-    let original_home = std::env::var("HOME").ok();
-    unsafe {
-        std::env::set_var("HOME", "/nonexistent");
-        std::env::set_var("CLAUDE_DATA_PATH", path.to_str().unwrap());
-    }
+    entries.push(
+        common::UsageEntryBuilder::new()
+            .with_session_id("session4")
+            .with_date(2024, 2, 15, 10)
+            .with_model("claude-3-opus-20240229")
+            .with_tokens(5000, 2500)
+            .with_instance("instance-1")
+            .with_cost(0.25)
+            .to_jsonl()
+    );
     
-    match DataLoader::new().await {
-        Ok(loader) => {
-            unsafe {
-                std::env::remove_var("CLAUDE_DATA_PATH");
-                if let Some(home) = original_home {
-                    std::env::set_var("HOME", home);
-                }
-            }
-            Some((loader, temp_dir))
-        }
-        Err(_) => {
-            unsafe {
-                std::env::remove_var("CLAUDE_DATA_PATH");
-                if let Some(home) = original_home {
-                    std::env::set_var("HOME", home);
-                }
-            }
-            None
-        }
-    }
+    // Create test data directory using common utilities
+    let (temp_dir, loader) = common::create_test_data_dir(entries).await;
+    Some((loader, temp_dir))
 }
 
 #[tokio::test]

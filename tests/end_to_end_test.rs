@@ -3,6 +3,8 @@
 //! These tests verify complete workflows from data loading through aggregation
 //! to final output, ensuring all components work together correctly.
 
+mod common;
+
 use ccstat::{
     aggregation::Aggregator,
     cli::{parse_date_filter, parse_month_filter},
@@ -21,109 +23,22 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-/// Helper to create a test environment with sample data
+/// Helper to create a test environment with sample data using common utilities
 async fn setup_test_environment() -> Option<(DataLoader, TempDir, Arc<CostCalculator>)> {
-    let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().to_path_buf();
+    // Generate test data using common utilities
+    let start_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let end_date = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
+    let entries = common::generate_date_range_data(start_date, end_date, 3);
     
-    // Create comprehensive test data covering various scenarios
-    let jsonl_path = path.join("comprehensive_test.jsonl");
-    let mut file = fs::File::create(&jsonl_path).await.unwrap();
+    // Create test data directory
+    let (temp_dir, loader) = common::create_test_data_dir(entries).await;
     
-    // Generate test data for a full month
-    let entries = generate_test_month_data();
+    // Create cost calculator
+    let cost_calculator = common::create_test_environment().await;
     
-    for entry in entries {
-        file.write_all(entry.as_bytes()).await.unwrap();
-        file.write_all(b"\n").await.unwrap();
-    }
-    
-    drop(file);
-    
-    // Set up environment and create DataLoader
-    let original_home = std::env::var("HOME").ok();
-    unsafe {
-        std::env::set_var("HOME", "/nonexistent");
-        std::env::set_var("CLAUDE_DATA_PATH", path.to_str().unwrap());
-    }
-    
-    let result = match DataLoader::new().await {
-        Ok(loader) => {
-            let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-            let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            Some((loader, temp_dir, cost_calculator))
-        }
-        Err(_) => None,
-    };
-    
-    // Restore environment
-    unsafe {
-        std::env::remove_var("CLAUDE_DATA_PATH");
-        if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
-        }
-    }
-    
-    result
+    Some((loader, temp_dir, cost_calculator))
 }
 
-/// Generate test data for a full month with various patterns
-fn generate_test_month_data() -> Vec<String> {
-    let mut entries = Vec::new();
-    let models = vec![
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
-        "claude-3-5-sonnet-20240620",
-    ];
-    
-    let projects = vec!["project-alpha", "project-beta", "project-gamma"];
-    let instances = vec!["default", "instance-1", "instance-2"];
-    
-    // Generate entries for each day of January 2024
-    for day in 1..=31 {
-        let sessions_per_day = if day % 7 == 0 { 1 } else { 3 }; // Fewer sessions on Sundays
-        
-        for session in 0..sessions_per_day {
-            let model = models[session % models.len()];
-            let project = projects[session % projects.len()];
-            let instance_field = if day > 15 {
-                format!(r#","uuid":"{}""#, instances[session % instances.len()])
-            } else {
-                String::new()
-            };
-            
-            // Morning session
-            let hour = 9 + session * 4;
-            entries.push(format!(
-                r#"{{"sessionId":"session-{}-{}-1","timestamp":"2024-01-{:02}T{:02}:00:00Z","type":"assistant","message":{{"model":"{}","usage":{{"input_tokens":{},"output_tokens":{},"cache_creation_input_tokens":{},"cache_read_input_tokens":{}}}}},"cwd":"/home/user/{}","costUSD":{}{}}}"#,
-                day, session, day, hour, model,
-                1000 + day * 100, // Increasing usage over time
-                500 + day * 50,
-                100 + day * 10,
-                50 + day * 5,
-                project,
-                0.01 * (day as f64),
-                instance_field
-            ));
-            
-            // Afternoon session (for busier days)
-            if session > 0 {
-                entries.push(format!(
-                    r#"{{"sessionId":"session-{}-{}-2","timestamp":"2024-01-{:02}T{:02}:30:00Z","type":"assistant","message":{{"model":"{}","usage":{{"input_tokens":{},"output_tokens":{}}}}},"cwd":"/home/user/{}","costUSD":{}{}}}"#,
-                    day, session, day, hour, model,
-                    500 + day * 50,
-                    250 + day * 25,
-                    project,
-                    0.005 * (day as f64),
-                    instance_field
-                ));
-            }
-        }
-    }
-    
-    entries
-}
 
 #[tokio::test]
 async fn test_full_month_workflow() {
