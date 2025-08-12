@@ -13,7 +13,7 @@ function Write-TestResult {
         [string]$TestName,
         [string]$Result
     )
-    
+
     if ($Result -eq "PASS") {
         Write-Host "✓ $TestName" -ForegroundColor Green
         $script:TestsPassed++
@@ -30,12 +30,12 @@ function Test-Command {
         [string]$Command,
         [string]$ExpectedPattern = ""
     )
-    
+
     Write-Host -NoNewline "Testing: $TestName... "
-    
+
     try {
         $output = Invoke-Expression $Command 2>&1 | Out-String
-        
+
         if ($LASTEXITCODE -eq 0) {
             if ($ExpectedPattern -eq "" -or $output -match $ExpectedPattern) {
                 Write-TestResult $TestName "PASS"

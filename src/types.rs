@@ -352,7 +352,7 @@ pub struct ModelPricing {
 pub struct MessageUsage {
     /// Input tokens used
     pub input_tokens: u64,
-    /// Output tokens generated  
+    /// Output tokens generated
     #[serde(default)]
     pub output_tokens: u64,
     /// Cache creation tokens

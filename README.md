@@ -171,7 +171,7 @@ ccstat monthly --instances
 ccstat monthly --timezone "Asia/Tokyo"      # Use specific timezone
 ccstat monthly --utc                        # Force UTC timezone
 
-# Model display options  
+# Model display options
 ccstat monthly --full-model-names           # Show full model names
 ```
 
@@ -381,7 +381,7 @@ ccstat can also be used as a Rust library. Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ccstat = "0.1.8"
+ccstat = "0.1.9"
 ```
 
 Example usage:
@@ -403,14 +403,14 @@ async fn main() -> ccstat::Result<()> {
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
     let aggregator = Aggregator::new(cost_calculator);
-    
+
     let entries = data_loader.load_usage_entries();
     let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
-    
+
     for day in &daily_data {
         println!("{}: {} tokens", day.date, day.tokens.total());
     }
-    
+
     Ok(())
 }
 ```

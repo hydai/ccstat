@@ -57,19 +57,19 @@ use serde_json::json;
 ///     fn format_daily(&self, data: &[DailyUsage], totals: &Totals) -> String {
 ///         format!("Total days: {}, Total cost: ${:.2}", data.len(), totals.total_cost)
 ///     }
-///     
+///
 ///     fn format_daily_by_instance(&self, data: &[DailyInstanceUsage], totals: &Totals) -> String {
 ///         format!("Total instances: {}", data.len())
 ///     }
-///     
+///
 ///     fn format_sessions(&self, data: &[SessionUsage], totals: &Totals, _tz: &chrono_tz::Tz) -> String {
 ///         format!("Total sessions: {}", data.len())
 ///     }
-///     
+///
 ///     fn format_monthly(&self, data: &[MonthlyUsage], totals: &Totals) -> String {
 ///         format!("Total months: {}", data.len())
 ///     }
-///     
+///
 ///     fn format_blocks(&self, data: &[SessionBlock], _tz: &chrono_tz::Tz) -> String {
 ///         format!("Total blocks: {}", data.len())
 ///     }
