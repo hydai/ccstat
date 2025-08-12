@@ -62,6 +62,7 @@ tempfile = "3.13"
 criterion = { version = "0.7", features = ["html_reports"] }
 proptest = "1.5"
 tokio-test = "0.4"
+filetime = "0.2"
 
 [[bench]]
 name = "parsing"

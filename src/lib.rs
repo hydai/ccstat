@@ -51,6 +51,10 @@ pub mod string_pool;
 pub mod timezone;
 pub mod types;
 
+// Test utilities module (only compiled for tests)
+#[cfg(test)]
+pub mod test_utils;
+
 // Re-export commonly used types
 pub use error::{CcstatError, Result};
 pub use types::{CostMode, DailyDate, ISOTimestamp, ModelName, SessionId, TokenCounts};
