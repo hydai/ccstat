@@ -11,26 +11,26 @@ _ccstat() {
         'blocks:Show 5-hour billing blocks'
         'help:Show help information'
     )
-    
+
     local -a global_options
     global_options=(
         '--help[Show help information]'
         '--version[Show version information]'
     )
-    
+
     local -a date_options
     date_options=(
         '--since=[Start date]:date:'
         '--until=[End date]:date:'
     )
-    
+
     local -a common_options
     common_options=(
         '--project=[Filter by project name]:project:'
         '--json[Output in JSON format]'
         '--mode=[Cost calculation mode]:mode:(auto calculate display)'
     )
-    
+
     case "$words[1]" in
         daily)
             _arguments \
@@ -66,7 +66,7 @@ _ccstat() {
             _arguments -C \
                 $global_options \
                 '1:command:->commands'
-            
+
             case $state in
                 commands)
                     _describe -t commands 'ccstat commands' commands

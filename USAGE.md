@@ -382,4 +382,4 @@ A: Currently, only one project filter is supported at a time. Use multiple comma
 - Run `ccstat --help` for general help
 - Run `ccstat <command> --help` for command-specific help
 - Enable debug logging: `RUST_LOG=ccstat=debug ccstat <command>`
-- Report issues: [GitHub Issues](https://github.com/yourusername/ccstat/issues)
+- Report issues: [GitHub Issues](https://github.com/hydai/ccstat/issues)
