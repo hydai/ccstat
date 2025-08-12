@@ -19,6 +19,56 @@ use tokio::io::AsyncWriteExt;
 // Global mutex to serialize environment variable modifications in tests
 pub static ENV_MUTEX: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
+/// RAII guard for environment variable manipulation in tests
+///
+/// This guard ensures that environment variables are always restored
+/// to their original state, even if a panic occurs during the test.
+pub struct EnvVarGuard {
+    vars: Vec<(String, Option<String>)>,
+}
+
+impl EnvVarGuard {
+    /// Create a new environment variable guard
+    pub fn new() -> Self {
+        Self { vars: Vec::new() }
+    }
+
+    /// Set an environment variable and save its original value for restoration
+    pub fn set(&mut self, key: &str, value: &str) {
+        let original = std::env::var(key).ok();
+        self.vars.push((key.to_string(), original));
+        // Note: env::set_var is unsafe in Rust 1.82+ due to thread-safety concerns
+        unsafe {
+            std::env::set_var(key, value);
+        }
+    }
+
+    /// Remove an environment variable and save its original value for restoration
+    #[allow(dead_code)]
+    pub fn remove(&mut self, key: &str) {
+        let original = std::env::var(key).ok();
+        self.vars.push((key.to_string(), original));
+        // Note: env::remove_var is unsafe in Rust 1.82+ due to thread-safety concerns
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // Restore all environment variables in reverse order
+        for (key, value) in self.vars.iter().rev() {
+            unsafe {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+}
+
 /// Common test models used across tests
 pub const TEST_MODELS: &[&str] = &[
     "claude-3-opus-20240229",
@@ -192,27 +242,15 @@ pub async fn create_test_data_dir(entries: Vec<String>) -> (TempDir, DataLoader)
     let loader = {
         let _lock = ENV_MUTEX.lock().await;
 
-        // Create DataLoader with test directory
-        let original_home = std::env::var("HOME").ok();
-        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
-        // We use a mutex to ensure thread safety, but the functions still require unsafe blocks
-        unsafe {
-            std::env::set_var("HOME", "/nonexistent");
-            std::env::set_var("CLAUDE_DATA_PATH", path.to_str().unwrap());
-        }
+        // Create DataLoader with test directory using RAII guard for safe cleanup
+        let mut env_guard = EnvVarGuard::new();
+        env_guard.set("HOME", "/nonexistent");
+        env_guard.set("CLAUDE_DATA_PATH", path.to_str().unwrap());
 
-        let loader = DataLoader::new()
+        // The EnvVarGuard will automatically restore environment variables when it drops
+        DataLoader::new()
             .await
-            .expect("Failed to create DataLoader");
-
-        unsafe {
-            std::env::remove_var("CLAUDE_DATA_PATH");
-            if let Some(home) = original_home {
-                std::env::set_var("HOME", home);
-            }
-        }
-
-        loader
+            .expect("Failed to create DataLoader")
     };
 
     (temp_dir, loader)

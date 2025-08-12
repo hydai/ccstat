@@ -435,11 +435,9 @@ async fn test_error_handling_workflow() {
     {
         let _lock = common::ENV_MUTEX.lock().await;
 
-        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
-        // We use a mutex to ensure thread safety, but the functions still require unsafe blocks
-        unsafe {
-            std::env::set_var("CLAUDE_DATA_PATH", "/nonexistent/path");
-        }
+        // Use RAII guard for safe environment variable manipulation
+        let mut env_guard = common::EnvVarGuard::new();
+        env_guard.set("CLAUDE_DATA_PATH", "/nonexistent/path");
 
         let loader_result = DataLoader::new().await;
         // DataLoader might create the directory or use fallback paths
@@ -455,8 +453,6 @@ async fn test_error_handling_workflow() {
             }
         }
 
-        unsafe {
-            std::env::remove_var("CLAUDE_DATA_PATH");
-        }
+        // Environment variables will be automatically restored when env_guard drops
     }
 }

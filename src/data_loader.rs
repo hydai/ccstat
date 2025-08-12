@@ -633,6 +633,46 @@ mod tests {
     // Note: This is local to unit tests. Integration tests use the shared mutex in tests/common/mod.rs
     static ENV_MUTEX: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
+    /// RAII guard for environment variable manipulation in tests
+    struct EnvVarGuard {
+        vars: Vec<(String, Option<String>)>,
+    }
+
+    impl EnvVarGuard {
+        fn new() -> Self {
+            Self { vars: Vec::new() }
+        }
+
+        fn set(&mut self, key: &str, value: &str) {
+            let original = env::var(key).ok();
+            self.vars.push((key.to_string(), original));
+            unsafe {
+                env::set_var(key, value);
+            }
+        }
+
+        fn remove(&mut self, key: &str) {
+            let original = env::var(key).ok();
+            self.vars.push((key.to_string(), original));
+            unsafe {
+                env::remove_var(key);
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.vars.iter().rev() {
+                unsafe {
+                    match value {
+                        Some(v) => env::set_var(key, v),
+                        None => env::remove_var(key),
+                    }
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_jsonl_parsing() {
         let temp_dir = TempDir::new().unwrap();
@@ -704,20 +744,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let custom_path = temp_dir.path().to_path_buf();
 
-        // Set environment variable
-        // Note: env::set_var is unsafe in Rust 1.82+ due to thread-safety concerns
-        unsafe {
-            env::set_var("CLAUDE_DATA_PATH", custom_path.to_str().unwrap());
-        }
+        // Use RAII guard for safe environment variable manipulation
+        let mut env_guard = EnvVarGuard::new();
+        env_guard.set("CLAUDE_DATA_PATH", custom_path.to_str().unwrap());
 
         let paths = DataLoader::discover_claude_paths().await.unwrap();
         assert!(paths.contains(&custom_path));
 
-        // Clean up
-        // Note: env::remove_var is unsafe in Rust 1.82+ due to thread-safety concerns
-        unsafe {
-            env::remove_var("CLAUDE_DATA_PATH");
-        }
+        // Environment variables will be automatically restored when env_guard drops
     }
 
     #[tokio::test]
@@ -1055,23 +1089,14 @@ mod tests {
     async fn test_no_claude_directory_error() {
         let _lock = ENV_MUTEX.lock().await;
 
-        // Try to discover paths in a location that doesn't exist
-        let _original_home = env::var("HOME").ok();
-        // Note: env functions are unsafe in Rust 1.82+ due to thread-safety concerns
-        unsafe {
-            env::set_var("HOME", "/nonexistent");
-            env::remove_var("CLAUDE_DATA_PATH");
-        }
+        // Use RAII guard for safe environment variable manipulation
+        let mut env_guard = EnvVarGuard::new();
+        env_guard.set("HOME", "/nonexistent");
+        env_guard.remove("CLAUDE_DATA_PATH");
 
         let result = DataLoader::new().await;
         assert!(result.is_err());
 
-        // Restore original HOME if it existed
-        if let Some(home) = _original_home {
-            // Note: env::set_var is unsafe in Rust 1.82+ due to thread-safety concerns
-            unsafe {
-                env::set_var("HOME", home);
-            }
-        }
+        // Environment variables will be automatically restored when env_guard drops
     }
 }

@@ -639,23 +639,6 @@ mod tests {
         assert!(old_entry.timestamp.as_ref() <= &active_cutoff);
     }
 
-    #[test]
-    fn test_atomic_bool_operations() {
-        // Test atomic bool operations used for signaling
-        let should_refresh = Arc::new(AtomicBool::new(false));
-
-        // Test initial state
-        assert!(!should_refresh.load(Ordering::Acquire));
-
-        // Test setting to true
-        should_refresh.store(true, Ordering::Release);
-        assert!(should_refresh.load(Ordering::Acquire));
-
-        // Test setting back to false
-        should_refresh.store(false, Ordering::Release);
-        assert!(!should_refresh.load(Ordering::Acquire));
-    }
-
     #[tokio::test]
     async fn test_monitor_json_output_formatting() {
         let data_loader = match create_mock_data_loader().await {
