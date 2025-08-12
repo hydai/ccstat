@@ -335,7 +335,7 @@ impl std::str::FromStr for CostMode {
 ///     cache_read_input_token_cost: Some(0.0000025),
 /// };
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelPricing {
     /// Cost per input token in USD
     pub input_cost_per_token: Option<f64>,
