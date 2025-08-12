@@ -97,20 +97,17 @@ async fn test_daily_command() {
     // Verify we have daily data
     assert!(!daily_data.is_empty());
 
-    // Check that dates are correct (convert to string for comparison)
-    let dates: Vec<_> = daily_data
-        .iter()
-        .map(|d| d.date.format("%Y-%m-%d"))
-        .collect();
-    assert!(dates.contains(&"2024-01-01".to_string()));
-    assert!(dates.contains(&"2024-01-02".to_string()));
-    assert!(dates.contains(&"2024-02-01".to_string()));
-    assert!(dates.contains(&"2024-02-15".to_string()));
+    // Check that dates are correct using direct date comparisons
+    let dates: Vec<_> = daily_data.iter().map(|d| *d.date.inner()).collect();
+    assert!(dates.contains(&NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()));
+    assert!(dates.contains(&NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()));
+    assert!(dates.contains(&NaiveDate::from_ymd_opt(2024, 2, 1).unwrap()));
+    assert!(dates.contains(&NaiveDate::from_ymd_opt(2024, 2, 15).unwrap()));
 
     // Verify token counts
     let jan1_data = daily_data
         .iter()
-        .find(|d| d.date.format("%Y-%m-%d") == "2024-01-01")
+        .find(|d| *d.date.inner() == NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
         .unwrap();
     assert_eq!(jan1_data.tokens.input_tokens, 3000); // 1000 + 2000
     assert_eq!(jan1_data.tokens.output_tokens, 1500); // 500 + 1000
@@ -359,7 +356,7 @@ async fn test_cost_modes() {
             match mode {
                 CostMode::Display => {
                     // In display mode, cost should be from the JSONL if available
-                    if day.date.format("%Y-%m-%d") == "2024-01-01" {
+                    if *day.date.inner() == NaiveDate::from_ymd_opt(2024, 1, 1).unwrap() {
                         // This day has costUSD in the test data
                         assert!(day.total_cost > 0.0);
                     }

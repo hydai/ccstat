@@ -219,7 +219,10 @@ async fn test_pattern_fixtures() {
     // Should have data for January 15, 2024
     assert_eq!(daily_data.len(), 1);
     let day_data = &daily_data[0];
-    assert_eq!(day_data.date.format("%Y-%m-%d"), "2024-01-15");
+    assert_eq!(
+        *day_data.date.inner(),
+        NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()
+    );
 
     // Verify token patterns (morning heavy, afternoon light, night batch)
     assert!(day_data.tokens.input_tokens > 0);

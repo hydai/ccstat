@@ -86,11 +86,11 @@ async fn test_full_month_workflow() {
     // Verify daily totals increase over time
     let first_day = daily_data
         .iter()
-        .find(|d| d.date.format("%Y-%m-%d") == "2024-01-01")
+        .find(|d| *d.date.inner() == NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
         .unwrap();
     let last_day = daily_data
         .iter()
-        .find(|d| d.date.format("%Y-%m-%d") == "2024-01-31")
+        .find(|d| *d.date.inner() == NaiveDate::from_ymd_opt(2024, 1, 31).unwrap())
         .unwrap();
     assert!(last_day.tokens.input_tokens > first_day.tokens.input_tokens);
 
@@ -214,8 +214,9 @@ async fn test_cost_calculation_workflow() {
         let first_week_cost: f64 = daily_data
             .iter()
             .filter(|d| {
-                let day_str = d.date.format("%Y-%m-%d");
-                day_str.as_str() >= "2024-01-01" && day_str.as_str() <= "2024-01-07"
+                let date = d.date.inner();
+                *date >= NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+                    && *date <= NaiveDate::from_ymd_opt(2024, 1, 7).unwrap()
             })
             .map(|d| d.total_cost)
             .sum();
@@ -223,8 +224,9 @@ async fn test_cost_calculation_workflow() {
         let last_week_cost: f64 = daily_data
             .iter()
             .filter(|d| {
-                let day_str = d.date.format("%Y-%m-%d");
-                day_str.as_str() >= "2024-01-25" && day_str.as_str() <= "2024-01-31"
+                let date = d.date.inner();
+                *date >= NaiveDate::from_ymd_opt(2024, 1, 25).unwrap()
+                    && *date <= NaiveDate::from_ymd_opt(2024, 1, 31).unwrap()
             })
             .map(|d| d.total_cost)
             .sum();
