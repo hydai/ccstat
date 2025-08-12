@@ -195,34 +195,36 @@ impl UsageEntryBuilder {
     /// Build as JSONL string
     #[allow(clippy::wrong_self_convention)]
     pub fn to_jsonl(self) -> String {
-        let instance_field = self
-            .instance_id
-            .map(|id| format!(r#","uuid":"{}""#, id))
-            .unwrap_or_default();
+        use ccstat::types::{Message, MessageUsage, RawJsonlEntry};
 
-        let project_field = self
-            .project
-            .map(|p| format!(r#","cwd":"/home/user/{}""#, p))
-            .unwrap_or_default();
-
-        let cost_field = self
-            .total_cost
-            .map(|c| format!(r#","costUSD":{}"#, c))
-            .unwrap_or_default();
-
-        format!(
-            r#"{{"sessionId":"{}","timestamp":"{}","type":"assistant","message":{{"model":"{}","usage":{{"input_tokens":{},"output_tokens":{},"cache_creation_input_tokens":{},"cache_read_input_tokens":{}}}}}{}{}{}}}"#,
-            self.session_id,
-            self.timestamp.to_rfc3339(),
-            self.model,
-            self.input_tokens,
-            self.output_tokens,
-            self.cache_creation_tokens,
-            self.cache_read_tokens,
-            project_field,
-            cost_field,
-            instance_field
-        )
+        let raw_entry = RawJsonlEntry {
+            session_id: Some(self.session_id),
+            timestamp: self.timestamp.to_rfc3339(),
+            message: Message {
+                model: self.model,
+                usage: MessageUsage {
+                    input_tokens: self.input_tokens,
+                    output_tokens: self.output_tokens,
+                    cache_creation_input_tokens: self.cache_creation_tokens,
+                    cache_read_input_tokens: self.cache_read_tokens,
+                },
+                id: None,
+                content: None,
+            },
+            entry_type: Some("assistant".to_string()),
+            uuid: self.instance_id,
+            cwd: self.project.map(|p| format!("/home/user/{}", p)),
+            cost_usd_camel: self.total_cost,
+            parent_uuid: None,
+            is_sidechain: None,
+            user_type: None,
+            version: None,
+            git_branch: None,
+            cost_usd: None,
+            request_id: None,
+            is_api_error_message: None,
+        };
+        serde_json::to_string(&raw_entry).unwrap()
     }
 }
 
@@ -483,12 +485,38 @@ mod tests {
         let jsonl = UsageEntryBuilder::new()
             .with_session_id("test-session")
             .with_tokens(100, 50)
+            .with_cost(0.15)
+            .with_project("test-project")
+            .with_instance("test-instance")
             .to_jsonl();
 
+        // Verify the JSON contains expected fields
         assert!(jsonl.contains(r#""sessionId":"test-session""#));
         assert!(jsonl.contains(r#""input_tokens":100"#));
         assert!(jsonl.contains(r#""output_tokens":50"#));
         assert!(jsonl.contains(r#""type":"assistant""#));
+        assert!(jsonl.contains(r#""costUSD":0.15"#));
+        assert!(jsonl.contains(r#""cwd":"/home/user/test-project""#));
+        assert!(jsonl.contains(r#""uuid":"test-instance""#));
+
+        // Verify the JSON is valid and can be parsed
+        let parsed: serde_json::Value = serde_json::from_str(&jsonl).unwrap();
+        assert_eq!(
+            parsed.get("sessionId").unwrap().as_str().unwrap(),
+            "test-session"
+        );
+        assert_eq!(
+            parsed
+                .get("message")
+                .unwrap()
+                .get("usage")
+                .unwrap()
+                .get("input_tokens")
+                .unwrap()
+                .as_u64()
+                .unwrap(),
+            100
+        );
     }
 
     #[test]
