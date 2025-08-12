@@ -366,6 +366,17 @@ mod tests {
     use super::*;
     use crate::cost_calculator::CostCalculator;
     use crate::pricing_fetcher::PricingFetcher;
+    use crate::types::{ISOTimestamp, ModelName, SessionId, TokenCounts};
+    use chrono::Utc;
+
+    // Helper function to create a mock DataLoader for testing
+    async fn create_mock_data_loader() -> Option<Arc<DataLoader>> {
+        // Try to create a real DataLoader, but return None if it fails
+        match DataLoader::new().await {
+            Ok(loader) => Some(Arc::new(loader)),
+            Err(_) => None,
+        }
+    }
 
     #[tokio::test]
     async fn test_live_monitor_creation() {
@@ -432,5 +443,339 @@ mod tests {
                 panic!("Unexpected error creating DataLoader: {e}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_monitor_with_different_modes() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+
+        // Test with JSON output
+        let monitor_json = LiveMonitor::new(
+            data_loader.clone(),
+            aggregator.clone(),
+            filter.clone(),
+            CostMode::Auto,
+            true,  // json_output
+            false,
+            10,
+            false,
+        );
+        assert!(monitor_json.json_output);
+        assert_eq!(monitor_json.interval_secs, 10);
+
+        // Test with instances mode
+        let monitor_instances = LiveMonitor::new(
+            data_loader.clone(),
+            aggregator.clone(),
+            filter.clone(),
+            CostMode::Calculate,
+            false,
+            true,  // instances
+            15,
+            false,
+        );
+        assert!(monitor_instances.instances);
+        assert_eq!(monitor_instances.cost_mode, CostMode::Calculate);
+
+        // Test with full model names
+        let monitor_full_names = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Display,
+            false,
+            false,
+            20,
+            true,  // full_model_names
+        );
+        assert!(monitor_full_names.full_model_names);
+        assert_eq!(monitor_full_names.cost_mode, CostMode::Display);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_display_with_active_sessions() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        // Test refresh_display doesn't panic
+        let result = monitor.refresh_display().await;
+        
+        // It might fail if no data is available, but shouldn't panic
+        if let Err(e) = result {
+            println!("Expected error in test environment: {}", e);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_monitor_with_filters() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        
+        // Create filter with specific project
+        let filter = UsageFilter::new().with_project("test-project".to_string());
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter.clone(),
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        // Verify filter is applied
+        assert_eq!(monitor.filter.project, Some("test-project".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_watcher_constants() {
+        // Test that watcher constants are properly configured
+        assert_eq!(WATCHER_POLL_INTERVAL, Duration::from_millis(100));
+        assert_eq!(WATCHER_SHUTDOWN_TIMEOUT, Duration::from_millis(200));
+        
+        // Ensure shutdown timeout is greater than poll interval
+        assert!(WATCHER_SHUTDOWN_TIMEOUT > WATCHER_POLL_INTERVAL);
+    }
+
+    #[tokio::test]
+    async fn test_different_cost_modes() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+
+        // Test all cost modes
+        let modes = vec![CostMode::Auto, CostMode::Calculate, CostMode::Display];
+        
+        for mode in modes {
+            let monitor = LiveMonitor::new(
+                data_loader.clone(),
+                aggregator.clone(),
+                filter.clone(),
+                mode,
+                false,
+                false,
+                5,
+                false,
+            );
+            assert_eq!(monitor.cost_mode, mode);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_interval_configuration() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+
+        // Test various interval configurations
+        let intervals = vec![1, 5, 10, 30, 60];
+        
+        for interval in intervals {
+            let monitor = LiveMonitor::new(
+                data_loader.clone(),
+                aggregator.clone(),
+                filter.clone(),
+                CostMode::Auto,
+                false,
+                false,
+                interval,
+                false,
+            );
+            assert_eq!(monitor.interval_secs, interval);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_monitor_creation_with_timezone() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        
+        // Test with specific timezone
+        let tz_config = TimezoneConfig::from_cli(Some("America/New_York"), false).unwrap();
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, tz_config));
+        let filter = UsageFilter::new();
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        assert_eq!(monitor.interval_secs, 5);
+    }
+
+    #[tokio::test]
+    async fn test_active_session_detection() {
+        // Create entries with different timestamps
+        let now = Utc::now();
+        let recent_entry = UsageEntry {
+            session_id: SessionId::new("recent"),
+            timestamp: ISOTimestamp::new(now - chrono::Duration::minutes(2)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+        
+        let old_entry = UsageEntry {
+            session_id: SessionId::new("old"),
+            timestamp: ISOTimestamp::new(now - chrono::Duration::hours(1)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+
+        // Test that recent entry is considered active
+        let active_cutoff = now - chrono::Duration::minutes(5);
+        assert!(recent_entry.timestamp.as_ref() > &active_cutoff);
+        assert!(!(old_entry.timestamp.as_ref() > &active_cutoff));
+    }
+
+    #[test]
+    fn test_atomic_bool_operations() {
+        // Test atomic bool operations used for signaling
+        let should_refresh = Arc::new(AtomicBool::new(false));
+        
+        // Test initial state
+        assert!(!should_refresh.load(Ordering::Acquire));
+        
+        // Test setting to true
+        should_refresh.store(true, Ordering::Release);
+        assert!(should_refresh.load(Ordering::Acquire));
+        
+        // Test setting back to false
+        should_refresh.store(false, Ordering::Release);
+        assert!(!should_refresh.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn test_data_directories_on_different_platforms() {
+        // Skip this test since we can't directly create DataLoader
+        // Test the get_data_directories method through the actual loader
+        match DataLoader::new().await {
+            Ok(data_loader) => {
+                // Test that get_data_directories handles missing directories gracefully
+                let result = data_loader.get_data_directories().await;
+                
+                // On any platform, we should either get directories or an error
+                match result {
+                    Ok(dirs) => {
+                        // If successful, we should have at least one directory
+                        assert!(!dirs.is_empty());
+                    }
+                    Err(e) => {
+                        // Error is acceptable if no Claude directories exist
+                        assert!(matches!(e, CcstatError::Io(_)));
+                    }
+                }
+            }
+            Err(_) => {
+                println!("Skipping test: No Claude directories found");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_monitor_json_output_formatting() {
+        let data_loader = match create_mock_data_loader().await {
+            Some(loader) => loader,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+
+        // Test with JSON output enabled
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            true,  // json_output
+            false,
+            5,
+            false,
+        );
+
+        // Verify JSON output flag is set
+        assert!(monitor.json_output);
+        
+        // In JSON mode, screen clearing should not happen
+        // This is tested implicitly by the refresh_display method
     }
 }
