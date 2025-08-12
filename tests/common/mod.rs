@@ -10,10 +10,14 @@ use ccstat::{
     pricing_fetcher::PricingFetcher,
 };
 use chrono::{DateTime, Utc, TimeZone, NaiveDate, Datelike};
-use std::sync::Arc;
+use once_cell::sync::Lazy;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+
+// Global mutex to serialize environment variable modifications in tests
+pub static ENV_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// Common test models used across tests
 pub const TEST_MODELS: &[&str] = &[
@@ -167,6 +171,9 @@ impl UsageEntryBuilder {
 
 /// Helper to create a test data directory with JSONL files
 pub async fn create_test_data_dir(entries: Vec<String>) -> (TempDir, DataLoader) {
+    // Lock the mutex to ensure thread-safe environment variable modification
+    let _lock = ENV_MUTEX.lock().unwrap();
+    
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
     

@@ -721,7 +721,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_data_directories_on_different_platforms() {
-        // Skip this test since we can't directly create DataLoader
         // Test the get_data_directories method through the actual loader
         match DataLoader::new().await {
             Ok(data_loader) => {

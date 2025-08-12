@@ -339,6 +339,14 @@ mod tests {
         assert_eq!(model1_pricing.output_cost_per_token, Some(0.00002));
         assert_eq!(model1_pricing.cache_creation_input_token_cost, Some(0.000015));
         assert_eq!(model1_pricing.cache_read_input_token_cost, Some(0.000001));
+        
+        // Check that model2 is parsed with None values for invalid fields
+        assert!(pricing_map.contains_key("model2"));
+        let model2_pricing = pricing_map.get("model2").expect("model2 should be in the map");
+        assert!(model2_pricing.input_cost_per_token.is_none());
+        assert!(model2_pricing.output_cost_per_token.is_none());
+        assert!(model2_pricing.cache_creation_input_token_cost.is_none());
+        assert!(model2_pricing.cache_read_input_token_cost.is_none());
     }
 
     #[tokio::test]

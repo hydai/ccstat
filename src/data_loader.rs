@@ -627,6 +627,11 @@ mod tests {
     use tempfile::TempDir;
     use tokio::io::AsyncWriteExt;
     use std::env;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+    
+    // Global mutex to serialize environment variable modifications in tests
+    static ENV_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[tokio::test]
     async fn test_jsonl_parsing() {
@@ -694,6 +699,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_claude_paths_with_env_override() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        
         let temp_dir = TempDir::new().unwrap();
         let custom_path = temp_dir.path().to_path_buf();
         
@@ -753,7 +760,8 @@ mod tests {
         
         // Set the old file's modification time to 2 days ago
         let two_days_ago = chrono::Utc::now() - chrono::Duration::days(2);
-        let _old_time = std::time::SystemTime::from(two_days_ago);
+        let old_time = filetime::FileTime::from_system_time(std::time::SystemTime::from(two_days_ago));
+        filetime::set_file_mtime(&old_file, old_time).unwrap();
         
         // For test purposes, we'll use the current time minus 1 hour as the filter
         let one_hour_ago = chrono::Utc::now() - chrono::Duration::hours(1);
@@ -765,9 +773,9 @@ mod tests {
             use_arena: false,
         };
         
-        // This should find the new file but not the old one (both were just created)
+        // This should find the new file but not the old one
         let files = loader.find_recent_jsonl_files(one_hour_ago).await.unwrap();
-        assert_eq!(files.len(), 2); // Both files are recent since we just created them
+        assert_eq!(files.len(), 1); // Only the new file should be found
     }
 
     #[tokio::test]
@@ -1036,6 +1044,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_claude_directory_error() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        
         // Try to discover paths in a location that doesn't exist
         let _original_home = env::var("HOME").ok();
         unsafe {
