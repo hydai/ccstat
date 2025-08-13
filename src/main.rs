@@ -11,8 +11,11 @@ use ccstat::{
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
     timezone::TimezoneConfig,
+    types::UsageEntry,
 };
 use clap::Parser;
+use futures::Stream;
+use std::pin::Pin;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -27,6 +30,15 @@ fn create_aggregator_with_timezone(
     info!("Using timezone: {}", tz_config.display_name());
 
     Ok(Aggregator::new(cost_calculator, tz_config).with_progress(show_progress))
+}
+
+/// Helper function to initialize a DataLoader with common configuration
+async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Result<DataLoader> {
+    Ok(DataLoader::new()
+        .await?
+        .with_progress(show_progress)
+        .with_interning(intern)
+        .with_arena(arena))
 }
 
 #[tokio::main]
@@ -63,10 +75,8 @@ async fn main() -> Result<()> {
             project,
             watch,
             interval,
-            parallel,
-            intern,
-            arena,
             verbose,
+            performance_args,
             model_display_args,
             timezone_args,
         }) => {
@@ -75,11 +85,12 @@ async fn main() -> Result<()> {
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
             let data_loader = Arc::new(
-                DataLoader::new()
-                    .await?
-                    .with_progress(show_progress)
-                    .with_interning(intern)
-                    .with_arena(arena),
+                init_data_loader(
+                    show_progress,
+                    performance_args.intern,
+                    performance_args.arena,
+                )
+                .await?,
             );
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
@@ -124,52 +135,37 @@ async fn main() -> Result<()> {
                 // Handle instances flag
                 if instances {
                     // Load and filter entries, then group by instance
-                    if parallel {
-                        let entries = data_loader.load_usage_entries_parallel();
-                        let filtered_entries = filter.filter_stream(entries).await;
-                        let instance_data = aggregator
-                            .aggregate_daily_by_instance(filtered_entries, mode)
-                            .await?;
-                        let totals = Totals::from_daily_instances(&instance_data);
-                        let formatter = get_formatter(json, model_display_args.full_model_names);
-                        println!(
-                            "{}",
-                            formatter.format_daily_by_instance(&instance_data, &totals)
-                        );
-                    } else {
-                        let entries = data_loader.load_usage_entries();
-                        let filtered_entries = filter.filter_stream(entries).await;
-                        let instance_data = aggregator
-                            .aggregate_daily_by_instance(filtered_entries, mode)
-                            .await?;
-                        let totals = Totals::from_daily_instances(&instance_data);
-                        let formatter = get_formatter(json, model_display_args.full_model_names);
-                        println!(
-                            "{}",
-                            formatter.format_daily_by_instance(&instance_data, &totals)
-                        );
-                    }
+                    let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
+                        if performance_args.parallel {
+                            Box::pin(data_loader.load_usage_entries_parallel())
+                        } else {
+                            Box::pin(data_loader.load_usage_entries())
+                        };
+                    let filtered_entries = filter.filter_stream(entries).await;
+                    let instance_data = aggregator
+                        .aggregate_daily_by_instance(filtered_entries, mode)
+                        .await?;
+                    let totals = Totals::from_daily_instances(&instance_data);
+                    let formatter = get_formatter(json, model_display_args.full_model_names);
+                    println!(
+                        "{}",
+                        formatter.format_daily_by_instance(&instance_data, &totals)
+                    );
                 } else {
                     // Load and filter entries, then aggregate normally
-                    if parallel {
-                        let entries = data_loader.load_usage_entries_parallel();
-                        let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator
-                            .aggregate_daily_verbose(filtered_entries, mode, verbose)
-                            .await?;
-                        let totals = Totals::from_daily(&daily_data);
-                        let formatter = get_formatter(json, model_display_args.full_model_names);
-                        println!("{}", formatter.format_daily(&daily_data, &totals));
-                    } else {
-                        let entries = data_loader.load_usage_entries();
-                        let filtered_entries = filter.filter_stream(entries).await;
-                        let daily_data = aggregator
-                            .aggregate_daily_verbose(filtered_entries, mode, verbose)
-                            .await?;
-                        let totals = Totals::from_daily(&daily_data);
-                        let formatter = get_formatter(json, model_display_args.full_model_names);
-                        println!("{}", formatter.format_daily(&daily_data, &totals));
-                    }
+                    let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
+                        if performance_args.parallel {
+                            Box::pin(data_loader.load_usage_entries_parallel())
+                        } else {
+                            Box::pin(data_loader.load_usage_entries())
+                        };
+                    let filtered_entries = filter.filter_stream(entries).await;
+                    let daily_data = aggregator
+                        .aggregate_daily_verbose(filtered_entries, mode, verbose)
+                        .await?;
+                    let totals = Totals::from_daily(&daily_data);
+                    let formatter = get_formatter(json, model_display_args.full_model_names);
+                    println!("{}", formatter.format_daily(&daily_data, &totals));
                 }
             }
         }
@@ -179,9 +175,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
-            parallel,
-            intern,
-            arena,
+            performance_args,
             model_display_args,
             timezone_args,
         }) => {
@@ -189,11 +183,12 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new()
-                .await?
-                .with_progress(show_progress)
-                .with_interning(intern)
-                .with_arena(arena);
+            let data_loader = init_data_loader(
+                show_progress,
+                performance_args.intern,
+                performance_args.arena,
+            )
+            .await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -212,13 +207,13 @@ async fn main() -> Result<()> {
             }
 
             // Load entries and aggregate data
-            let daily_data = if parallel {
-                let entries = data_loader.load_usage_entries_parallel();
-                aggregator.aggregate_daily(entries, mode).await?
-            } else {
-                let entries = data_loader.load_usage_entries();
-                aggregator.aggregate_daily(entries, mode).await?
-            };
+            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
+                if performance_args.parallel {
+                    Box::pin(data_loader.load_usage_entries_parallel())
+                } else {
+                    Box::pin(data_loader.load_usage_entries())
+                };
+            let daily_data = aggregator.aggregate_daily(entries, mode).await?;
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
             // Apply month filter to aggregated monthly data
@@ -254,9 +249,7 @@ async fn main() -> Result<()> {
             json,
             since,
             until,
-            parallel,
-            intern,
-            arena,
+            performance_args,
             model_display_args,
             timezone_args,
         }) => {
@@ -264,11 +257,12 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new()
-                .await?
-                .with_progress(show_progress)
-                .with_interning(intern)
-                .with_arena(arena);
+            let data_loader = init_data_loader(
+                show_progress,
+                performance_args.intern,
+                performance_args.arena,
+            )
+            .await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -289,19 +283,16 @@ async fn main() -> Result<()> {
             filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Load, filter and aggregate data
-            let session_data = if parallel {
-                let entries = data_loader.load_usage_entries_parallel();
-                let filtered_entries = filter.filter_stream(entries).await;
-                aggregator
-                    .aggregate_sessions(filtered_entries, mode)
-                    .await?
-            } else {
-                let entries = data_loader.load_usage_entries();
-                let filtered_entries = filter.filter_stream(entries).await;
-                aggregator
-                    .aggregate_sessions(filtered_entries, mode)
-                    .await?
-            };
+            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
+                if performance_args.parallel {
+                    Box::pin(data_loader.load_usage_entries_parallel())
+                } else {
+                    Box::pin(data_loader.load_usage_entries())
+                };
+            let filtered_entries = filter.filter_stream(entries).await;
+            let session_data = aggregator
+                .aggregate_sessions(filtered_entries, mode)
+                .await?;
             let totals = Totals::from_sessions(&session_data);
 
             // Format and output
@@ -318,9 +309,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
-            parallel,
-            intern,
-            arena,
+            performance_args,
             model_display_args,
             timezone_args,
         }) => {
@@ -328,24 +317,25 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new()
-                .await?
-                .with_progress(show_progress)
-                .with_interning(intern)
-                .with_arena(arena);
+            let data_loader = init_data_loader(
+                show_progress,
+                performance_args.intern,
+                performance_args.arena,
+            )
+            .await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
                 create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Load entries and aggregate sessions
-            let session_data = if parallel {
-                let entries = data_loader.load_usage_entries_parallel();
-                aggregator.aggregate_sessions(entries, mode).await?
-            } else {
-                let entries = data_loader.load_usage_entries();
-                aggregator.aggregate_sessions(entries, mode).await?
-            };
+            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
+                if performance_args.parallel {
+                    Box::pin(data_loader.load_usage_entries_parallel())
+                } else {
+                    Box::pin(data_loader.load_usage_entries())
+                };
+            let session_data = aggregator.aggregate_sessions(entries, mode).await?;
 
             // Create billing blocks
             let mut blocks = Aggregator::create_billing_blocks(&session_data);

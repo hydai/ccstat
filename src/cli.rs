@@ -62,6 +62,22 @@ pub struct ModelDisplayArgs {
     pub full_model_names: bool,
 }
 
+/// Common performance optimization options
+#[derive(clap::Args, Debug)]
+pub struct PerformanceArgs {
+    /// Use parallel file processing
+    #[arg(long)]
+    pub parallel: bool,
+
+    /// Enable string interning for memory optimization
+    #[arg(long)]
+    pub intern: bool,
+
+    /// Enable arena allocation for parsing
+    #[arg(long)]
+    pub arena: bool,
+}
+
 /// Available commands
 ///
 /// Each command provides different views and aggregations of usage data,
@@ -102,21 +118,13 @@ pub enum Command {
         #[arg(long, default_value = "5")]
         interval: u64,
 
-        /// Use parallel file processing
-        #[arg(long)]
-        parallel: bool,
-
-        /// Enable string interning for memory optimization
-        #[arg(long)]
-        intern: bool,
-
-        /// Enable arena allocation for parsing
-        #[arg(long)]
-        arena: bool,
-
         /// Show detailed token information per entry
         #[arg(long, short = 'v')]
         verbose: bool,
+
+        /// Performance options
+        #[command(flatten)]
+        performance_args: PerformanceArgs,
 
         /// Model display options
         #[command(flatten)]
@@ -145,17 +153,9 @@ pub enum Command {
         #[arg(long)]
         until: Option<String>,
 
-        /// Use parallel file processing
-        #[arg(long)]
-        parallel: bool,
-
-        /// Enable string interning for memory optimization
-        #[arg(long)]
-        intern: bool,
-
-        /// Enable arena allocation for parsing
-        #[arg(long)]
-        arena: bool,
+        /// Performance options
+        #[command(flatten)]
+        performance_args: PerformanceArgs,
 
         /// Model display options
         #[command(flatten)]
@@ -184,17 +184,9 @@ pub enum Command {
         #[arg(long)]
         until: Option<String>,
 
-        /// Use parallel file processing
-        #[arg(long)]
-        parallel: bool,
-
-        /// Enable string interning for memory optimization
-        #[arg(long)]
-        intern: bool,
-
-        /// Enable arena allocation for parsing
-        #[arg(long)]
-        arena: bool,
+        /// Performance options
+        #[command(flatten)]
+        performance_args: PerformanceArgs,
 
         /// Model display options
         #[command(flatten)]
@@ -227,17 +219,9 @@ pub enum Command {
         #[arg(long)]
         token_limit: Option<String>,
 
-        /// Use parallel file processing
-        #[arg(long)]
-        parallel: bool,
-
-        /// Enable string interning for memory optimization
-        #[arg(long)]
-        intern: bool,
-
-        /// Enable arena allocation for parsing
-        #[arg(long)]
-        arena: bool,
+        /// Performance options
+        #[command(flatten)]
+        performance_args: PerformanceArgs,
 
         /// Model display options
         #[command(flatten)]
