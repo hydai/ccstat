@@ -14,7 +14,7 @@ use ccstat::{
 };
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Helper function to create an aggregator with timezone configuration
@@ -44,8 +44,6 @@ async fn init_data_loader(
 /// Helper function to check for deprecated flags and show warnings
 fn check_deprecated_flags(perf_args: &ccstat::cli::PerformanceArgs) {
     if !perf_args.parallel {
-        warn!("--parallel=false flag is deprecated and will be removed in v0.3.0");
-        warn!("Parallel processing is now always enabled for better performance.");
         eprintln!("Warning: --parallel=false flag is deprecated and will be removed in v0.3.0");
         eprintln!("         Parallel processing is now always enabled for better performance.");
     }
