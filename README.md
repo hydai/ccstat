@@ -381,7 +381,7 @@ ccstat can also be used as a Rust library. Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ccstat = "0.1.9"
+ccstat = "0.2.0"
 ```
 
 Example usage:
