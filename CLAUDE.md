@@ -116,7 +116,7 @@ cargo run -- daily --project my-project
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
 ## Important Notes
-- Current version: 0.2.0
+- Current version: 0.2.1
 - The project requires Rust 1.75 or later
 - Dependencies are managed in `ccusage/Cargo.toml`
 - Tests are co-located with source files
