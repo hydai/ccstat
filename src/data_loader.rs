@@ -329,8 +329,41 @@ impl DataLoader {
                             let mut entries = Vec::new();
                             let mut local_duplicates = 0;
 
-                            // Collect lines for batch processing if using arena
+                            // Common logic for processing a line
+                            let mut process_line = |line: &str| {
+                                match serde_json::from_str::<RawJsonlEntry>(line) {
+                                    Ok(raw_entry) => {
+                                        // Check for deduplication key
+                                        if let Some(dedup_key) = UsageEntry::dedup_key(&raw_entry) {
+                                            let mut seen = seen_entries_clone.lock().unwrap();
+                                            if seen.contains(&dedup_key) {
+                                                local_duplicates += 1;
+                                                trace!("Skipping duplicate entry with key: {}", dedup_key);
+                                                return;
+                                            }
+                                            seen.insert(dedup_key);
+                                        }
+
+                                        if let Some(mut entry) = UsageEntry::from_raw(raw_entry) {
+                                            if use_interning {
+                                                // Apply string interning
+                                                let interned_model = InternedModel::new(entry.model.as_str());
+                                                entry.model = ModelName::new(interned_model.as_str());
+                                                let interned_session = InternedSession::new(entry.session_id.as_str());
+                                                entry.session_id = SessionId::new(interned_session.as_str());
+                                            }
+                                            entries.push(entry);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        trace!("Skipping non-usage entry in {}: {}", file_path.display(), e);
+                                    }
+                                }
+                            };
+
                             if use_arena {
+                                // TODO: Consider processing in chunks to reduce memory usage for large files
+                                // Currently collecting all lines into memory for arena allocation
                                 let lines: Vec<String> = content.lines()
                                     .filter(|line| !line.trim().is_empty())
                                     .map(|s| s.to_string())
@@ -339,34 +372,7 @@ impl DataLoader {
                                 let pool = MemoryPool::new();
                                 for line in &lines {
                                     let arena_line = pool.alloc_string(line);
-                                    match serde_json::from_str::<RawJsonlEntry>(arena_line) {
-                                        Ok(raw_entry) => {
-                                            // Check for deduplication key
-                                            if let Some(dedup_key) = UsageEntry::dedup_key(&raw_entry) {
-                                                let mut seen = seen_entries_clone.lock().unwrap();
-                                                if seen.contains(&dedup_key) {
-                                                    local_duplicates += 1;
-                                                    trace!("Skipping duplicate entry with key: {}", dedup_key);
-                                                    continue;
-                                                }
-                                                seen.insert(dedup_key);
-                                            }
-
-                                            if let Some(mut entry) = UsageEntry::from_raw(raw_entry) {
-                                                if use_interning {
-                                                    // Apply string interning
-                                                    let interned_model = InternedModel::new(entry.model.as_str());
-                                                    entry.model = ModelName::new(interned_model.as_str());
-                                                    let interned_session = InternedSession::new(entry.session_id.as_str());
-                                                    entry.session_id = SessionId::new(interned_session.as_str());
-                                                }
-                                                entries.push(entry);
-                                            }
-                                        }
-                                        Err(e) => {
-                                            trace!("Skipping non-usage entry in {}: {}", file_path.display(), e);
-                                        }
-                                    }
+                                    process_line(arena_line);
                                 }
                             } else {
                                 // Normal processing without arena
@@ -374,34 +380,7 @@ impl DataLoader {
                                     if line.trim().is_empty() {
                                         continue;
                                     }
-                                    match serde_json::from_str::<RawJsonlEntry>(line) {
-                                        Ok(raw_entry) => {
-                                            // Check for deduplication key
-                                            if let Some(dedup_key) = UsageEntry::dedup_key(&raw_entry) {
-                                                let mut seen = seen_entries_clone.lock().unwrap();
-                                                if seen.contains(&dedup_key) {
-                                                    local_duplicates += 1;
-                                                    trace!("Skipping duplicate entry with key: {}", dedup_key);
-                                                    continue;
-                                                }
-                                                seen.insert(dedup_key);
-                                            }
-
-                                            if let Some(mut entry) = UsageEntry::from_raw(raw_entry) {
-                                                if use_interning {
-                                                    // Apply string interning
-                                                    let interned_model = InternedModel::new(entry.model.as_str());
-                                                    entry.model = ModelName::new(interned_model.as_str());
-                                                    let interned_session = InternedSession::new(entry.session_id.as_str());
-                                                    entry.session_id = SessionId::new(interned_session.as_str());
-                                                }
-                                                entries.push(entry);
-                                            }
-                                        }
-                                        Err(e) => {
-                                            trace!("Skipping non-usage entry in {}: {}", file_path.display(), e);
-                                        }
-                                    }
+                                    process_line(line);
                                 }
                             }
 
@@ -676,9 +655,8 @@ impl DataLoader {
 
     /// Convert raw entry to UsageEntry with optional string interning
     fn convert_entry(&self, raw: RawJsonlEntry) -> Option<UsageEntry> {
-        if self.use_interning {
-            // Use string interning for model and session IDs
-            if let Some(mut entry) = UsageEntry::from_raw(raw) {
+        UsageEntry::from_raw(raw).map(|mut entry| {
+            if self.use_interning {
                 // Intern the model name
                 let interned_model = InternedModel::new(entry.model.as_str());
                 entry.model = ModelName::new(interned_model.as_str());
@@ -686,15 +664,9 @@ impl DataLoader {
                 // Intern the session ID
                 let interned_session = InternedSession::new(entry.session_id.as_str());
                 entry.session_id = SessionId::new(interned_session.as_str());
-
-                Some(entry)
-            } else {
-                None
             }
-        } else {
-            // Normal conversion without interning
-            UsageEntry::from_raw(raw)
-        }
+            entry
+        })
     }
 }
 
