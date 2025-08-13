@@ -33,20 +33,23 @@ fn create_aggregator_with_timezone(
 }
 
 /// Helper function to initialize a DataLoader with common configuration
-async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Result<DataLoader> {
+async fn init_data_loader(
+    show_progress: bool,
+    perf_args: &ccstat::cli::PerformanceArgs,
+) -> Result<DataLoader> {
     Ok(DataLoader::new()
         .await?
         .with_progress(show_progress)
-        .with_interning(intern)
-        .with_arena(arena))
+        .with_interning(perf_args.intern)
+        .with_arena(perf_args.arena))
 }
 
 /// Helper function to select the appropriate entry stream based on the parallel flag.
 fn load_entries<'a>(
     data_loader: &'a DataLoader,
-    parallel: bool,
+    perf_args: &ccstat::cli::PerformanceArgs,
 ) -> Pin<Box<dyn Stream<Item = Result<UsageEntry>> + 'a>> {
-    if parallel {
+    if perf_args.parallel {
         Box::pin(data_loader.load_usage_entries_parallel())
     } else {
         Box::pin(data_loader.load_usage_entries())
@@ -96,14 +99,7 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = Arc::new(
-                init_data_loader(
-                    show_progress,
-                    performance_args.intern,
-                    performance_args.arena,
-                )
-                .await?,
-            );
+            let data_loader = Arc::new(init_data_loader(show_progress, &performance_args).await?);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator = Arc::new(create_aggregator_with_timezone(
@@ -147,7 +143,7 @@ async fn main() -> Result<()> {
                 // Handle instances flag
                 if instances {
                     // Load and filter entries, then group by instance
-                    let entries = load_entries(&data_loader, performance_args.parallel);
+                    let entries = load_entries(&data_loader, &performance_args);
                     let filtered_entries = filter.filter_stream(entries).await;
                     let instance_data = aggregator
                         .aggregate_daily_by_instance(filtered_entries, mode)
@@ -160,7 +156,7 @@ async fn main() -> Result<()> {
                     );
                 } else {
                     // Load and filter entries, then aggregate normally
-                    let entries = load_entries(&data_loader, performance_args.parallel);
+                    let entries = load_entries(&data_loader, &performance_args);
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
                         .aggregate_daily_verbose(filtered_entries, mode, verbose)
@@ -185,12 +181,7 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(
-                show_progress,
-                performance_args.intern,
-                performance_args.arena,
-            )
-            .await?;
+            let data_loader = init_data_loader(show_progress, &performance_args).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -209,7 +200,7 @@ async fn main() -> Result<()> {
             }
 
             // Load entries and aggregate data
-            let entries = load_entries(&data_loader, performance_args.parallel);
+            let entries = load_entries(&data_loader, &performance_args);
             let daily_data = aggregator.aggregate_daily(entries, mode).await?;
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
@@ -254,12 +245,7 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(
-                show_progress,
-                performance_args.intern,
-                performance_args.arena,
-            )
-            .await?;
+            let data_loader = init_data_loader(show_progress, &performance_args).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
@@ -280,7 +266,7 @@ async fn main() -> Result<()> {
             filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Load, filter and aggregate data
-            let entries = load_entries(&data_loader, performance_args.parallel);
+            let entries = load_entries(&data_loader, &performance_args);
             let filtered_entries = filter.filter_stream(entries).await;
             let session_data = aggregator
                 .aggregate_sessions(filtered_entries, mode)
@@ -309,19 +295,14 @@ async fn main() -> Result<()> {
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(
-                show_progress,
-                performance_args.intern,
-                performance_args.arena,
-            )
-            .await?;
+            let data_loader = init_data_loader(show_progress, &performance_args).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator =
                 create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Load entries and aggregate sessions
-            let entries = load_entries(&data_loader, performance_args.parallel);
+            let entries = load_entries(&data_loader, &performance_args);
             let session_data = aggregator.aggregate_sessions(entries, mode).await?;
 
             // Create billing blocks
