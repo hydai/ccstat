@@ -33,7 +33,9 @@
 //! ```
 
 use crate::error::{CcstatError, Result};
-use crate::types::{RawJsonlEntry, UsageEntry};
+use crate::memory_pool::MemoryPool;
+use crate::string_pool::{InternedModel, InternedSession};
+use crate::types::{ModelName, RawJsonlEntry, SessionId, UsageEntry};
 use futures::StreamExt;
 use futures::stream::Stream;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -310,6 +312,8 @@ impl DataLoader {
             let files_clone = files.clone();
             let progress_clone = progress.clone();
             let seen_entries_clone = seen_entries.clone();
+            let use_interning = self.use_interning;
+            let use_arena = self.use_arena;
 
             tokio::task::spawn_blocking(move || {
                 files_clone.par_iter().for_each(|file_path| {
@@ -325,10 +329,8 @@ impl DataLoader {
                             let mut entries = Vec::new();
                             let mut local_duplicates = 0;
 
-                            for line in content.lines() {
-                                if line.trim().is_empty() {
-                                    continue;
-                                }
+                            // Common logic for processing a line
+                            let mut process_line = |line: &str| {
                                 match serde_json::from_str::<RawJsonlEntry>(line) {
                                     Ok(raw_entry) => {
                                         // Check for deduplication key
@@ -337,18 +339,48 @@ impl DataLoader {
                                             if seen.contains(&dedup_key) {
                                                 local_duplicates += 1;
                                                 trace!("Skipping duplicate entry with key: {}", dedup_key);
-                                                continue;
+                                                return;
                                             }
                                             seen.insert(dedup_key);
                                         }
 
-                                        if let Some(entry) = UsageEntry::from_raw(raw_entry) {
+                                        if let Some(mut entry) = UsageEntry::from_raw(raw_entry) {
+                                            if use_interning {
+                                                // Apply string interning
+                                                let interned_model = InternedModel::new(entry.model.as_str());
+                                                entry.model = ModelName::new(interned_model.as_str());
+                                                let interned_session = InternedSession::new(entry.session_id.as_str());
+                                                entry.session_id = SessionId::new(interned_session.as_str());
+                                            }
                                             entries.push(entry);
                                         }
-                                    },
+                                    }
                                     Err(e) => {
                                         trace!("Skipping non-usage entry in {}: {}", file_path.display(), e);
                                     }
+                                }
+                            };
+
+                            if use_arena {
+                                // TODO: Consider processing in chunks to reduce memory usage for large files
+                                // Currently collecting all lines into memory for arena allocation
+                                let lines: Vec<String> = content.lines()
+                                    .filter(|line| !line.trim().is_empty())
+                                    .map(|s| s.to_string())
+                                    .collect();
+
+                                let pool = MemoryPool::new();
+                                for line in &lines {
+                                    let arena_line = pool.alloc_string(line);
+                                    process_line(arena_line);
+                                }
+                            } else {
+                                // Normal processing without arena
+                                for line in content.lines() {
+                                    if line.trim().is_empty() {
+                                        continue;
+                                    }
+                                    process_line(line);
                                 }
                             }
 
@@ -431,7 +463,7 @@ impl DataLoader {
                     pb.set_position(idx as u64);
                 }
 
-                let entries = Self::parse_jsonl_stream(file_path, progress.as_ref(), &mut seen_entries);
+                let entries = self.parse_jsonl_stream(file_path, progress.as_ref(), &mut seen_entries);
                 tokio::pin!(entries);
                 while let Some(result) = entries.next().await {
                     match &result {
@@ -545,6 +577,7 @@ impl DataLoader {
 
     /// Parse a single JSONL file as a stream
     fn parse_jsonl_stream<'a>(
+        &'a self,
         path: PathBuf,
         _progress: Option<&'a ProgressBar>,
         seen_entries: &'a mut HashSet<String>,
@@ -589,7 +622,7 @@ impl DataLoader {
                             seen_entries.insert(dedup_key);
                         }
 
-                        if let Some(entry) = UsageEntry::from_raw(raw_entry) {
+                        if let Some(entry) = self.convert_entry(raw_entry) {
                             yield Ok(entry);
                         }
                         // Skip non-assistant entries silently
@@ -619,6 +652,22 @@ impl DataLoader {
     pub fn paths(&self) -> &[PathBuf] {
         &self.claude_paths
     }
+
+    /// Convert raw entry to UsageEntry with optional string interning
+    fn convert_entry(&self, raw: RawJsonlEntry) -> Option<UsageEntry> {
+        UsageEntry::from_raw(raw).map(|mut entry| {
+            if self.use_interning {
+                // Intern the model name
+                let interned_model = InternedModel::new(entry.model.as_str());
+                entry.model = ModelName::new(interned_model.as_str());
+
+                // Intern the session ID
+                let interned_session = InternedSession::new(entry.session_id.as_str());
+                entry.session_id = SessionId::new(interned_session.as_str());
+            }
+            entry
+        })
+    }
 }
 
 #[cfg(test)]
@@ -638,8 +687,14 @@ mod tests {
         file.write_all(b"\n").await.unwrap();
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":200,"output_tokens":100,"cache_creation_input_tokens":20,"cache_read_input_tokens":10}}}"#).await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let entry1 = stream.next().await.unwrap().unwrap();
@@ -792,8 +847,14 @@ mod tests {
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"id":"msg_789","model":"claude-3-opus","usage":{"input_tokens":200,"output_tokens":100}},"requestId":"req_012"}"#).await.unwrap();
 
         // Run the test in two parts: first collect entries, then check deduplication separately
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path.clone(), None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path.clone(), None, &mut seen);
         tokio::pin!(stream);
 
         let mut entries = Vec::new();
@@ -823,8 +884,14 @@ mod tests {
         // Create an empty file
         tokio::fs::write(&jsonl_path, "").await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let mut count = 0;
@@ -845,8 +912,14 @@ mod tests {
         file.write_all(br#"{"sessionId":"test1","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
         file.write_all(b"\n{broken json").await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let mut valid_entries = Vec::new();
@@ -876,8 +949,14 @@ mod tests {
         // System type entry - should be filtered
         file.write_all(br#"{"sessionId":"test3","timestamp":"2024-01-01T00:00:00Z","type":"system","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let mut entries = Vec::new();
@@ -941,6 +1020,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_string_interning_functionality() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("test.jsonl");
+
+        // Create test data with repeated model names and session IDs
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        file.write_all(br#"{"sessionId":"test-session","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
+        file.write_all(b"\n").await.unwrap();
+        file.write_all(br#"{"sessionId":"test-session","timestamp":"2024-01-01T01:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
+
+        // Test with interning enabled
+        let loader_with_interning = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: true,
+            use_arena: false,
+        };
+
+        let entries: Vec<_> = loader_with_interning
+            .load_usage_entries()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 2);
+        // Both entries should have the same model and session ID
+        assert_eq!(entries[0].model.as_str(), "claude-3-opus");
+        assert_eq!(entries[1].model.as_str(), "claude-3-opus");
+        assert_eq!(entries[0].session_id.as_str(), "test-session");
+        assert_eq!(entries[1].session_id.as_str(), "test-session");
+    }
+
+    #[tokio::test]
+    async fn test_arena_allocation_functionality() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("test.jsonl");
+
+        // Create test data
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        file.write_all(br#"{"sessionId":"arena-test","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-sonnet","usage":{"input_tokens":150,"output_tokens":75}}}"#).await.unwrap();
+
+        // Test with arena allocation enabled
+        let loader_with_arena = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: false,
+            use_arena: true,
+        };
+
+        let entries: Vec<_> = loader_with_arena
+            .load_usage_entries()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_str(), "arena-test");
+        assert_eq!(entries[0].model.as_str(), "claude-3-sonnet");
+        assert_eq!(entries[0].tokens.input_tokens, 150);
+    }
+
+    #[tokio::test]
+    async fn test_interning_and_arena_together() {
+        let temp_dir = TempDir::new().unwrap();
+        let jsonl_path = temp_dir.path().join("test.jsonl");
+
+        // Create test data with repeated values
+        let mut file = tokio::fs::File::create(&jsonl_path).await.unwrap();
+        for i in 0..3 {
+            let line = format!(
+                r#"{{"sessionId":"combined-test","timestamp":"2024-01-01T0{}:00:00Z","type":"assistant","message":{{"model":"claude-3-opus","usage":{{"input_tokens":{},"output_tokens":50}}}}}}"#,
+                i,
+                (i + 1) * 100
+            );
+            file.write_all(line.as_bytes()).await.unwrap();
+            file.write_all(b"\n").await.unwrap();
+        }
+
+        // Test with both interning and arena enabled
+        let loader = DataLoader {
+            claude_paths: vec![temp_dir.path().to_path_buf()],
+            show_progress: false,
+            use_interning: true,
+            use_arena: true,
+        };
+
+        let entries: Vec<_> = loader
+            .load_usage_entries()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(entries.len(), 3);
+        // All entries should have the same interned values
+        for entry in &entries {
+            assert_eq!(entry.model.as_str(), "claude-3-opus");
+            assert_eq!(entry.session_id.as_str(), "combined-test");
+        }
+    }
+
+    #[tokio::test]
     async fn test_get_paths() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().to_path_buf();
@@ -969,8 +1155,14 @@ mod tests {
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":200,"output_tokens":100}}}"#).await.unwrap();
         file.write_all(b"\n").await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let mut entries = Vec::new();
@@ -995,8 +1187,14 @@ mod tests {
         // Normal entry - should be included
         file.write_all(br#"{"sessionId":"test2","timestamp":"2024-01-01T00:00:00Z","type":"assistant","message":{"model":"claude-3-opus","usage":{"input_tokens":100,"output_tokens":50}}}"#).await.unwrap();
 
+        let loader = DataLoader {
+            claude_paths: vec![],
+            show_progress: false,
+            use_interning: false,
+            use_arena: false,
+        };
         let mut seen = HashSet::new();
-        let stream = DataLoader::parse_jsonl_stream(jsonl_path, None, &mut seen);
+        let stream = loader.parse_jsonl_stream(jsonl_path, None, &mut seen);
         tokio::pin!(stream);
 
         let mut entries = Vec::new();
