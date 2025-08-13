@@ -65,7 +65,7 @@ pub struct ModelDisplayArgs {
 /// Common performance optimization options
 #[derive(clap::Args, Debug)]
 pub struct PerformanceArgs {
-    /// [DEPRECATED] This flag is deprecated and will be removed in v0.3.0. Parallel processing is now always enabled.
+    /// \[DEPRECATED\] This flag is deprecated and will be removed in v0.3.0. Parallel processing is now always enabled.
     #[arg(
         long,
         default_value_t = true,
