@@ -45,6 +45,20 @@ pub struct LiveMonitor {
     full_model_names: bool,
 }
 
+/// Data prepared for display
+pub struct PreparedData {
+    /// Filtered usage entries
+    pub filtered_entries: Vec<UsageEntry>,
+    /// Active session IDs (within last 5 minutes)
+    pub active_sessions: Vec<String>,
+    /// Daily aggregation by instance (if instances mode is enabled)
+    pub instance_data: Option<Vec<crate::aggregation::DailyInstanceUsage>>,
+    /// Daily aggregation (if instances mode is disabled)
+    pub daily_data: Option<Vec<crate::aggregation::DailyUsage>>,
+    /// Totals calculated from the aggregated data
+    pub totals: Totals,
+}
+
 impl LiveMonitor {
     /// Create a new live monitor
     #[allow(clippy::too_many_arguments)]
@@ -203,27 +217,8 @@ impl LiveMonitor {
         Ok(())
     }
 
-    /// Refresh the display with current data
-    async fn refresh_display(&self) -> Result<()> {
-        // Clear screen
-        if !self.json_output {
-            print!("\x1B[2J\x1B[1;1H"); // Clear screen and move cursor to top-left
-        }
-
-        // Show current time and mode
-        if !self.json_output {
-            let now = Local::now();
-            println!(
-                "Live Monitoring - Last updated: {}",
-                now.format("%Y-%m-%d %H:%M:%S")
-            );
-            println!(
-                "Refresh interval: {}s | Press Ctrl+C to exit",
-                self.interval_secs
-            );
-            println!("{}", "-".repeat(80));
-        }
-
+    /// Prepare data for display by loading, filtering and aggregating
+    pub async fn prepare_data(&self) -> Result<PreparedData> {
         // Load and aggregate data
         let entries = self.data_loader.load_usage_entries();
 
@@ -248,63 +243,91 @@ impl LiveMonitor {
             .map(|entry| entry.session_id.as_ref().to_string())
             .collect();
 
-        // Generate output
-        if self.instances {
+        // Generate aggregated data based on mode
+        // Note: We clone entries here to preserve them in PreparedData while
+        // passing ownership to the aggregator.
+        let (instance_data, daily_data, totals) = if self.instances {
             let instance_data = self
                 .aggregator
                 .aggregate_daily_by_instance(
-                    futures::stream::iter(filtered_entries.into_iter().map(Ok)),
+                    futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
                     self.cost_mode,
                 )
                 .await?;
             let totals = Totals::from_daily_instances(&instance_data);
-            let formatter = get_formatter(self.json_output, self.full_model_names);
-
-            if self.json_output {
-                println!(
-                    "{}",
-                    formatter.format_daily_by_instance(&instance_data, &totals)
-                );
-            } else {
-                // Add active session indicators for table output
-                println!(
-                    "\nActive Sessions: {}",
-                    if active_sessions.is_empty() {
-                        "None".to_string()
-                    } else {
-                        format!("{} session(s)", active_sessions.len())
-                    }
-                );
-                println!(
-                    "{}",
-                    formatter.format_daily_by_instance(&instance_data, &totals)
-                );
-            }
+            (Some(instance_data), None, totals)
         } else {
             let daily_data = self
                 .aggregator
                 .aggregate_daily(
-                    futures::stream::iter(filtered_entries.into_iter().map(Ok)),
+                    futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
                     self.cost_mode,
                 )
                 .await?;
             let totals = Totals::from_daily(&daily_data);
-            let formatter = get_formatter(self.json_output, self.full_model_names);
+            (None, Some(daily_data), totals)
+        };
 
-            if self.json_output {
-                println!("{}", formatter.format_daily(&daily_data, &totals));
-            } else {
-                // Add active session indicators for table output
+        Ok(PreparedData {
+            filtered_entries,
+            active_sessions,
+            instance_data,
+            daily_data,
+            totals,
+        })
+    }
+
+    /// Refresh the display with current data
+    async fn refresh_display(&self) -> Result<()> {
+        // Clear screen
+        if !self.json_output {
+            print!("\x1B[2J\x1B[1;1H"); // Clear screen and move cursor to top-left
+        }
+
+        // Show current time and mode
+        if !self.json_output {
+            let now = Local::now();
+            println!(
+                "Live Monitoring - Last updated: {}",
+                now.format("%Y-%m-%d %H:%M:%S")
+            );
+            println!(
+                "Refresh interval: {}s | Press Ctrl+C to exit",
+                self.interval_secs
+            );
+            println!("{}", "-".repeat(80));
+        }
+
+        // Prepare data for display
+        let prepared_data = self.prepare_data().await?;
+
+        // Generate output
+        let formatter = get_formatter(self.json_output, self.full_model_names);
+
+        if !self.json_output {
+            // Add active session indicators for table output
+            println!(
+                "\nActive Sessions: {}",
+                if prepared_data.active_sessions.is_empty() {
+                    "None".to_string()
+                } else {
+                    format!("{} session(s)", prepared_data.active_sessions.len())
+                }
+            );
+        }
+
+        if self.instances {
+            if let Some(ref instance_data) = prepared_data.instance_data {
                 println!(
-                    "\nActive Sessions: {}",
-                    if active_sessions.is_empty() {
-                        "None".to_string()
-                    } else {
-                        format!("{} session(s)", active_sessions.len())
-                    }
+                    "{}",
+                    formatter.format_daily_by_instance(instance_data, &prepared_data.totals)
                 );
-                println!("{}", formatter.format_daily(&daily_data, &totals));
             }
+        } else if let Some(ref daily_data) = prepared_data.daily_data {
+            println!(
+                "{}",
+                formatter.format_daily(daily_data, &prepared_data.totals)
+            );
         }
 
         Ok(())
@@ -317,14 +340,51 @@ mod tests {
     use crate::cost_calculator::CostCalculator;
     use crate::pricing_fetcher::PricingFetcher;
     use crate::types::{ISOTimestamp, ModelName, SessionId, TokenCounts};
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
 
-    // Helper function to create a mock DataLoader for testing
+    /// Helper function to create a mock DataLoader for testing
+    ///
+    /// Attempts to create a real DataLoader for integration testing.
+    /// Returns None if Claude directories are not found, allowing tests to be skipped gracefully.
     async fn create_mock_data_loader() -> Option<Arc<DataLoader>> {
         // Try to create a real DataLoader, but return None if it fails
         match DataLoader::new().await {
             Ok(loader) => Some(Arc::new(loader)),
             Err(_) => None,
+        }
+    }
+
+    /// Helper function to set up test environment with common components
+    ///
+    /// Creates a test environment with mock data loader, pricing fetcher, cost calculator,
+    /// and aggregator. Returns None if Claude directories are not found.
+    ///
+    /// # Returns
+    /// * `Some((data_loader, aggregator, filter))` - Test components if setup succeeds
+    /// * `None` - If Claude directories are not found (for graceful test skipping)
+    async fn setup_test_environment() -> Option<(Arc<DataLoader>, Arc<Aggregator>, UsageFilter)> {
+        let data_loader = create_mock_data_loader().await?;
+        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
+        let filter = UsageFilter::new();
+        Some((data_loader, aggregator, filter))
+    }
+
+    // Helper function to handle UnknownModel errors in tests
+    fn handle_test_result<T>(result: crate::error::Result<T>, context: &str) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(e) => match e {
+                crate::error::CcstatError::UnknownModel(_) => {
+                    println!(
+                        "Test data contains unknown model in '{}' (expected in test environment): {}",
+                        context, e
+                    );
+                    None
+                }
+                _ => panic!("Unexpected error in {}: {}", context, e),
+            },
         }
     }
 
@@ -384,17 +444,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_monitor_with_different_modes() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        let filter = UsageFilter::new();
 
         // Test with JSON output
         let monitor_json = LiveMonitor::new(
@@ -441,17 +497,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_refresh_display_with_active_sessions() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        let filter = UsageFilter::new();
 
         let monitor = LiveMonitor::new(
             data_loader,
@@ -469,32 +521,18 @@ mod tests {
 
         // refresh_display might fail with unknown models in test data, but shouldn't panic
         // We accept UnknownModel errors since test data might contain future model names
-        if let Err(e) = result {
-            match e {
-                crate::error::CcstatError::UnknownModel(_) => {
-                    // This is acceptable in tests with real data that might have newer models
-                    println!(
-                        "Test data contains unknown model (expected in test environment): {}",
-                        e
-                    );
-                }
-                _ => panic!("refresh_display failed unexpectedly: {}", e),
-            }
-        }
+        handle_test_result(result, "refresh_display with active sessions");
     }
 
     #[tokio::test]
     async fn test_monitor_with_filters() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, _) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
 
         // Create filter with specific project
         let filter = UsageFilter::new().with_project("test-project".to_string());
@@ -526,17 +564,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_different_cost_modes() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        let filter = UsageFilter::new();
 
         // Test all cost modes
         let modes = vec![CostMode::Auto, CostMode::Calculate, CostMode::Display];
@@ -558,17 +592,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_interval_configuration() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        let filter = UsageFilter::new();
 
         // Test various interval configurations
         let intervals = vec![1, 5, 10, 30, 60];
@@ -651,17 +681,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_monitor_json_output_formatting() {
-        let data_loader = match create_mock_data_loader().await {
-            Some(loader) => loader,
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
             None => {
                 println!("Skipping test: No Claude directories found");
                 return;
             }
         };
-        let pricing_fetcher = Arc::new(PricingFetcher::new(true).await);
-        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-        let aggregator = Arc::new(Aggregator::new(cost_calculator, TimezoneConfig::default()));
-        let filter = UsageFilter::new();
 
         // Test with JSON output enabled
         let monitor = LiveMonitor::new(
@@ -680,5 +706,452 @@ mod tests {
 
         // In JSON mode, screen clearing should not happen
         // This is tested implicitly by the refresh_display method
+    }
+
+    #[tokio::test]
+    async fn test_refresh_display_json_mode() {
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Test with JSON output
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            true, // json_output
+            false,
+            5,
+            false,
+        );
+
+        // Test that refresh_display works in JSON mode
+        let result = monitor.refresh_display().await;
+
+        // Handle potential unknown model errors in test data
+        handle_test_result(result, "JSON mode");
+    }
+
+    #[tokio::test]
+    async fn test_refresh_display_instances_mode() {
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Test with instances mode enabled
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            false,
+            true, // instances mode
+            5,
+            false,
+        );
+
+        // Test that refresh_display works in instances mode
+        let result = monitor.refresh_display().await;
+
+        // Handle potential unknown model errors in test data
+        handle_test_result(result, "instances mode");
+    }
+
+    #[tokio::test]
+    async fn test_refresh_display_with_full_model_names() {
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Test with full model names enabled
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            true, // full_model_names
+        );
+
+        // Verify the setting
+        assert!(monitor.full_model_names);
+
+        // Test that refresh_display works with full model names
+        let result = monitor.refresh_display().await;
+
+        handle_test_result(result, "full model names");
+    }
+
+    #[tokio::test]
+    async fn test_monitor_with_date_filters() {
+        let (data_loader, aggregator, _) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Create filter with date range using fixed dates for deterministic testing
+        // Use fixed dates to ensure tests are reproducible regardless of when they're run
+        // This avoids failures due to system clock differences or date changes
+        let today = chrono::NaiveDate::from_ymd_opt(2024, 7, 15).unwrap();
+        let week_ago = today - chrono::Duration::days(7);
+        let filter = UsageFilter::new().with_since(week_ago).with_until(today);
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter.clone(),
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        // Test that prepare_data properly applies the date filters
+        if let Some(prepared_data) = handle_test_result(
+            monitor.prepare_data().await,
+            "prepare_data with date filters",
+        ) {
+            // Verify that all filtered entries are within the specified date range
+            for entry in &prepared_data.filtered_entries {
+                let entry_date = entry.timestamp.as_ref().date_naive();
+                assert!(
+                    entry_date >= week_ago && entry_date <= today,
+                    "Entry date {} is outside the filter range {} to {}",
+                    entry_date,
+                    week_ago,
+                    today
+                );
+            }
+
+            // If we have data, verify aggregation works correctly
+            if !prepared_data.filtered_entries.is_empty() {
+                // Check that daily_data (when not in instances mode) only contains dates within range
+                if let Some(daily_data) = prepared_data.daily_data {
+                    for daily in &daily_data {
+                        let date = daily.date.inner();
+                        assert!(
+                            date >= &week_ago && date <= &today,
+                            "Aggregated date {:?} is outside the filter range {} to {}",
+                            daily.date,
+                            week_ago,
+                            today
+                        );
+                    }
+                }
+
+                // Verify totals are calculated (check if any token counts are non-zero)
+                let has_tokens = prepared_data.totals.tokens.total() > 0;
+                assert!(has_tokens || prepared_data.filtered_entries.is_empty());
+            }
+
+            println!(
+                "Date filter test passed: {} entries filtered within date range",
+                prepared_data.filtered_entries.len()
+            );
+        }
+
+        // Also test that refresh_display still works with date filters
+        let result = monitor.refresh_display().await;
+        handle_test_result(result, "refresh_display with date filters");
+    }
+
+    #[tokio::test]
+    async fn test_monitor_refresh_display_combinations() {
+        let (data_loader, aggregator, _) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Test various combinations of settings
+        let test_cases = vec![
+            (true, true, CostMode::Auto, false),      // JSON + instances
+            (true, false, CostMode::Calculate, true), // JSON + full names
+            (false, true, CostMode::Auto, true), // Table + instances + full names (use Auto instead of Display)
+        ];
+
+        for (json_output, instances, cost_mode, full_model_names) in test_cases {
+            let filter = UsageFilter::new();
+            let monitor = LiveMonitor::new(
+                data_loader.clone(),
+                aggregator.clone(),
+                filter,
+                cost_mode,
+                json_output,
+                instances,
+                5,
+                full_model_names,
+            );
+
+            // Test refresh_display with each combination
+            let result = monitor.refresh_display().await;
+
+            handle_test_result(
+                result,
+                &format!(
+                    "json={}, instances={}, mode={:?}, full_names={}",
+                    json_output, instances, cost_mode, full_model_names
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn test_should_refresh_atomics() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // Test AtomicBool operations used in the monitor
+        let should_refresh = Arc::new(AtomicBool::new(true));
+
+        // Test initial state
+        assert!(should_refresh.load(Ordering::Acquire));
+
+        // Test store and load
+        should_refresh.store(false, Ordering::Release);
+        assert!(!should_refresh.load(Ordering::Acquire));
+
+        // Test multiple threads accessing the atomic
+        let should_refresh_clone = should_refresh.clone();
+        std::thread::spawn(move || {
+            should_refresh_clone.store(true, Ordering::Release);
+        })
+        .join()
+        .expect("Failed to join thread");
+
+        assert!(should_refresh.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_watcher_constants_validity() {
+        // Verify watcher constants make sense
+        assert!(WATCHER_POLL_INTERVAL < WATCHER_SHUTDOWN_TIMEOUT);
+        assert!(WATCHER_POLL_INTERVAL.as_millis() > 0);
+        assert!(WATCHER_SHUTDOWN_TIMEOUT.as_millis() > 0);
+
+        // Verify shutdown timeout is reasonable (not too long)
+        assert!(WATCHER_SHUTDOWN_TIMEOUT.as_millis() <= 1000);
+    }
+
+    #[tokio::test]
+    async fn test_active_session_cutoff_time() {
+        // Test the 5-minute active session cutoff logic using fixed time for deterministic testing
+        let now = chrono::Utc.with_ymd_and_hms(2024, 7, 15, 12, 0, 0).unwrap();
+        let active_cutoff = now - chrono::Duration::minutes(5);
+
+        // Create test entries with different timestamps
+        let recent_entry = UsageEntry {
+            session_id: SessionId::new("recent"),
+            timestamp: ISOTimestamp::new(now - chrono::Duration::minutes(2)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+
+        let old_entry = UsageEntry {
+            session_id: SessionId::new("old"),
+            timestamp: ISOTimestamp::new(now - chrono::Duration::minutes(10)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+
+        let boundary_entry = UsageEntry {
+            session_id: SessionId::new("boundary"),
+            timestamp: ISOTimestamp::new(active_cutoff + chrono::Duration::seconds(1)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: None,
+            project: None,
+            instance_id: None,
+        };
+
+        // Test active session detection
+        assert!(recent_entry.timestamp.as_ref() > &active_cutoff);
+        assert!(old_entry.timestamp.as_ref() <= &active_cutoff);
+        assert!(boundary_entry.timestamp.as_ref() > &active_cutoff);
+    }
+
+    #[tokio::test]
+    async fn test_monitor_error_recovery() {
+        // Test that the monitor can handle and recover from errors
+        let (data_loader, aggregator, _) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        // Create a filter that might cause issues (e.g., future dates)
+        let future_date = chrono::NaiveDate::from_ymd_opt(2099, 1, 1).unwrap();
+        let filter = UsageFilter::new().with_since(future_date);
+
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            CostMode::Auto,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        // This should not panic even with a future date filter
+        let result = monitor.refresh_display().await;
+
+        // The result should be Ok (possibly with no data) or an UnknownModel error
+        match result {
+            Ok(_) => {
+                // Successfully handled empty/filtered data
+            }
+            Err(crate::error::CcstatError::UnknownModel(_)) => {
+                // This is acceptable
+            }
+            Err(e) => {
+                panic!("Unexpected error type: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_monitor_error_and_edge_case_handling() {
+        // Test that the monitor can handle various error conditions and edge cases
+        // This simulates scenarios like empty data, concurrent refreshes, and invalid filters
+        let (data_loader, aggregator, filter) = match setup_test_environment().await {
+            Some(env) => env,
+            None => {
+                println!("Skipping test: No Claude directories found");
+                return;
+            }
+        };
+
+        let _monitor = LiveMonitor::new(
+            data_loader.clone(),
+            aggregator.clone(),
+            filter.clone(),
+            CostMode::Display,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        // Test 1: Monitor should handle empty data gracefully
+        let empty_filter =
+            UsageFilter::new().with_since(chrono::NaiveDate::from_ymd_opt(3000, 1, 1).unwrap()); // Far future date
+
+        let monitor_empty = LiveMonitor::new(
+            data_loader.clone(),
+            aggregator.clone(),
+            empty_filter,
+            CostMode::Display,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        let result = monitor_empty.prepare_data().await;
+        match result {
+            Ok(data) => {
+                assert!(
+                    data.filtered_entries.is_empty(),
+                    "Should have no entries for future date"
+                );
+                assert!(
+                    data.active_sessions.is_empty(),
+                    "Should have no active sessions"
+                );
+            }
+            Err(crate::error::CcstatError::UnknownModel(_)) => {
+                // This is acceptable if no data exists
+            }
+            Err(e) => {
+                panic!("Unexpected error: {}", e);
+            }
+        }
+
+        // Test 2: Monitor should handle rapid refresh calls without panic
+        let mut handles = vec![];
+        for _ in 0..3 {
+            let monitor_clone = LiveMonitor::new(
+                data_loader.clone(),
+                aggregator.clone(),
+                filter.clone(),
+                CostMode::Display,
+                false,
+                false,
+                5,
+                false,
+            );
+
+            let handle = tokio::spawn(async move { monitor_clone.refresh_display().await });
+            handles.push(handle);
+        }
+
+        // All concurrent refreshes should complete without panic
+        for handle in handles {
+            let result = handle.await;
+            assert!(result.is_ok(), "Concurrent refresh should not panic");
+        }
+
+        // Test 3: Monitor should handle invalid date ranges gracefully
+        let invalid_filter = UsageFilter::new()
+            .with_since(chrono::NaiveDate::from_ymd_opt(2024, 7, 20).unwrap())
+            .with_until(chrono::NaiveDate::from_ymd_opt(2024, 7, 10).unwrap()); // Until before since
+
+        let monitor_invalid = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            invalid_filter,
+            CostMode::Display,
+            false,
+            false,
+            5,
+            false,
+        );
+
+        let result = monitor_invalid.prepare_data().await;
+        match result {
+            Ok(data) => {
+                // Should handle invalid range by returning empty data
+                assert!(
+                    data.filtered_entries.is_empty(),
+                    "Invalid date range should yield no entries"
+                );
+            }
+            Err(crate::error::CcstatError::UnknownModel(_)) => {
+                // This is also acceptable
+            }
+            Err(e) => {
+                panic!("Should handle invalid date range gracefully: {}", e);
+            }
+        }
     }
 }

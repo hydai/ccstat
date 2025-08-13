@@ -147,6 +147,65 @@ impl TableFormatter {
     fn format_datetime_with_tz(dt: &chrono::DateTime<chrono::Utc>, tz: &chrono_tz::Tz) -> String {
         dt.with_timezone(tz).format("%Y-%m-%d %H:%M %Z").to_string()
     }
+
+    /// Format blocks with custom current time (for testing)
+    pub(crate) fn format_blocks_with_now(
+        &self,
+        data: &[SessionBlock],
+        tz: &chrono_tz::Tz,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> String {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+
+        table.set_titles(row![
+            b -> "Block Start",
+            b -> "Status",
+            b -> "Sessions",
+            b -> "Input",
+            b -> "Output",
+            b -> "Total Tokens",
+            b -> "Cost",
+            b -> "Time Remaining"
+        ]);
+
+        for block in data {
+            let status = if block.is_active {
+                "ACTIVE"
+            } else {
+                "Complete"
+            };
+            let time_remaining = if block.is_active {
+                let remaining = block.end_time - now;
+                if remaining.num_seconds() > 0 {
+                    format!(
+                        "{}h {}m",
+                        remaining.num_hours(),
+                        remaining.num_minutes() % 60
+                    )
+                } else {
+                    "Expired".to_string()
+                }
+            } else {
+                "-".to_string()
+            };
+
+            let formatted_start = Self::format_datetime_with_tz(&block.start_time, tz);
+
+            table.add_row(row![
+                formatted_start,
+                status,
+                c -> block.sessions.len(),
+                r -> Self::format_number(block.tokens.input_tokens),
+                r -> Self::format_number(block.tokens.output_tokens),
+                r -> Self::format_number(block.tokens.total()),
+                r -> Self::format_currency(block.total_cost),
+                time_remaining
+            ]);
+        }
+
+        table.to_string()
+    }
 }
 
 impl OutputFormatter for TableFormatter {
@@ -389,56 +448,7 @@ impl OutputFormatter for TableFormatter {
     }
 
     fn format_blocks(&self, data: &[SessionBlock], tz: &chrono_tz::Tz) -> String {
-        let mut table = Table::new();
-        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-
-        table.set_titles(row![
-            b -> "Block Start",
-            b -> "Status",
-            b -> "Sessions",
-            b -> "Input",
-            b -> "Output",
-            b -> "Total Tokens",
-            b -> "Cost",
-            b -> "Time Remaining"
-        ]);
-
-        for block in data {
-            let status = if block.is_active {
-                "ACTIVE"
-            } else {
-                "Complete"
-            };
-            let time_remaining = if block.is_active {
-                let remaining = block.end_time - chrono::Utc::now();
-                if remaining.num_seconds() > 0 {
-                    format!(
-                        "{}h {}m",
-                        remaining.num_hours(),
-                        remaining.num_minutes() % 60
-                    )
-                } else {
-                    "Expired".to_string()
-                }
-            } else {
-                "-".to_string()
-            };
-
-            let formatted_start = Self::format_datetime_with_tz(&block.start_time, tz);
-
-            table.add_row(row![
-                formatted_start,
-                status,
-                c -> block.sessions.len(),
-                r -> Self::format_number(block.tokens.input_tokens),
-                r -> Self::format_number(block.tokens.output_tokens),
-                r -> Self::format_number(block.tokens.total()),
-                r -> Self::format_currency(block.total_cost),
-                time_remaining
-            ]);
-        }
-
-        table.to_string()
+        self.format_blocks_with_now(data, tz, chrono::Utc::now())
     }
 }
 
@@ -672,12 +682,17 @@ pub fn get_formatter(json: bool, full_model_names: bool) -> Box<dyn OutputFormat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aggregation::{MonthlyUsage, SessionBlock, SessionUsage};
+    use crate::types::{DailyDate, ModelName, SessionId, TokenCounts};
+    use chrono::{NaiveDate, TimeZone, Utc};
 
     #[test]
     fn test_number_formatting() {
         assert_eq!(TableFormatter::format_number(1234567), "1,234,567");
         assert_eq!(TableFormatter::format_number(999), "999");
         assert_eq!(TableFormatter::format_number(0), "0");
+        assert_eq!(TableFormatter::format_number(1000000000), "1,000,000,000");
+        assert_eq!(TableFormatter::format_number(42), "42");
     }
 
     #[test]
@@ -685,5 +700,449 @@ mod tests {
         assert_eq!(TableFormatter::format_currency(12.345), "$12.35");
         assert_eq!(TableFormatter::format_currency(0.0), "$0.00");
         assert_eq!(TableFormatter::format_currency(1000.0), "$1000.00");
+        assert_eq!(TableFormatter::format_currency(0.001), "$0.00");
+        assert_eq!(TableFormatter::format_currency(999999.99), "$999999.99");
+    }
+
+    #[test]
+    fn test_get_formatter() {
+        // Test JSON formatter
+        let json_formatter = get_formatter(true, false);
+        assert!(
+            json_formatter
+                .format_daily(&[], &Totals::default())
+                .contains("\"daily\"")
+        );
+
+        // Test table formatter with full model names
+        let table_formatter = get_formatter(false, true);
+        let daily_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: 1.25,
+            models_used: vec!["claude-3-opus".to_string()],
+            entries: None,
+        }];
+        let totals = Totals::from_daily(&daily_data);
+        let output = table_formatter.format_daily(&daily_data, &totals);
+        assert!(output.contains("2024-01-01"));
+    }
+
+    #[test]
+    fn test_table_formatter_daily() {
+        let formatter = TableFormatter::new(false);
+
+        // Test with empty data
+        let empty_totals = Totals::default();
+        let empty_output = formatter.format_daily(&[], &empty_totals);
+        assert!(empty_output.contains("TOTAL"));
+
+        // Test with single day
+        let daily_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+            tokens: TokenCounts::new(1000, 500, 100, 50),
+            total_cost: 2.50,
+            models_used: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string()],
+            entries: None,
+        }];
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+
+        assert!(output.contains("2024-03-15"));
+        assert!(output.contains("1,000"));
+        assert!(output.contains("500"));
+        assert!(output.contains("$2.50"));
+        assert!(output.contains("TOTAL"));
+
+        // Test with multiple days
+        let multi_day_data = vec![
+            DailyUsage {
+                date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+                tokens: TokenCounts::new(1000, 500, 0, 0),
+                total_cost: 1.50,
+                models_used: vec!["claude-3-opus".to_string()],
+                entries: None,
+            },
+            DailyUsage {
+                date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()),
+                tokens: TokenCounts::new(2000, 1000, 200, 100),
+                total_cost: 3.00,
+                models_used: vec!["claude-3-sonnet".to_string()],
+                entries: None,
+            },
+        ];
+        let multi_totals = Totals::from_daily(&multi_day_data);
+        let multi_output = formatter.format_daily(&multi_day_data, &multi_totals);
+
+        assert!(multi_output.contains("2024-03-15"));
+        assert!(multi_output.contains("2024-03-16"));
+        assert!(multi_output.contains("3,000")); // Total input tokens
+    }
+
+    #[test]
+    fn test_table_formatter_daily_verbose() {
+        let formatter = TableFormatter::new(false);
+
+        // Create verbose entries
+        let timestamp = Utc.with_ymd_and_hms(2024, 3, 15, 10, 30, 0).unwrap();
+        let verbose_entry = crate::aggregation::VerboseEntry {
+            timestamp,
+            session_id: "test-session".to_string(),
+            model: "claude-3-opus".to_string(),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            cost: 0.25,
+        };
+
+        let daily_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+            tokens: TokenCounts::new(100, 50, 10, 5),
+            total_cost: 0.25,
+            models_used: vec!["claude-3-opus".to_string()],
+            entries: Some(vec![verbose_entry]),
+        }];
+
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+
+        // Verbose mode should show detailed entries
+        assert!(output.contains("=== 2024-03-15 ==="));
+        assert!(output.contains("test-session"));
+        assert!(output.contains("10:30:00"));
+        assert!(output.contains("Day Total"));
+        assert!(output.contains("OVERALL SUMMARY"));
+    }
+
+    #[test]
+    fn test_table_formatter_daily_by_instance() {
+        let formatter = TableFormatter::new(false);
+
+        let instance_data = vec![
+            DailyInstanceUsage {
+                date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+                instance_id: "instance-1".to_string(),
+                tokens: TokenCounts::new(1000, 500, 0, 0),
+                total_cost: 1.50,
+                models_used: vec!["claude-3-opus".to_string()],
+            },
+            DailyInstanceUsage {
+                date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+                instance_id: "instance-2".to_string(),
+                tokens: TokenCounts::new(2000, 1000, 100, 50),
+                total_cost: 3.00,
+                models_used: vec!["claude-3-sonnet".to_string()],
+            },
+        ];
+
+        let totals = Totals::from_daily_instances(&instance_data);
+        let output = formatter.format_daily_by_instance(&instance_data, &totals);
+
+        assert!(output.contains("instance-1"));
+        assert!(output.contains("instance-2"));
+        assert!(output.contains("2024-03-15"));
+        assert!(output.contains("3,000")); // Total input tokens
+        assert!(output.contains("$4.50")); // Total cost
+    }
+
+    #[test]
+    fn test_table_formatter_sessions() {
+        let formatter = TableFormatter::new(false);
+        let tz = chrono_tz::UTC;
+
+        let start_time = Utc.with_ymd_and_hms(2024, 3, 15, 10, 0, 0).unwrap();
+        let end_time = Utc.with_ymd_and_hms(2024, 3, 15, 12, 30, 0).unwrap();
+
+        let sessions = vec![SessionUsage {
+            session_id: SessionId::new("session-123"),
+            start_time,
+            end_time,
+            tokens: TokenCounts::new(5000, 2500, 500, 250),
+            total_cost: 7.50,
+            model: ModelName::new("claude-3-opus"),
+        }];
+
+        let totals = Totals::from_sessions(&sessions);
+        let output = formatter.format_sessions(&sessions, &totals, &tz);
+
+        assert!(output.contains("session-123"));
+        assert!(output.contains("2h 30m")); // Duration
+        assert!(output.contains("5,000")); // Input tokens
+        assert!(output.contains("$7.50"));
+        assert!(output.contains("Opus")); // Model name (shortened)
+    }
+
+    #[test]
+    fn test_table_formatter_monthly() {
+        let formatter = TableFormatter::new(true); // Test with full model names
+
+        let monthly_data = vec![
+            MonthlyUsage {
+                month: "2024-01".to_string(),
+                tokens: TokenCounts::new(100000, 50000, 10000, 5000),
+                total_cost: 150.00,
+                active_days: 15,
+            },
+            MonthlyUsage {
+                month: "2024-02".to_string(),
+                tokens: TokenCounts::new(200000, 100000, 20000, 10000),
+                total_cost: 300.00,
+                active_days: 20,
+            },
+        ];
+
+        let totals = Totals::from_monthly(&monthly_data);
+        let output = formatter.format_monthly(&monthly_data, &totals);
+
+        assert!(output.contains("2024-01"));
+        assert!(output.contains("2024-02"));
+        assert!(output.contains("100,000"));
+        assert!(output.contains("200,000"));
+        assert!(output.contains("$450.00")); // Total cost
+        assert!(output.contains("15")); // Active days
+        assert!(output.contains("20"));
+    }
+
+    #[test]
+    fn test_table_formatter_blocks() {
+        let formatter = TableFormatter::new(false);
+        let tz = chrono_tz::US::Eastern;
+
+        // Use fixed time for deterministic testing
+        let now = Utc.with_ymd_and_hms(2024, 7, 15, 12, 0, 0).unwrap();
+
+        // Create sessions for the blocks
+        let session1 = SessionUsage {
+            session_id: SessionId::new("session-1"),
+            start_time: now - chrono::Duration::hours(2),
+            end_time: now - chrono::Duration::hours(1),
+            tokens: TokenCounts::new(1500, 750, 150, 75),
+            total_cost: 2.25,
+            model: ModelName::new("claude-3-opus"),
+        };
+
+        let session2 = SessionUsage {
+            session_id: SessionId::new("session-2"),
+            start_time: now - chrono::Duration::hours(1),
+            end_time: now,
+            tokens: TokenCounts::new(1500, 750, 150, 75),
+            total_cost: 2.25,
+            model: ModelName::new("claude-3-sonnet"),
+        };
+
+        let session3 = SessionUsage {
+            session_id: SessionId::new("session-3"),
+            start_time: now - chrono::Duration::hours(10),
+            end_time: now - chrono::Duration::hours(9),
+            tokens: TokenCounts::new(1000, 500, 100, 50),
+            total_cost: 1.50,
+            model: ModelName::new("claude-3-haiku"),
+        };
+
+        let active_block = SessionBlock {
+            start_time: now - chrono::Duration::hours(2),
+            end_time: now + chrono::Duration::hours(3),
+            is_active: true,
+            sessions: vec![session1, session2],
+            tokens: TokenCounts::new(3000, 1500, 300, 150),
+            total_cost: 4.50,
+            warning: None,
+        };
+
+        let expired_block = SessionBlock {
+            start_time: now - chrono::Duration::hours(10),
+            end_time: now - chrono::Duration::hours(5),
+            is_active: false,
+            sessions: vec![session3],
+            tokens: TokenCounts::new(1000, 500, 100, 50),
+            total_cost: 1.50,
+            warning: None,
+        };
+
+        let blocks = vec![active_block, expired_block];
+        let output = formatter.format_blocks_with_now(&blocks, &tz, now);
+
+        assert!(output.contains("ACTIVE"));
+        assert!(output.contains("Complete"));
+        assert!(output.contains("3,000"));
+        assert!(output.contains("1,000"));
+        assert!(output.contains("$4.50"));
+        assert!(output.contains("$1.50"));
+        // Now we can reliably test time remaining with fixed timestamp
+        assert!(output.contains("3h 0m")); // Active block has 3 hours remaining
+    }
+
+    #[test]
+    fn test_json_formatter_daily() {
+        let formatter = JsonFormatter;
+
+        let daily_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+            tokens: TokenCounts::new(1000, 500, 100, 50),
+            total_cost: 2.50,
+            models_used: vec!["claude-3-opus".to_string()],
+            entries: None,
+        }];
+
+        let totals = Totals::from_daily(&daily_data);
+        let output = formatter.format_daily(&daily_data, &totals);
+
+        // Parse JSON to verify structure
+        let json: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON output");
+        assert_eq!(json["daily"][0]["date"], "2024-03-15");
+        assert_eq!(json["daily"][0]["tokens"]["input_tokens"], 1000);
+        assert_eq!(json["daily"][0]["total_cost"], 2.5);
+        assert_eq!(json["totals"]["total_cost"], 2.5);
+    }
+
+    #[test]
+    fn test_json_formatter_daily_by_instance() {
+        let formatter = JsonFormatter;
+
+        let instance_data = vec![DailyInstanceUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+            instance_id: "instance-1".to_string(),
+            tokens: TokenCounts::new(1000, 500, 0, 0),
+            total_cost: 1.50,
+            models_used: vec!["claude-3-opus".to_string()],
+        }];
+
+        let totals = Totals::from_daily_instances(&instance_data);
+        let output = formatter.format_daily_by_instance(&instance_data, &totals);
+
+        let json: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON output");
+        assert_eq!(json["daily_by_instance"][0]["instance_id"], "instance-1");
+        assert_eq!(json["daily_by_instance"][0]["tokens"]["input_tokens"], 1000);
+    }
+
+    #[test]
+    fn test_json_formatter_sessions() {
+        let formatter = JsonFormatter;
+        let tz = chrono_tz::UTC;
+
+        let start_time = Utc.with_ymd_and_hms(2024, 3, 15, 10, 0, 0).unwrap();
+        let end_time = Utc.with_ymd_and_hms(2024, 3, 15, 12, 30, 0).unwrap();
+
+        let sessions = vec![SessionUsage {
+            session_id: SessionId::new("session-123"),
+            start_time,
+            end_time,
+            tokens: TokenCounts::new(5000, 2500, 0, 0),
+            total_cost: 7.50,
+            model: ModelName::new("claude-3-opus"),
+        }];
+
+        let totals = Totals::from_sessions(&sessions);
+        let output = formatter.format_sessions(&sessions, &totals, &tz);
+
+        let json: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON output");
+        assert_eq!(json["sessions"][0]["session_id"], "session-123");
+        assert_eq!(json["sessions"][0]["duration_seconds"], 9000); // 2.5 hours
+        assert_eq!(json["sessions"][0]["total_cost"], 7.5);
+    }
+
+    #[test]
+    fn test_json_formatter_monthly() {
+        let formatter = JsonFormatter;
+
+        let monthly_data = vec![MonthlyUsage {
+            month: "2024-01".to_string(),
+            tokens: TokenCounts::new(100000, 50000, 0, 0),
+            total_cost: 150.00,
+            active_days: 15,
+        }];
+
+        let totals = Totals::from_monthly(&monthly_data);
+        let output = formatter.format_monthly(&monthly_data, &totals);
+
+        let json: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON output");
+        assert_eq!(json["monthly"][0]["month"], "2024-01");
+        assert_eq!(json["monthly"][0]["active_days"], 15);
+        assert_eq!(json["totals"]["total_cost"], 150.0);
+    }
+
+    #[test]
+    fn test_json_formatter_blocks() {
+        let formatter = JsonFormatter;
+        let tz = chrono_tz::UTC;
+
+        // Use fixed time for deterministic testing
+        let now = Utc.with_ymd_and_hms(2024, 7, 15, 12, 0, 0).unwrap();
+
+        let session = SessionUsage {
+            session_id: SessionId::new("session-1"),
+            start_time: now - chrono::Duration::hours(2),
+            end_time: now - chrono::Duration::hours(1),
+            tokens: TokenCounts::new(3000, 1500, 0, 0),
+            total_cost: 4.50,
+            model: ModelName::new("claude-3-opus"),
+        };
+
+        let block = SessionBlock {
+            start_time: now - chrono::Duration::hours(2),
+            end_time: now + chrono::Duration::hours(3),
+            is_active: true,
+            sessions: vec![session],
+            tokens: TokenCounts::new(3000, 1500, 0, 0),
+            total_cost: 4.50,
+            warning: None,
+        };
+
+        let blocks = vec![block];
+        let output = formatter.format_blocks(&blocks, &tz);
+
+        let json: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON output");
+        assert_eq!(json["blocks"][0]["is_active"], true);
+        assert_eq!(json["blocks"][0]["session_count"], 1);
+        assert_eq!(json["blocks"][0]["total_cost"], 4.5);
+    }
+
+    #[test]
+    fn test_datetime_formatting_with_timezone() {
+        let utc_time = Utc.with_ymd_and_hms(2024, 3, 15, 15, 30, 0).unwrap();
+
+        // Test with UTC
+        let utc_formatted = TableFormatter::format_datetime_with_tz(&utc_time, &chrono_tz::UTC);
+        assert!(utc_formatted.contains("2024-03-15 15:30"));
+        assert!(utc_formatted.contains("UTC"));
+
+        // Test with Eastern timezone
+        let est_formatted =
+            TableFormatter::format_datetime_with_tz(&utc_time, &chrono_tz::US::Eastern);
+        // On 2024-03-15, US/Eastern is in EDT (UTC-4)
+        assert!(est_formatted.contains("2024-03-15 11:30"));
+        assert!(est_formatted.contains("EDT"));
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        let formatter = TableFormatter::new(false);
+
+        // Test with zero tokens
+        let zero_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+            tokens: TokenCounts::new(0, 0, 0, 0),
+            total_cost: 0.0,
+            models_used: vec![],
+            entries: None,
+        }];
+        let zero_totals = Totals::from_daily(&zero_data);
+        let zero_output = formatter.format_daily(&zero_data, &zero_totals);
+        assert!(zero_output.contains("$0.00"));
+
+        // Test with very large numbers
+        let large_data = vec![DailyUsage {
+            date: DailyDate::new(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+            tokens: TokenCounts::new(999999999, 888888888, 777777777, 666666666),
+            total_cost: 9999999.99,
+            models_used: vec!["model".to_string()],
+            entries: None,
+        }];
+        let large_totals = Totals::from_daily(&large_data);
+        let large_output = formatter.format_daily(&large_data, &large_totals);
+        assert!(large_output.contains("999,999,999"));
     }
 }
