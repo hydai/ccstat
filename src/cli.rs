@@ -65,8 +65,8 @@ pub struct ModelDisplayArgs {
 /// Common performance optimization options
 #[derive(clap::Args, Debug)]
 pub struct PerformanceArgs {
-    /// Use parallel file processing
-    #[arg(long)]
+    /// [DEPRECATED] This flag is deprecated and will be removed in v0.3.0. Parallel processing is now always enabled.
+    #[arg(long, default_value_t = true, help = "[DEPRECATED] This flag has no effect. Parallel processing is always enabled.")]
     pub parallel: bool,
 
     /// Enable string interning for memory optimization

@@ -139,7 +139,8 @@ ccstat daily --watch
 ccstat daily --watch --interval 30
 
 # Performance options
-ccstat daily --parallel        # Enable parallel file processing
+ccstat daily                  # Parallel processing is always enabled
+ccstat daily --parallel       # [DEPRECATED] This flag has no effect (will be removed in v0.3.0)
 ccstat daily --intern         # Use string interning for memory efficiency
 ccstat daily --arena          # Use arena allocation
 
@@ -301,8 +302,8 @@ The statusline command is optimized for minimal memory footprint and fast respon
 Optimize for large datasets:
 
 ```bash
-# Enable parallel processing
-ccstat daily --parallel
+# Parallel processing is always enabled
+ccstat daily
 
 # Use string interning to reduce memory
 ccstat daily --intern
@@ -311,7 +312,9 @@ ccstat daily --intern
 ccstat daily --arena
 
 # Combine all optimizations
-ccstat daily --parallel --intern --arena
+ccstat daily --intern --arena
+
+# Note: --parallel flag is deprecated and has no effect (will be removed in v0.3.0)
 ```
 
 ## Output Examples
@@ -480,9 +483,10 @@ The project follows a modular architecture:
 - Check internet connection for latest pricing
 
 **Memory issues with large datasets:**
-- Use `--parallel` flag to enable parallel processing
+- Parallel processing is always enabled for better performance
 - Use `--intern` flag to reduce memory usage for repeated strings
 - Use `--arena` flag for more efficient memory allocation
+- Note: The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Debug Mode
 

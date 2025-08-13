@@ -57,7 +57,7 @@ ccstat daily [OPTIONS]
 - `--project <NAME>`: Filter by project name
 - `--mode <MODE>`: Cost calculation mode (auto/calculate/display)
 - `--verbose`: Show individual API calls
-- `--parallel`: Enable parallel processing
+- `--parallel`: [DEPRECATED] This flag has no effect (will be removed in v0.3.0)
 - `--intern`: Use string interning
 - `--arena`: Use arena allocation
 - `--by-instance`: Group by instance ID
@@ -77,8 +77,10 @@ ccstat daily --since 2024-01-01 --until 2024-01-31 --project my-project
 # Detailed breakdown with individual calls
 ccstat daily --verbose
 
-# Optimized for large datasets
-ccstat daily --parallel --intern --arena
+# Optimized for large datasets (parallel is always enabled)
+ccstat daily --intern --arena
+
+# Note: --parallel flag is deprecated and has no effect
 ```
 
 ### Monthly Command
@@ -252,13 +254,13 @@ ccstat daily --json | jq -r '
 For large datasets (millions of entries):
 
 ```bash
-# Maximum performance mode
-ccstat daily --parallel --intern --arena
+# Maximum performance mode (parallel is always enabled)
+ccstat daily --intern --arena
 
 # Benchmark different modes
-time ccstat daily > /dev/null
-time ccstat daily --parallel > /dev/null
-time ccstat daily --parallel --intern --arena > /dev/null
+time ccstat daily > /dev/null                   # Standard mode (parallel)
+time ccstat daily --intern > /dev/null          # With string interning
+time ccstat daily --intern --arena > /dev/null  # All optimizations
 ```
 
 ### Custom Date Ranges
@@ -359,9 +361,10 @@ A: Common reasons:
 ### Q: How can I reduce memory usage for large datasets?
 
 A: Use the optimization flags:
-- `--parallel`: Process data in parallel
+- Parallel processing is always enabled (as of v0.2.2)
 - `--intern`: Deduplicate strings in memory
 - `--arena`: Use arena allocation for better memory layout
+- Note: The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Q: Can I use ccstat in scripts?
 
