@@ -93,7 +93,7 @@ async fn test_edge_case_fixtures() {
     let empty_entries = vec![];
     let (_temp_dir, loader) = common::create_test_data_dir(empty_entries).await;
 
-    let entries = loader.load_usage_entries();
+    let entries = loader.load_usage_entries_parallel();
     let all_entries: Vec<UsageEntry> = entries
         .collect::<Vec<_>>()
         .await
@@ -112,7 +112,7 @@ async fn test_edge_case_fixtures() {
     ];
 
     let (_temp_dir2, loader2) = common::create_test_data_dir(single_entry).await;
-    let entries2 = loader2.load_usage_entries();
+    let entries2 = loader2.load_usage_entries_parallel();
     let all_entries2: Vec<UsageEntry> = entries2
         .collect::<Vec<_>>()
         .await
@@ -138,7 +138,7 @@ async fn test_large_dataset_fixture() {
     let (_temp_dir, loader) = common::create_test_data_dir(entries).await;
 
     // Test loading performance
-    let load_entries = loader.load_usage_entries();
+    let load_entries = loader.load_usage_entries_parallel();
     let all_entries: Vec<UsageEntry> = load_entries
         .collect::<Vec<_>>()
         .await
@@ -173,7 +173,7 @@ async fn test_billing_block_fixtures() {
     );
 
     // Load and aggregate by sessions
-    let load_entries = loader.load_usage_entries();
+    let load_entries = loader.load_usage_entries_parallel();
     let session_data = aggregator
         .aggregate_sessions(load_entries, CostMode::Auto)
         .await
@@ -210,7 +210,7 @@ async fn test_pattern_fixtures() {
     );
 
     // Load and aggregate daily
-    let load_entries = loader.load_usage_entries();
+    let load_entries = loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(load_entries, CostMode::Auto)
         .await
@@ -238,7 +238,7 @@ async fn test_invalid_data_fixtures() {
     let (_temp_dir, loader) = common::create_test_data_dir(entries).await;
 
     // Should handle invalid entries gracefully
-    let load_entries = loader.load_usage_entries();
+    let load_entries = loader.load_usage_entries_parallel();
     let all_entries: Vec<UsageEntry> = load_entries
         .collect::<Vec<_>>()
         .await
@@ -327,7 +327,7 @@ async fn test_timezone_fixtures() {
         let cost_calculator = common::create_test_environment().await;
         let aggregator = Aggregator::new(cost_calculator, tz_config);
 
-        let load_entries = loader.load_usage_entries();
+        let load_entries = loader.load_usage_entries_parallel();
         let daily_data = aggregator
             .aggregate_daily(load_entries, CostMode::Auto)
             .await
@@ -355,7 +355,7 @@ async fn test_concurrent_fixtures() {
             let (_temp_dir, loader) = common::create_test_data_dir(entries_clone).await;
 
             // Load and count entries
-            let load_entries = loader.load_usage_entries();
+            let load_entries = loader.load_usage_entries_parallel();
             let count = load_entries
                 .collect::<Vec<_>>()
                 .await
@@ -388,7 +388,7 @@ async fn test_memory_efficiency_fixture() {
     let (_temp_dir, loader) = common::create_test_data_dir(entries).await;
 
     // Stream processing should handle this efficiently
-    let stream = loader.load_usage_entries();
+    let stream = loader.load_usage_entries_parallel();
     let count = stream
         .collect::<Vec<_>>()
         .await

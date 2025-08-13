@@ -22,7 +22,7 @@
 //! let data_loader = DataLoader::new().await?;
 //!
 //! // Stream usage entries
-//! let entries = data_loader.load_usage_entries();
+//! let entries = data_loader.load_usage_entries_parallel();
 //! tokio::pin!(entries);
 //! while let Some(result) = entries.next().await {
 //!     let entry = result?;
@@ -557,7 +557,10 @@ impl DataLoader {
     /// # Ok(())
     /// # }
     /// ```
-    #[deprecated(since = "0.2.2", note = "Use load_usage_entries_parallel() instead. This method now internally calls load_usage_entries_parallel().")]
+    #[deprecated(
+        since = "0.2.2",
+        note = "Use load_usage_entries_parallel() instead. This method now internally calls load_usage_entries_parallel()."
+    )]
     pub fn load_usage_entries(&self) -> impl Stream<Item = Result<UsageEntry>> + '_ {
         // Now just calls the parallel version
         self.load_usage_entries_parallel()

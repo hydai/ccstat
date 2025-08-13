@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     println!("Filtering data for January 2024...\n");
 
     // Load and filter entries
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let filtered_entries = filter.filter_stream(entries).await;
 
     // Aggregate filtered data

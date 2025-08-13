@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load usage entries
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
 
     // Aggregate by day
     println!("\nDaily Usage Summary:");

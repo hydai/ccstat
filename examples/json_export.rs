@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
 
     // Load and aggregate data
     println!("Loading usage data...");
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
 
     // Get daily data
     let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
