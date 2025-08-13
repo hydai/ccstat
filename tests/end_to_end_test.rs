@@ -54,7 +54,7 @@ async fn test_full_month_workflow() {
     );
 
     // Load all data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let all_entries: Vec<UsageEntry> = entries
         .collect::<Vec<_>>()
         .await
@@ -135,7 +135,7 @@ async fn test_filtering_workflow() {
         .with_since(NaiveDate::from_ymd_opt(2024, 1, 10).unwrap())
         .with_until(NaiveDate::from_ymd_opt(2024, 1, 20).unwrap());
 
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let filtered_entries: Vec<UsageEntry> = filter
         .filter_stream(entries)
         .await
@@ -159,7 +159,7 @@ async fn test_filtering_workflow() {
 
     // Test project filtering
     let project_filter = UsageFilter::new().with_project("project-alpha".to_string());
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let project_entries: Vec<UsageEntry> = project_filter
         .filter_stream(entries)
         .await
@@ -193,7 +193,7 @@ async fn test_cost_calculation_workflow() {
 
     // Test different cost modes
     for mode in &[CostMode::Auto, CostMode::Calculate, CostMode::Display] {
-        let entries = data_loader.load_usage_entries();
+        let entries = data_loader.load_usage_entries_parallel();
         let daily_data = aggregator.aggregate_daily(entries, *mode).await.unwrap();
 
         // Verify costs are calculated
@@ -264,7 +264,7 @@ async fn test_timezone_aware_aggregation() {
     for (tz_name, tz_config) in timezones {
         let aggregator = Aggregator::new(cost_calculator.clone(), tz_config);
 
-        let entries = data_loader.load_usage_entries();
+        let entries = data_loader.load_usage_entries_parallel();
         let daily_data = aggregator
             .aggregate_daily(entries, CostMode::Auto)
             .await
@@ -300,7 +300,7 @@ async fn test_output_format_workflow() {
     );
 
     // Generate data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await
@@ -356,7 +356,7 @@ async fn test_instance_grouping_workflow() {
     );
 
     // Test instance-based aggregation
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let instance_data = aggregator
         .aggregate_daily_by_instance(entries, CostMode::Auto)
         .await
@@ -401,7 +401,7 @@ async fn test_performance_with_large_dataset() {
     // Measure performance of loading and aggregating
     let start = std::time::Instant::now();
 
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await

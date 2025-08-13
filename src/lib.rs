@@ -28,7 +28,7 @@
 //!     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 //!
 //!     // Load and aggregate usage data
-//!     let entries = data_loader.load_usage_entries();
+//!     let entries = data_loader.load_usage_entries_parallel();
 //!     let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
 //!
 //!     Ok(())

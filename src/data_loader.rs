@@ -22,7 +22,7 @@
 //! let data_loader = DataLoader::new().await?;
 //!
 //! // Stream usage entries
-//! let entries = data_loader.load_usage_entries();
+//! let entries = data_loader.load_usage_entries_parallel();
 //! tokio::pin!(entries);
 //! while let Some(result) = entries.next().await {
 //!     let entry = result?;
@@ -530,9 +530,9 @@ impl DataLoader {
 
     /// Load usage entries as an async stream
     ///
-    /// This method provides a stream of usage entries parsed from all discovered
-    /// JSONL files. It handles large files efficiently by streaming rather than
-    /// loading everything into memory.
+    /// **DEPRECATED**: This method now internally calls `load_usage_entries_parallel()`.
+    /// Direct use of `load_usage_entries_parallel()` is recommended.
+    /// This method will be removed in v0.3.0.
     ///
     /// # Returns
     ///
@@ -557,22 +557,13 @@ impl DataLoader {
     /// # Ok(())
     /// # }
     /// ```
+    #[deprecated(
+        since = "0.2.2",
+        note = "Use load_usage_entries_parallel() instead. This method now internally calls load_usage_entries_parallel()."
+    )]
     pub fn load_usage_entries(&self) -> impl Stream<Item = Result<UsageEntry>> + '_ {
-        async_stream::stream! {
-            let files = match self.find_jsonl_files().await {
-                Ok(files) => files,
-                Err(e) => {
-                    yield Err(e);
-                    return;
-                }
-            };
-
-            let entries = self.process_jsonl_files(files, "Loading usage data");
-            tokio::pin!(entries);
-            while let Some(result) = entries.next().await {
-                yield result;
-            }
-        }
+        // Now just calls the parallel version
+        self.load_usage_entries_parallel()
     }
 
     /// Parse a single JSONL file as a stream
@@ -1039,7 +1030,7 @@ mod tests {
         };
 
         let entries: Vec<_> = loader_with_interning
-            .load_usage_entries()
+            .load_usage_entries_parallel()
             .collect::<Vec<_>>()
             .await
             .into_iter()
@@ -1072,7 +1063,7 @@ mod tests {
         };
 
         let entries: Vec<_> = loader_with_arena
-            .load_usage_entries()
+            .load_usage_entries_parallel()
             .collect::<Vec<_>>()
             .await
             .into_iter()
@@ -1111,7 +1102,7 @@ mod tests {
         };
 
         let entries: Vec<_> = loader
-            .load_usage_entries()
+            .load_usage_entries_parallel()
             .collect::<Vec<_>>()
             .await
             .into_iter()

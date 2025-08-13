@@ -11,11 +11,8 @@ use ccstat::{
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
     timezone::TimezoneConfig,
-    types::UsageEntry,
 };
 use clap::Parser;
-use futures::Stream;
-use std::pin::Pin;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -44,15 +41,11 @@ async fn init_data_loader(
         .with_arena(perf_args.arena))
 }
 
-/// Helper function to select the appropriate entry stream based on the parallel flag.
-fn load_entries<'a>(
-    data_loader: &'a DataLoader,
-    perf_args: &ccstat::cli::PerformanceArgs,
-) -> Pin<Box<dyn Stream<Item = Result<UsageEntry>> + 'a>> {
-    if perf_args.parallel {
-        Box::pin(data_loader.load_usage_entries_parallel())
-    } else {
-        Box::pin(data_loader.load_usage_entries())
+/// Helper function to check for deprecated flags and show warnings
+fn check_deprecated_flags(perf_args: &ccstat::cli::PerformanceArgs) {
+    if !perf_args.parallel {
+        eprintln!("Warning: --parallel=false flag is deprecated and will be removed in v0.3.0");
+        eprintln!("         Parallel processing is now always enabled for better performance.");
     }
 }
 
@@ -96,6 +89,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running daily usage report");
+            check_deprecated_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
@@ -143,7 +137,7 @@ async fn main() -> Result<()> {
                 // Handle instances flag
                 if instances {
                     // Load and filter entries, then group by instance
-                    let entries = load_entries(&data_loader, &performance_args);
+                    let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let instance_data = aggregator
                         .aggregate_daily_by_instance(filtered_entries, mode)
@@ -156,7 +150,7 @@ async fn main() -> Result<()> {
                     );
                 } else {
                     // Load and filter entries, then aggregate normally
-                    let entries = load_entries(&data_loader, &performance_args);
+                    let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
                         .aggregate_daily_verbose(filtered_entries, mode, verbose)
@@ -178,6 +172,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running monthly usage report");
+            check_deprecated_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -200,7 +195,7 @@ async fn main() -> Result<()> {
             }
 
             // Load entries and aggregate data
-            let entries = load_entries(&data_loader, &performance_args);
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
             let daily_data = aggregator.aggregate_daily(entries, mode).await?;
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
@@ -242,6 +237,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running session usage report");
+            check_deprecated_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -266,7 +262,7 @@ async fn main() -> Result<()> {
             filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Load, filter and aggregate data
-            let entries = load_entries(&data_loader, &performance_args);
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
             let filtered_entries = filter.filter_stream(entries).await;
             let session_data = aggregator
                 .aggregate_sessions(filtered_entries, mode)
@@ -292,6 +288,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running billing blocks report");
+            check_deprecated_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -302,7 +299,7 @@ async fn main() -> Result<()> {
                 create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Load entries and aggregate sessions
-            let entries = load_entries(&data_loader, &performance_args);
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
             let session_data = aggregator.aggregate_sessions(entries, mode).await?;
 
             // Create billing blocks
@@ -406,8 +403,8 @@ async fn main() -> Result<()> {
             let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default())
                 .with_progress(show_progress);
 
-            // Load entries
-            let entries = data_loader.load_usage_entries();
+            // Load entries (always use parallel loading)
+            let entries = data_loader.load_usage_entries_parallel();
 
             // Aggregate data
             let daily_data = aggregator

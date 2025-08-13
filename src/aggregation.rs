@@ -40,7 +40,7 @@
 //! let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 //!
 //! let data_loader = DataLoader::new().await?;
-//! let entries = data_loader.load_usage_entries();
+//! let entries = data_loader.load_usage_entries_parallel();
 //!
 //! // Aggregate by day
 //! let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;

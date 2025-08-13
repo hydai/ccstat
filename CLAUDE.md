@@ -83,7 +83,7 @@ cargo run -- daily --project my-project
 ### Performance Options
 - `--watch` / `-w` - Enable live monitoring mode with auto-refresh
 - `--interval` - Refresh interval in seconds for watch mode (default: 5)
-- `--parallel` - Use parallel file processing for better performance
+- `--parallel` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Parallel processing is always enabled.
 - `--intern` - Enable string interning for memory optimization
 - `--arena` - Enable arena allocation for parsing
 
@@ -130,9 +130,10 @@ cargo run -- daily --project my-project
 The project includes several performance optimization features:
 
 ### Parallel Processing
-- Use `--parallel` flag to enable parallel file processing
+- Parallel file processing is always enabled (as of v0.2.2)
 - Significantly improves performance for large datasets
 - Automatically utilizes available CPU cores
+- The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Memory Optimization
 - **String Interning** (`--intern`): Reduces memory usage by sharing identical strings

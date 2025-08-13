@@ -88,7 +88,7 @@ async fn test_daily_command() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and aggregate daily data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await
@@ -128,7 +128,7 @@ async fn test_monthly_command() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and aggregate monthly data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await
@@ -164,7 +164,7 @@ async fn test_session_command() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and aggregate session data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let session_data = aggregator
         .aggregate_sessions(entries, CostMode::Auto)
         .await
@@ -204,7 +204,7 @@ async fn test_blocks_command() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and create billing blocks
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let session_data = aggregator
         .aggregate_sessions(entries, CostMode::Auto)
         .await
@@ -266,7 +266,7 @@ async fn test_filter_with_project() {
     let filter = UsageFilter::new().with_project("project-a".to_string());
 
     // Load and filter entries
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let filtered_entries: Vec<_> = filter
         .filter_stream(entries)
         .await
@@ -298,7 +298,7 @@ async fn test_filter_with_date_range() {
         .with_until(NaiveDate::from_ymd_opt(2024, 1, 31).unwrap());
 
     // Load and filter entries
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let filtered_entries: Vec<_> = filter
         .filter_stream(entries)
         .await
@@ -345,7 +345,7 @@ async fn test_cost_modes() {
 
     // Test all cost modes
     for mode in &[CostMode::Auto, CostMode::Calculate, CostMode::Display] {
-        let entries = data_loader.load_usage_entries();
+        let entries = data_loader.load_usage_entries_parallel();
         let daily_data = aggregator.aggregate_daily(entries, *mode).await.unwrap();
 
         // All modes should produce results
@@ -385,7 +385,7 @@ async fn test_instance_grouping() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load and aggregate by instance
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let instance_data = aggregator
         .aggregate_daily_by_instance(entries, CostMode::Auto)
         .await
@@ -423,7 +423,7 @@ async fn test_output_formatters() {
     let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
     // Load data
-    let entries = data_loader.load_usage_entries();
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator
         .aggregate_daily(entries, CostMode::Auto)
         .await

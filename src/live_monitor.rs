@@ -220,7 +220,7 @@ impl LiveMonitor {
     /// Prepare data for display by loading, filtering and aggregating
     pub async fn prepare_data(&self) -> Result<PreparedData> {
         // Load and aggregate data
-        let entries = self.data_loader.load_usage_entries();
+        let entries = self.data_loader.load_usage_entries_parallel();
 
         // Apply filters and collect entries
         let filtered_entries: Vec<UsageEntry> = entries
