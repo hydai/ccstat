@@ -41,6 +41,18 @@ async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Res
         .with_arena(arena))
 }
 
+/// Helper function to select the appropriate entry stream based on the parallel flag.
+fn load_entries<'a>(
+    data_loader: &'a DataLoader,
+    parallel: bool,
+) -> Pin<Box<dyn Stream<Item = Result<UsageEntry>> + 'a>> {
+    if parallel {
+        Box::pin(data_loader.load_usage_entries_parallel())
+    } else {
+        Box::pin(data_loader.load_usage_entries())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Parse CLI arguments first to check for quiet flag
@@ -135,12 +147,7 @@ async fn main() -> Result<()> {
                 // Handle instances flag
                 if instances {
                     // Load and filter entries, then group by instance
-                    let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
-                        if performance_args.parallel {
-                            Box::pin(data_loader.load_usage_entries_parallel())
-                        } else {
-                            Box::pin(data_loader.load_usage_entries())
-                        };
+                    let entries = load_entries(&data_loader, performance_args.parallel);
                     let filtered_entries = filter.filter_stream(entries).await;
                     let instance_data = aggregator
                         .aggregate_daily_by_instance(filtered_entries, mode)
@@ -153,12 +160,7 @@ async fn main() -> Result<()> {
                     );
                 } else {
                     // Load and filter entries, then aggregate normally
-                    let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
-                        if performance_args.parallel {
-                            Box::pin(data_loader.load_usage_entries_parallel())
-                        } else {
-                            Box::pin(data_loader.load_usage_entries())
-                        };
+                    let entries = load_entries(&data_loader, performance_args.parallel);
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
                         .aggregate_daily_verbose(filtered_entries, mode, verbose)
@@ -207,12 +209,7 @@ async fn main() -> Result<()> {
             }
 
             // Load entries and aggregate data
-            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
-                if performance_args.parallel {
-                    Box::pin(data_loader.load_usage_entries_parallel())
-                } else {
-                    Box::pin(data_loader.load_usage_entries())
-                };
+            let entries = load_entries(&data_loader, performance_args.parallel);
             let daily_data = aggregator.aggregate_daily(entries, mode).await?;
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
@@ -283,12 +280,7 @@ async fn main() -> Result<()> {
             filter = filter.with_timezone(aggregator.timezone_config().tz);
 
             // Load, filter and aggregate data
-            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
-                if performance_args.parallel {
-                    Box::pin(data_loader.load_usage_entries_parallel())
-                } else {
-                    Box::pin(data_loader.load_usage_entries())
-                };
+            let entries = load_entries(&data_loader, performance_args.parallel);
             let filtered_entries = filter.filter_stream(entries).await;
             let session_data = aggregator
                 .aggregate_sessions(filtered_entries, mode)
@@ -329,12 +321,7 @@ async fn main() -> Result<()> {
                 create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
 
             // Load entries and aggregate sessions
-            let entries: Pin<Box<dyn Stream<Item = Result<UsageEntry>> + '_>> =
-                if performance_args.parallel {
-                    Box::pin(data_loader.load_usage_entries_parallel())
-                } else {
-                    Box::pin(data_loader.load_usage_entries())
-                };
+            let entries = load_entries(&data_loader, performance_args.parallel);
             let session_data = aggregator.aggregate_sessions(entries, mode).await?;
 
             // Create billing blocks
