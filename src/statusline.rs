@@ -19,6 +19,9 @@ use tokio::io::{self, AsyncReadExt};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+/// Duration of a billing block in hours (as per Claude's billing model)
+const BILLING_BLOCK_DURATION_HOURS: i64 = 5;
+
 /// Input structure from Claude Code
 #[derive(Debug, Deserialize)]
 pub struct StatuslineInput {
@@ -297,7 +300,7 @@ impl StatuslineHandler {
 
         // Calculate remaining time in billing block (optimized)
         let remaining_time = if let Some(start_time) = session_start_time {
-            self.calculate_remaining_time_optimized(start_time, &session_id)
+            self.calculate_remaining_time_optimized(start_time, &session_id, Utc::now())
                 .await?
         } else {
             RemainingTime::NoActiveBlock
@@ -485,11 +488,11 @@ impl StatuslineHandler {
         &self,
         session_start_time: chrono::DateTime<Utc>,
         _session_id: &SessionId,
+        now: chrono::DateTime<Utc>,
     ) -> Result<RemainingTime> {
         // Determine the billing block for this session
-        // Billing blocks are 5-hour periods as per Claude's billing model
-        let now = Utc::now();
-        let block_duration = Duration::hours(5);
+        // Billing blocks are fixed-duration periods as per Claude's billing model
+        let block_duration = Duration::hours(BILLING_BLOCK_DURATION_HOURS);
 
         // Align block start to hour boundary (XX:00) similar to aggregation.rs
         let block_start = Self::truncate_to_hour(session_start_time);
@@ -557,6 +560,7 @@ pub async fn run(monthly_fee: f64, no_color: bool, show_date: bool, show_git: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{TimeZone, Utc};
 
     #[test]
     fn test_extract_model_name() {
@@ -576,14 +580,471 @@ mod tests {
             StatuslineHandler::extract_model_name("some-other-model"),
             "model"
         );
+        assert_eq!(
+            StatuslineHandler::extract_model_name("gpt-4-turbo"),
+            "turbo"
+        );
+        assert_eq!(
+            StatuslineHandler::extract_model_name("claude/opus-20240229"),
+            "Opus" // Contains "opus" so returns "Opus"
+        );
     }
 
     #[test]
     fn test_days_in_month() {
+        // Test regular months
         assert_eq!(StatuslineHandler::days_in_month(2024, 1), 31);
-        assert_eq!(StatuslineHandler::days_in_month(2024, 2), 29); // Leap year
-        assert_eq!(StatuslineHandler::days_in_month(2023, 2), 28); // Non-leap year
         assert_eq!(StatuslineHandler::days_in_month(2024, 4), 30);
         assert_eq!(StatuslineHandler::days_in_month(2024, 12), 31);
+        assert_eq!(StatuslineHandler::days_in_month(2024, 7), 31);
+        assert_eq!(StatuslineHandler::days_in_month(2024, 9), 30);
+        assert_eq!(StatuslineHandler::days_in_month(2024, 11), 30);
+
+        // Test leap year calculation for February
+        assert_eq!(StatuslineHandler::days_in_month(2024, 2), 29); // Leap year
+        assert_eq!(StatuslineHandler::days_in_month(2023, 2), 28); // Non-leap year
+        assert_eq!(StatuslineHandler::days_in_month(2000, 2), 29); // Divisible by 400
+        assert_eq!(StatuslineHandler::days_in_month(1900, 2), 28); // Divisible by 100 but not 400
+        assert_eq!(StatuslineHandler::days_in_month(2004, 2), 29); // Divisible by 4
+        assert_eq!(StatuslineHandler::days_in_month(2100, 2), 28); // Divisible by 100 but not 400
+    }
+
+    #[test]
+    fn test_truncate_to_hour() {
+        let timestamp = Utc.with_ymd_and_hms(2024, 3, 15, 14, 37, 23).unwrap();
+        let truncated = StatuslineHandler::truncate_to_hour(timestamp);
+
+        assert_eq!(truncated.hour(), 14);
+        assert_eq!(truncated.minute(), 0);
+        assert_eq!(truncated.second(), 0);
+        assert_eq!(truncated.nanosecond(), 0);
+
+        // Test already truncated timestamp
+        let already_truncated = Utc.with_ymd_and_hms(2024, 3, 15, 10, 0, 0).unwrap();
+        let result = StatuslineHandler::truncate_to_hour(already_truncated);
+        assert_eq!(result, already_truncated);
+    }
+
+    /// Helper function to create StatuslineHandler for tests
+    ///
+    /// Creates a test handler with the specified configuration.
+    /// Returns None if Claude directories are not found (for graceful test skipping).
+    ///
+    /// # Arguments
+    /// * `monthly_fee` - Monthly subscription fee in USD
+    /// * `no_color` - Whether to disable colored output
+    /// * `show_date` - Whether to show date in statusline
+    /// * `show_git` - Whether to show git branch in statusline
+    async fn create_test_handler(
+        monthly_fee: f64,
+        no_color: bool,
+        show_date: bool,
+        show_git: bool,
+    ) -> Option<StatuslineHandler> {
+        match StatuslineHandler::new(monthly_fee, no_color, show_date, show_git).await {
+            Ok(h) => Some(h),
+            Err(_) => {
+                println!("Skipping test: Unable to create handler");
+                None
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calculate_remaining_time_optimized() {
+        // Create a handler for testing
+        let handler = match create_test_handler(200.0, false, false, false).await {
+            Some(h) => h,
+            None => return,
+        };
+
+        let session_id = SessionId::new("test-session");
+        // Use a fixed timestamp for deterministic testing
+        let fixed_now = Utc.with_ymd_and_hms(2024, 1, 15, 14, 30, 0).unwrap();
+
+        // Test active block (session started 2 hours ago)
+        let session_start = fixed_now - chrono::Duration::hours(2);
+        let remaining = handler
+            .calculate_remaining_time_optimized(session_start, &session_id, fixed_now)
+            .await
+            .unwrap();
+
+        match remaining {
+            RemainingTime::TimeLeft(duration) => {
+                // Session started at 12:30, block starts at 12:00 (truncated to hour)
+                // Block ends at 17:00 (5 hours later)
+                // Current time is 14:30, so 2.5 hours remain
+                assert_eq!(duration.num_hours(), 2);
+                assert_eq!(duration.num_minutes(), 150); // 2 hours 30 minutes
+            }
+            _ => panic!("Expected TimeLeft, got {:?}", remaining),
+        }
+
+        // Test expired block (session started 6 hours ago)
+        let expired_start = fixed_now - chrono::Duration::hours(6);
+        let expired_remaining = handler
+            .calculate_remaining_time_optimized(expired_start, &session_id, fixed_now)
+            .await
+            .unwrap();
+
+        match expired_remaining {
+            RemainingTime::Expired => (),
+            _ => panic!("Expected Expired, got {:?}", expired_remaining),
+        }
+
+        // Test edge case: session just started
+        let just_started = fixed_now - chrono::Duration::minutes(5);
+        let new_remaining = handler
+            .calculate_remaining_time_optimized(just_started, &session_id, fixed_now)
+            .await
+            .unwrap();
+
+        match new_remaining {
+            RemainingTime::TimeLeft(duration) => {
+                // Session started at 14:25, block starts at 14:00 (truncated to hour)
+                // Block ends at 19:00 (5 hours later)
+                // Current time is 14:30, so 4.5 hours remain
+                assert_eq!(duration.num_hours(), 4);
+                assert_eq!(duration.num_minutes(), 270); // 4 hours 30 minutes
+            }
+            _ => panic!("Expected TimeLeft for new session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_statusline_handler_creation() {
+        // Test with different configurations
+        let configs = vec![
+            (200.0, false, false, false),
+            (100.0, true, false, false),
+            (300.0, false, true, false),
+            (150.0, false, false, true),
+            (250.0, true, true, true),
+        ];
+
+        for (monthly_fee, no_color, show_date, show_git) in configs {
+            match StatuslineHandler::new(monthly_fee, no_color, show_date, show_git).await {
+                Ok(handler) => {
+                    assert_eq!(handler.monthly_fee, monthly_fee);
+                    assert_eq!(handler.no_color, no_color);
+                    assert_eq!(handler.show_date, show_date);
+                    assert_eq!(handler.show_git, show_git);
+                }
+                Err(_) => {
+                    // This is expected in CI environments without Claude directories
+                    println!("Handler creation failed (expected in CI)");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_format_model() {
+        // We need to test the color application logic without actually creating the handler
+        let _colors = ColorConfig::new();
+
+        // Test model name extraction with various formats
+        let test_cases = vec![
+            ("Claude 3 Opus", "Opus"),
+            ("Claude 3.5 Sonnet", "Sonnet"),
+            ("claude-3-haiku-20240307", "Haiku"),
+            ("gemini-pro", "pro"),
+            ("gpt-4", "4"),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = StatuslineHandler::extract_model_name(input);
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_color_config() {
+        let config = ColorConfig::new();
+
+        // Verify color values are correctly set
+        match config.model {
+            Color::TrueColor { r, g, b } => {
+                assert_eq!(r, 175);
+                assert_eq!(g, 135);
+                assert_eq!(b, 255);
+            }
+            _ => panic!("Expected TrueColor for model"),
+        }
+
+        match config.cost {
+            Color::TrueColor { r, g, b } => {
+                assert_eq!(r, 255);
+                assert_eq!(g, 175);
+                assert_eq!(b, 95);
+            }
+            _ => panic!("Expected TrueColor for cost"),
+        }
+    }
+
+    #[test]
+    fn test_remaining_time_enum() {
+        // Test the RemainingTime enum variants
+        let no_block = RemainingTime::NoActiveBlock;
+        let expired = RemainingTime::Expired;
+        let time_left = RemainingTime::TimeLeft(chrono::Duration::hours(3));
+
+        // Test pattern matching
+        match no_block {
+            RemainingTime::NoActiveBlock => (),
+            _ => panic!("Expected NoActiveBlock"),
+        }
+
+        match expired {
+            RemainingTime::Expired => (),
+            _ => panic!("Expected Expired"),
+        }
+
+        match time_left {
+            RemainingTime::TimeLeft(d) => assert_eq!(d.num_hours(), 3),
+            _ => panic!("Expected TimeLeft"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_format_cost() {
+        let handler = match create_test_handler(200.0, true, false, false).await {
+            Some(h) => h,
+            None => return,
+        };
+
+        // Test with positive cost
+        let cost_text = handler.format_cost(12.34);
+        assert_eq!(cost_text, "$12.34");
+
+        // Test with zero cost
+        let zero_text = handler.format_cost(0.0);
+        assert_eq!(zero_text, "no session");
+
+        // Test with small cost
+        let small_text = handler.format_cost(0.01);
+        assert_eq!(small_text, "$0.01");
+
+        // Test with large cost
+        let large_text = handler.format_cost(999.99);
+        assert_eq!(large_text, "$999.99");
+    }
+
+    #[tokio::test]
+    async fn test_format_percentage() {
+        let handler = match create_test_handler(200.0, true, false, false).await {
+            Some(h) => h,
+            None => return,
+        };
+
+        // Test various percentage thresholds
+        assert_eq!(handler.format_percentage(50.0), "50.0%");
+        assert_eq!(handler.format_percentage(79.9), "79.9%");
+        assert_eq!(handler.format_percentage(80.0), "80.0%");
+        assert_eq!(handler.format_percentage(119.9), "119.9%");
+        assert_eq!(handler.format_percentage(120.0), "120.0%");
+        assert_eq!(handler.format_percentage(149.9), "149.9%");
+        assert_eq!(handler.format_percentage(150.0), "150.0%");
+        assert_eq!(handler.format_percentage(200.0), "200.0%");
+        assert_eq!(handler.format_percentage(-1.0), "N/A");
+    }
+
+    #[tokio::test]
+    async fn test_format_remaining_time() {
+        let handler = match create_test_handler(200.0, true, false, false).await {
+            Some(h) => h,
+            None => return,
+        };
+
+        // Test no active block
+        let no_block = RemainingTime::NoActiveBlock;
+        assert_eq!(handler.format_remaining_time(&no_block), "no block");
+
+        // Test expired
+        let expired = RemainingTime::Expired;
+        assert_eq!(handler.format_remaining_time(&expired), "expired");
+
+        // Test with hours and minutes
+        let time_3h_30m = RemainingTime::TimeLeft(chrono::Duration::minutes(210));
+        assert_eq!(handler.format_remaining_time(&time_3h_30m), "3h 30m left");
+
+        // Test with only minutes
+        let time_45m = RemainingTime::TimeLeft(chrono::Duration::minutes(45));
+        assert_eq!(handler.format_remaining_time(&time_45m), "45m left");
+
+        // Test with exactly 1 hour
+        let time_1h = RemainingTime::TimeLeft(chrono::Duration::hours(1));
+        assert_eq!(handler.format_remaining_time(&time_1h), "1h 0m left");
+    }
+
+    /// RAII guard for colored output override
+    struct ColoredOverrideGuard {
+        was_set: bool,
+    }
+
+    impl ColoredOverrideGuard {
+        fn new(enable: bool) -> Self {
+            colored::control::set_override(enable);
+            Self { was_set: true }
+        }
+    }
+
+    impl Drop for ColoredOverrideGuard {
+        fn drop(&mut self) {
+            if self.was_set {
+                colored::control::unset_override();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_apply_color() {
+        // Test with colors disabled
+        let handler_no_color = match StatuslineHandler::new(200.0, true, false, false).await {
+            Ok(h) => h,
+            Err(_) => {
+                println!("Skipping test: Unable to create handler");
+                return;
+            }
+        };
+
+        let text = "test text";
+        let colored_text = handler_no_color.apply_color(text, Color::Red);
+        assert_eq!(colored_text, text); // Should return plain text when no_color is true
+
+        // Test with colors enabled
+        // Force color output to ensure deterministic testing
+        let _guard = ColoredOverrideGuard::new(true);
+
+        let handler_color = match create_test_handler(200.0, false, false, false).await {
+            Some(h) => h,
+            None => {
+                return;
+            }
+        };
+
+        let colored_text_enabled = handler_color.apply_color(text, Color::Red);
+
+        // Verify that ANSI color codes are present
+        assert!(
+            colored_text_enabled.contains('\x1b'),
+            "The output string should contain ANSI color codes"
+        );
+        assert_ne!(
+            colored_text_enabled, text,
+            "The colored output should be different from the input text"
+        );
+
+        // Guard will automatically clean up when dropped
+    }
+
+    #[test]
+    fn test_statusline_input_deserialization() {
+        // Test basic input
+        let json = r#"{
+            "session_id": "test-123",
+            "model": {
+                "id": "claude-3-opus",
+                "display_name": "Claude 3 Opus"
+            }
+        }"#;
+
+        let input: StatuslineInput =
+            serde_json::from_str(json).expect("Failed to deserialize StatuslineInput");
+        assert_eq!(input.session_id, "test-123");
+        assert_eq!(input.model.id, "claude-3-opus");
+        assert_eq!(input.model.display_name, "Claude 3 Opus");
+        assert!(input.workspace.is_none());
+        assert!(input.transcript_path.is_none());
+        assert!(input.cwd.is_none());
+
+        // Test with workspace info
+        let json_with_workspace = r#"{
+            "session_id": "test-456",
+            "model": {
+                "id": "claude-3-sonnet",
+                "display_name": "Claude 3 Sonnet"
+            },
+            "workspace": {
+                "current_dir": "/home/user/project",
+                "project_dir": "/home/user/project"
+            },
+            "cwd": "/home/user/project/src"
+        }"#;
+
+        let input_workspace: StatuslineInput = serde_json::from_str(json_with_workspace)
+            .expect("Failed to deserialize StatuslineInput with workspace");
+        assert_eq!(input_workspace.session_id, "test-456");
+        assert!(input_workspace.workspace.is_some());
+        assert_eq!(
+            input_workspace
+                .workspace
+                .as_ref()
+                .expect("Workspace should be present")
+                .current_dir,
+            Some("/home/user/project".to_string())
+        );
+        assert_eq!(
+            input_workspace.cwd,
+            Some("/home/user/project/src".to_string())
+        );
+    }
+
+    #[test]
+    fn test_workspace_info_deserialization() {
+        let json = r#"{
+            "current_dir": "/path/to/current",
+            "project_dir": "/path/to/project"
+        }"#;
+
+        let workspace: WorkspaceInfo =
+            serde_json::from_str(json).expect("Failed to deserialize WorkspaceInfo");
+        assert_eq!(workspace.current_dir, Some("/path/to/current".to_string()));
+        assert_eq!(workspace.project_dir, Some("/path/to/project".to_string()));
+
+        // Test with null values
+        let json_nulls = r#"{
+            "current_dir": null,
+            "project_dir": null
+        }"#;
+
+        let workspace_nulls: WorkspaceInfo = serde_json::from_str(json_nulls)
+            .expect("Failed to deserialize WorkspaceInfo with nulls");
+        assert!(workspace_nulls.current_dir.is_none());
+        assert!(workspace_nulls.project_dir.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_read_input_invalid_json() {
+        // This test would require mocking stdin, which is complex
+        // Instead, we validate that the JSON parsing works correctly
+        let invalid_json = "not json";
+        let result: std::result::Result<StatuslineInput, serde_json::Error> =
+            serde_json::from_str(invalid_json);
+        assert!(result.is_err());
+
+        let missing_fields = "{}";
+        let result: std::result::Result<StatuslineInput, serde_json::Error> =
+            serde_json::from_str(missing_fields);
+        assert!(result.is_err());
+
+        let partial_json = r#"{"session_id": "test"}"#;
+        let result: std::result::Result<StatuslineInput, serde_json::Error> =
+            serde_json::from_str(partial_json);
+        assert!(result.is_err()); // Missing required model field
+    }
+
+    #[test]
+    fn test_edge_cases_model_names() {
+        // Test edge cases for model name extraction
+        assert_eq!(StatuslineHandler::extract_model_name(""), "");
+        assert_eq!(StatuslineHandler::extract_model_name("OPUS"), "Opus");
+        assert_eq!(StatuslineHandler::extract_model_name("SoNnEt"), "Sonnet");
+        assert_eq!(StatuslineHandler::extract_model_name("haiku"), "Haiku");
+        assert_eq!(StatuslineHandler::extract_model_name("-"), "");
+        assert_eq!(StatuslineHandler::extract_model_name("model-"), "");
+        assert_eq!(StatuslineHandler::extract_model_name("/"), "");
+        assert_eq!(StatuslineHandler::extract_model_name("a/b/c/d"), "d");
+        assert_eq!(StatuslineHandler::extract_model_name("a-b-c-d"), "d");
     }
 }

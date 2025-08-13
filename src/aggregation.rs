@@ -4,6 +4,23 @@
 //! meaningful summaries like daily usage, monthly rollups, session statistics,
 //! and billing blocks.
 //!
+//! # Cloning Strategy
+//!
+//! This module follows a deliberate cloning strategy to balance performance and simplicity:
+//!
+//! - **Entry References**: Methods take `&UsageEntry` to avoid unnecessary moves of large structs.
+//! - **Model Names**: We clone `ModelName` strings when inserting into HashSets/Maps because:
+//!   - Model names are typically small strings (e.g., "claude-3-opus")
+//!   - There are only a few dozen unique model names at most
+//!   - The alternative (Arc or string interning) adds complexity for minimal benefit
+//! - **Stream Processing**: When processing streams, we clone entries individually rather than
+//!   cloning entire collections, which reduces peak memory usage for large datasets.
+//!
+//! Future optimization opportunities (if profiling shows bottlenecks):
+//! - Use the existing string interning infrastructure in `string_pool.rs` for model names
+//! - Switch to `Arc<ModelName>` for shared ownership without cloning
+//! - Implement zero-copy aggregation using lifetimes (complex but most efficient)
+//!
 //! # Examples
 //!
 //! ```no_run
@@ -237,7 +254,7 @@ impl DailyAccumulator {
         }
     }
 
-    fn add_entry(&mut self, entry: UsageEntry, calculated_cost: f64) {
+    fn add_entry(&mut self, entry: &UsageEntry, calculated_cost: f64) {
         self.tokens += entry.tokens;
         self.cost += calculated_cost;
         self.models.insert(entry.model.clone());
@@ -284,7 +301,7 @@ impl SessionAccumulator {
         }
     }
 
-    fn add_entry(&mut self, entry: UsageEntry, calculated_cost: f64) {
+    fn add_entry(&mut self, entry: &UsageEntry, calculated_cost: f64) {
         let timestamp = entry.timestamp.inner();
 
         // Update time bounds
@@ -299,7 +316,7 @@ impl SessionAccumulator {
         self.cost += calculated_cost;
 
         if self.primary_model.is_none() {
-            self.primary_model = Some(entry.model);
+            self.primary_model = Some(entry.model.clone());
         }
     }
 
@@ -389,7 +406,7 @@ impl Aggregator {
             daily_map
                 .entry((date, instance_id.clone()))
                 .or_insert_with(|| DailyAccumulator::new(false))
-                .add_entry(entry, cost);
+                .add_entry(&entry, cost);
 
             count += 1;
             if let Some(ref pb) = progress {
@@ -464,7 +481,7 @@ impl Aggregator {
             daily_map
                 .entry(date)
                 .or_insert_with(|| DailyAccumulator::new(verbose))
-                .add_entry(entry, cost);
+                .add_entry(&entry, cost);
 
             count += 1;
             if let Some(ref pb) = progress {
@@ -525,7 +542,7 @@ impl Aggregator {
             session_map
                 .entry(session_id)
                 .or_insert_with(SessionAccumulator::new)
-                .add_entry(entry, cost);
+                .add_entry(&entry, cost);
 
             count += 1;
             if let Some(ref pb) = progress {
@@ -715,7 +732,7 @@ mod tests {
             instance_id: None,
         };
 
-        acc.add_entry(entry, 0.01);
+        acc.add_entry(&entry, 0.01);
         assert_eq!(acc.tokens.input_tokens, 100);
         assert_eq!(acc.cost, 0.01);
         assert_eq!(acc.models.len(), 1);
@@ -735,7 +752,7 @@ mod tests {
             instance_id: None,
         };
 
-        acc.add_entry(entry, 0.01);
+        acc.add_entry(&entry, 0.01);
         assert_eq!(acc.tokens.input_tokens, 100);
         assert_eq!(acc.cost, 0.01);
         assert_eq!(acc.models.len(), 1);
