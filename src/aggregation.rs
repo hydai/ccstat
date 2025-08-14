@@ -711,6 +711,15 @@ impl Totals {
         }
         totals
     }
+
+    pub fn from_blocks(blocks: &[SessionBlock]) -> Self {
+        let mut totals = Self::default();
+        for block in blocks {
+            totals.tokens += block.tokens;
+            totals.total_cost += block.total_cost;
+        }
+        totals
+    }
 }
 
 #[cfg(test)]

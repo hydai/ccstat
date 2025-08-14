@@ -77,6 +77,14 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub arena: bool,
 
+    /// Enable live monitoring mode (auto-refresh on changes)
+    #[arg(long, short = 'w', global = true)]
+    pub watch: bool,
+
+    /// Refresh interval in seconds for watch mode (default: 5)
+    #[arg(long, default_value = "5", global = true)]
+    pub interval: u64,
+
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -93,14 +101,6 @@ pub enum Command {
         /// Show per-instance breakdown
         #[arg(long, short = 'i')]
         instances: bool,
-
-        /// Enable live monitoring mode
-        #[arg(long, short = 'w')]
-        watch: bool,
-
-        /// Refresh interval in seconds (default: 5)
-        #[arg(long, default_value = "5")]
-        interval: u64,
 
         /// Show detailed token information per entry
         #[arg(long, short = 'd')]
