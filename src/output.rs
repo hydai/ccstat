@@ -170,7 +170,9 @@ impl TableFormatter {
         ]);
 
         for block in data {
-            let status = if block.is_active {
+            let status = if block.is_gap {
+                "GAP"
+            } else if block.is_active {
                 "ACTIVE"
             } else {
                 "Complete"
@@ -612,6 +614,7 @@ impl OutputFormatter for JsonFormatter {
                 "start_time": b.start_time.to_rfc3339(),
                 "end_time": b.end_time.to_rfc3339(),
                 "is_active": b.is_active,
+                "is_gap": b.is_gap,
                 "session_count": b.sessions.len(),
                 "tokens": {
                     "input_tokens": b.tokens.input_tokens,
@@ -622,6 +625,7 @@ impl OutputFormatter for JsonFormatter {
                 },
                 "total_cost": b.total_cost,
                 "sessions": b.sessions.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>(),
+                "models_used": &b.models_used,
             })).collect::<Vec<_>>()
         });
 
@@ -940,26 +944,47 @@ mod tests {
         let active_block = SessionBlock {
             start_time: now - chrono::Duration::hours(2),
             end_time: now + chrono::Duration::hours(3),
+            actual_end_time: Some(now - chrono::Duration::minutes(30)),
             is_active: true,
+            is_gap: false,
             sessions: vec![session1, session2],
             tokens: TokenCounts::new(3000, 1500, 300, 150),
             total_cost: 4.50,
+            models_used: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string()],
             warning: None,
         };
 
         let expired_block = SessionBlock {
             start_time: now - chrono::Duration::hours(10),
             end_time: now - chrono::Duration::hours(5),
+            actual_end_time: Some(now - chrono::Duration::hours(5) - chrono::Duration::minutes(30)),
             is_active: false,
+            is_gap: false,
             sessions: vec![session3],
             tokens: TokenCounts::new(1000, 500, 100, 50),
             total_cost: 1.50,
+            models_used: vec!["claude-3-haiku".to_string()],
             warning: None,
         };
 
-        let blocks = vec![active_block, expired_block];
+        // Create a gap block for testing
+        let gap_block = SessionBlock {
+            start_time: now - chrono::Duration::hours(20),
+            end_time: now - chrono::Duration::hours(15),
+            actual_end_time: None,
+            is_active: false,
+            is_gap: true,
+            sessions: vec![],
+            tokens: TokenCounts::new(0, 0, 0, 0),
+            total_cost: 0.0,
+            models_used: vec![],
+            warning: None,
+        };
+
+        let blocks = vec![gap_block, active_block, expired_block];
         let output = formatter.format_blocks_with_now(&blocks, &tz, now);
 
+        assert!(output.contains("GAP"));
         assert!(output.contains("ACTIVE"));
         assert!(output.contains("Complete"));
         assert!(output.contains("3,000"));
@@ -1083,10 +1108,13 @@ mod tests {
         let block = SessionBlock {
             start_time: now - chrono::Duration::hours(2),
             end_time: now + chrono::Duration::hours(3),
+            actual_end_time: Some(now - chrono::Duration::hours(1)),
             is_active: true,
+            is_gap: false,
             sessions: vec![session],
             tokens: TokenCounts::new(3000, 1500, 0, 0),
             total_cost: 4.50,
+            models_used: vec!["claude-3-opus".to_string()],
             warning: None,
         };
 

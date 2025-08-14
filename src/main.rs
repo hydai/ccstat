@@ -261,15 +261,14 @@ async fn main() -> Result<()> {
                 );
                 monitor.run().await?;
             } else {
-                // Load and filter entries, then aggregate sessions
+                // Load and filter entries, then create billing blocks directly from entries
                 let entries = Box::pin(data_loader.load_usage_entries_parallel());
                 let filtered_entries = filter.filter_stream(entries).await;
-                let session_data = aggregator
-                    .aggregate_sessions(filtered_entries, cli.mode)
-                    .await?;
 
-                // Create billing blocks
-                let mut blocks = Aggregator::create_billing_blocks(&session_data);
+                // Create billing blocks directly from entries (5 hour default)
+                let mut blocks = aggregator
+                    .create_billing_blocks_from_entries(filtered_entries, cli.mode, 5.0)
+                    .await?;
 
                 // Apply filters
                 filter_blocks(&mut blocks, *active, *recent);
