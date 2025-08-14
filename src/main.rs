@@ -1,7 +1,9 @@
 //! ccstat - Analyze Claude Code usage data from local JSONL files
 
 use ccstat::{
-    aggregation::{Aggregator, Totals},
+    aggregation::{
+        Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_monthly_data,
+    },
     cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
@@ -17,6 +19,10 @@ use clap::Parser;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Approximate maximum tokens for a 5-hour billing block
+/// This is an empirical value based on typical usage patterns
+const APPROX_MAX_TOKENS_PER_BLOCK: f64 = 10_000_000.0;
 
 /// Helper function to create an aggregator with timezone configuration
 fn create_aggregator_with_timezone(
@@ -67,87 +73,7 @@ async fn main() -> Result<()> {
             instances,
             detailed,
         }) => {
-            info!("Running daily usage report");
-
-            let instances = *instances;
-            let detailed = *detailed;
-
-            // Initialize components with progress bars enabled for terminal output
-            let show_progress =
-                !cli.json && !cli.watch && is_terminal::is_terminal(std::io::stdout());
-            let data_loader =
-                Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
-            let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
-            let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Arc::new(create_aggregator_with_timezone(
-                cost_calculator,
-                show_progress,
-                cli.timezone.as_deref(),
-                cli.utc,
-            )?);
-
-            // Build filter
-            let mut filter = UsageFilter::new();
-
-            if let Some(since_str) = &cli.since {
-                let since_date = parse_date_filter(since_str)?;
-                filter = filter.with_since(since_date);
-            }
-            if let Some(until_str) = &cli.until {
-                let until_date = parse_date_filter(until_str)?;
-                filter = filter.with_until(until_date);
-            }
-            if let Some(project_name) = &cli.project {
-                filter = filter.with_project(project_name.clone());
-            }
-            // Apply timezone to filter
-            filter = filter.with_timezone(aggregator.timezone_config().tz);
-
-            // Check if we're in watch mode
-            if cli.watch {
-                info!("Starting live monitoring mode");
-                let monitor = LiveMonitor::new(
-                    data_loader,
-                    aggregator,
-                    filter,
-                    None, // No month filter for daily
-                    cli.mode,
-                    cli.json,
-                    CommandType::Daily {
-                        instances,
-                        detailed,
-                    },
-                    cli.interval,
-                    cli.full_model_names,
-                );
-                monitor.run().await?;
-            } else {
-                // Handle instances flag
-                if instances {
-                    // Load and filter entries, then group by instance
-                    let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                    let filtered_entries = filter.filter_stream(entries).await;
-                    let instance_data = aggregator
-                        .aggregate_daily_by_instance(filtered_entries, cli.mode)
-                        .await?;
-                    let totals = Totals::from_daily_instances(&instance_data);
-                    let formatter = get_formatter(cli.json, cli.full_model_names);
-                    println!(
-                        "{}",
-                        formatter.format_daily_by_instance(&instance_data, &totals)
-                    );
-                } else {
-                    // Load and filter entries, then aggregate normally
-                    let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                    let filtered_entries = filter.filter_stream(entries).await;
-                    let daily_data = aggregator
-                        .aggregate_daily_detailed(filtered_entries, cli.mode, detailed)
-                        .await?;
-                    let totals = Totals::from_daily(&daily_data);
-                    let formatter = get_formatter(cli.json, cli.full_model_names);
-                    println!("{}", formatter.format_daily(&daily_data, &totals));
-                }
-            }
+            handle_daily_command(&cli, *instances, *detailed).await?;
         }
 
         Some(Command::Monthly) => {
@@ -203,21 +129,7 @@ async fn main() -> Result<()> {
                 let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
                 // Apply month filter to aggregated monthly data
-                monthly_data.retain(|monthly| {
-                    // Parse month string (YYYY-MM) to check filter
-                    if let Ok((year, month)) = monthly
-                        .month
-                        .split_once('-')
-                        .and_then(|(y, m)| Some((y.parse::<i32>().ok()?, m.parse::<u32>().ok()?)))
-                        .ok_or(())
-                    {
-                        // Create a date for the first day of the month to check filter
-                        if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1) {
-                            return month_filter.matches_date(&date);
-                        }
-                    }
-                    false
-                });
+                filter_monthly_data(&mut monthly_data, &month_filter);
 
                 let mut totals = Totals::default();
                 for monthly in &monthly_data {
@@ -352,72 +264,15 @@ async fn main() -> Result<()> {
                 let mut blocks = Aggregator::create_billing_blocks(&session_data);
 
                 // Apply filters
-                if *active {
-                    blocks.retain(|b| b.is_active);
-                }
-
-                if *recent {
-                    let cutoff = chrono::Utc::now() - chrono::Duration::days(1);
-                    blocks.retain(|b| b.start_time > cutoff);
-                }
+                filter_blocks(&mut blocks, *active, *recent);
 
                 // Apply token limit warnings
                 if let Some(limit_str) = token_limit {
-                    // Parse token limit (can be a number or percentage like "80%")
-                    let (limit_value, is_percentage) = if limit_str.ends_with('%') {
-                        let value =
-                            limit_str
-                                .trim_end_matches('%')
-                                .parse::<f64>()
-                                .map_err(|_| {
-                                    ccstat::error::CcstatError::InvalidDate(format!(
-                                        "Invalid token limit: {limit_str}"
-                                    ))
-                                })?;
-                        (value / 100.0, true)
-                    } else {
-                        let value = limit_str.parse::<u64>().map_err(|_| {
-                            ccstat::error::CcstatError::InvalidDate(format!(
-                                "Invalid token limit: {limit_str}"
-                            ))
-                        })?;
-                        (value as f64, false)
-                    };
-
-                    // Apply warnings to blocks
-                    for block in &mut blocks {
-                        if block.is_active {
-                            let total_tokens = block.tokens.total();
-                            let threshold = if is_percentage {
-                                // Assuming 5-hour block has a typical max of ~10M tokens
-                                10_000_000.0 * limit_value
-                            } else {
-                                limit_value
-                            };
-
-                            if total_tokens as f64 >= threshold {
-                                block.warning = Some(format!(
-                                    "⚠️  Block has used {} tokens, exceeding threshold of {}",
-                                    total_tokens,
-                                    if is_percentage {
-                                        format!(
-                                            "{}% (~{:.0} tokens)",
-                                            (limit_value * 100.0) as u32,
-                                            threshold
-                                        )
-                                    } else {
-                                        format!("{} tokens", threshold as u64)
-                                    }
-                                ));
-                            } else if total_tokens as f64 >= threshold * 0.8 {
-                                block.warning = Some(format!(
-                                    "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
-                                    total_tokens,
-                                    ((total_tokens as f64 / threshold) * 100.0) as u32
-                                ));
-                            }
-                        }
-                    }
+                    apply_token_limit_warnings(
+                        &mut blocks,
+                        limit_str,
+                        APPROX_MAX_TOKENS_PER_BLOCK,
+                    )?;
                 }
 
                 // Format and output
@@ -441,71 +296,90 @@ async fn main() -> Result<()> {
 
         None => {
             // Default to daily report
-            info!("No command specified, running daily report");
+            info!("No command specified, defaulting to daily report");
+            handle_daily_command(&cli, false, false).await?;
+        }
+    }
 
-            let instances = false;
-            let detailed = false;
+    Ok(())
+}
 
-            // Initialize components with progress bars enabled for terminal output
-            let show_progress =
-                !cli.json && !cli.watch && is_terminal::is_terminal(std::io::stdout());
-            let data_loader =
-                Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
-            let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
-            let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Arc::new(create_aggregator_with_timezone(
-                cost_calculator,
-                show_progress,
-                cli.timezone.as_deref(),
-                cli.utc,
-            )?);
+/// Handle daily command logic - shared between explicit daily command and default behavior
+async fn handle_daily_command(cli: &Cli, instances: bool, detailed: bool) -> Result<()> {
+    info!("Running daily usage report");
 
-            // Build filter
-            let mut filter = UsageFilter::new();
+    // Initialize components with progress bars enabled for terminal output
+    let show_progress = !cli.json && !cli.watch && is_terminal::is_terminal(std::io::stdout());
+    let data_loader = Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
+    let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+    let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+    let aggregator = Arc::new(create_aggregator_with_timezone(
+        cost_calculator,
+        show_progress,
+        cli.timezone.as_deref(),
+        cli.utc,
+    )?);
 
-            if let Some(since_str) = &cli.since {
-                let since_date = parse_date_filter(since_str)?;
-                filter = filter.with_since(since_date);
-            }
-            if let Some(until_str) = &cli.until {
-                let until_date = parse_date_filter(until_str)?;
-                filter = filter.with_until(until_date);
-            }
-            if let Some(project_name) = &cli.project {
-                filter = filter.with_project(project_name.clone());
-            }
-            // Apply timezone to filter
-            filter = filter.with_timezone(aggregator.timezone_config().tz);
+    // Build filter
+    let mut filter = UsageFilter::new();
 
-            // Check if we're in watch mode
-            if cli.watch {
-                info!("Starting live monitoring mode");
-                let monitor = LiveMonitor::new(
-                    data_loader,
-                    aggregator,
-                    filter,
-                    None, // No month filter for daily
-                    cli.mode,
-                    cli.json,
-                    CommandType::Daily {
-                        instances,
-                        detailed,
-                    },
-                    cli.interval,
-                    cli.full_model_names,
-                );
-                monitor.run().await?;
-            } else {
-                // Load and filter entries, then aggregate normally
-                let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                let filtered_entries = filter.filter_stream(entries).await;
-                let daily_data = aggregator
-                    .aggregate_daily_detailed(filtered_entries, cli.mode, detailed)
-                    .await?;
-                let totals = Totals::from_daily(&daily_data);
-                let formatter = get_formatter(cli.json, cli.full_model_names);
-                println!("{}", formatter.format_daily(&daily_data, &totals));
-            }
+    if let Some(since_str) = &cli.since {
+        let since_date = parse_date_filter(since_str)?;
+        filter = filter.with_since(since_date);
+    }
+    if let Some(until_str) = &cli.until {
+        let until_date = parse_date_filter(until_str)?;
+        filter = filter.with_until(until_date);
+    }
+    if let Some(project_name) = &cli.project {
+        filter = filter.with_project(project_name.clone());
+    }
+    // Apply timezone to filter
+    filter = filter.with_timezone(aggregator.timezone_config().tz);
+
+    // Check if we're in watch mode
+    if cli.watch {
+        info!("Starting live monitoring mode");
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            None, // No month filter for daily
+            cli.mode,
+            cli.json,
+            CommandType::Daily {
+                instances,
+                detailed,
+            },
+            cli.interval,
+            cli.full_model_names,
+        );
+        monitor.run().await?;
+    } else {
+        // Handle instances flag
+        if instances {
+            // Load and filter entries, then group by instance
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
+            let filtered_entries = filter.filter_stream(entries).await;
+            let instance_data = aggregator
+                .aggregate_daily_by_instance(filtered_entries, cli.mode)
+                .await?;
+            let totals = Totals::from_daily_instances(&instance_data);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
+            println!(
+                "{}",
+                formatter.format_daily_by_instance(&instance_data, &totals)
+            );
+        } else {
+            // Load and filter entries, then aggregate normally
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
+            let filtered_entries = filter.filter_stream(entries).await;
+            let daily_data = aggregator
+                .aggregate_daily_detailed(filtered_entries, cli.mode, detailed)
+                .await?;
+            let totals = Totals::from_daily(&daily_data);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
+            println!("{}", formatter.format_daily(&daily_data, &totals));
         }
     }
 

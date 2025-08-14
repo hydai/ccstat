@@ -51,6 +51,10 @@ pub enum CcstatError {
     #[error("Invalid timezone: {0}")]
     InvalidTimezone(String),
 
+    /// Invalid token limit
+    #[error("Invalid token limit: {0}")]
+    InvalidTokenLimit(String),
+
     /// Parse error with file context
     #[error("Parse error in {file}: {error}")]
     Parse {

@@ -7,7 +7,10 @@
 #[cfg(test)]
 use crate::timezone::TimezoneConfig;
 use crate::{
-    aggregation::{Aggregator, SessionBlock, Totals},
+    aggregation::{
+        Aggregator, SessionBlock, Totals, apply_token_limit_warnings, filter_blocks,
+        filter_monthly_data,
+    },
     data_loader::DataLoader,
     error::{CcstatError, Result},
     filters::{MonthFilter, UsageFilter},
@@ -32,6 +35,10 @@ use tokio::{
 // Constants for watcher thread management
 const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
+
+/// Approximate maximum tokens for a 5-hour billing block
+/// This is an empirical value based on typical usage patterns
+const APPROX_MAX_TOKENS_PER_BLOCK: f64 = 10_000_000.0;
 
 /// Command type for live monitoring
 #[derive(Debug, Clone)]
@@ -321,23 +328,7 @@ impl LiveMonitor {
 
                 // Apply month filter if present
                 if let Some(month_filter) = &self.month_filter {
-                    monthly_data.retain(|monthly| {
-                        // Parse month string (YYYY-MM) to check filter
-                        if let Ok((year, month)) = monthly
-                            .month
-                            .split_once('-')
-                            .and_then(|(y, m)| {
-                                Some((y.parse::<i32>().ok()?, m.parse::<u32>().ok()?))
-                            })
-                            .ok_or(())
-                        {
-                            // Create a date for the first day of the month to check filter
-                            if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1) {
-                                return month_filter.matches_date(&date);
-                            }
-                        }
-                        false
-                    });
+                    filter_monthly_data(&mut monthly_data, month_filter);
                 }
 
                 prepared_data.totals = Totals::from_monthly(&monthly_data);
@@ -371,70 +362,15 @@ impl LiveMonitor {
                 let mut blocks = Aggregator::create_billing_blocks(&session_data);
 
                 // Apply filters
-                if *active {
-                    blocks.retain(|b| b.is_active);
-                }
-
-                if *recent {
-                    let cutoff = chrono::Utc::now() - chrono::Duration::days(1);
-                    blocks.retain(|b| b.start_time > cutoff);
-                }
+                filter_blocks(&mut blocks, *active, *recent);
 
                 // Apply token limit warnings
                 if let Some(limit_str) = token_limit {
-                    // Parse token limit (can be a number or percentage like "80%")
-                    let (limit_value, is_percentage) = if limit_str.ends_with('%') {
-                        let value =
-                            limit_str
-                                .trim_end_matches('%')
-                                .parse::<f64>()
-                                .map_err(|_| {
-                                    CcstatError::InvalidDate(format!(
-                                        "Invalid token limit: {limit_str}"
-                                    ))
-                                })?;
-                        (value / 100.0, true)
-                    } else {
-                        let value = limit_str.parse::<u64>().map_err(|_| {
-                            CcstatError::InvalidDate(format!("Invalid token limit: {limit_str}"))
-                        })?;
-                        (value as f64, false)
-                    };
-
-                    // Apply warnings to blocks
-                    for block in &mut blocks {
-                        if block.is_active {
-                            let total_tokens = block.tokens.total();
-                            let threshold = if is_percentage {
-                                // Assuming 5-hour block has a typical max of ~10M tokens
-                                10_000_000.0 * limit_value
-                            } else {
-                                limit_value
-                            };
-
-                            if total_tokens as f64 >= threshold {
-                                block.warning = Some(format!(
-                                    "⚠️  Block has used {} tokens, exceeding threshold of {}",
-                                    total_tokens,
-                                    if is_percentage {
-                                        format!(
-                                            "{}% (~{:.0} tokens)",
-                                            (limit_value * 100.0) as u32,
-                                            threshold
-                                        )
-                                    } else {
-                                        format!("{} tokens", threshold as u64)
-                                    }
-                                ));
-                            } else if total_tokens as f64 >= threshold * 0.8 {
-                                block.warning = Some(format!(
-                                    "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
-                                    total_tokens,
-                                    ((total_tokens as f64 / threshold) * 100.0) as u32
-                                ));
-                            }
-                        }
-                    }
+                    apply_token_limit_warnings(
+                        &mut blocks,
+                        limit_str,
+                        APPROX_MAX_TOKENS_PER_BLOCK,
+                    )?;
                 }
 
                 // Calculate totals from blocks
