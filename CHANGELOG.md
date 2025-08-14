@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-08-13
+
+### Changed
+- Parallel processing is now always enabled for improved performance
+- The `--parallel` flag has been deprecated and will be removed in v0.3.0
+
+### Fixed
+- Removed duplicate deprecation warnings
+- Fixed rustdoc warnings for deprecated text
+
 ## [0.2.1] - 2025-08-13
 
 ### Fixed
@@ -120,7 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/hydai/ccstat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/hydai/ccstat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hydai/ccstat/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/hydai/ccstat/compare/v0.1.8...v0.1.9
