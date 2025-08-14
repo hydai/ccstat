@@ -66,13 +66,9 @@ async fn main() -> Result<()> {
     if !is_statusline {
         // Initialize logging. Default is quiet (warn level), --verbose enables info level.
         // RUST_LOG environment variable can override these defaults.
-        let filter = if cli.verbose {
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("ccstat=info"))
-        } else {
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"))
-        };
+        let default_level = if cli.verbose { "ccstat=info" } else { "warn" };
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level));
 
         tracing_subscriber::registry()
             .with(filter)
@@ -91,7 +87,7 @@ async fn main() -> Result<()> {
             project,
             watch,
             interval,
-            verbose,
+            detailed,
             performance_args,
             model_display_args,
             timezone_args,
@@ -161,7 +157,7 @@ async fn main() -> Result<()> {
                     let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
-                        .aggregate_daily_verbose(filtered_entries, mode, verbose)
+                        .aggregate_daily_verbose(filtered_entries, mode, detailed)
                         .await?;
                     let totals = Totals::from_daily(&daily_data);
                     let formatter = get_formatter(json, model_display_args.full_model_names);

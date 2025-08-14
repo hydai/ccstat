@@ -245,12 +245,12 @@ struct DailyAccumulator {
 }
 
 impl DailyAccumulator {
-    fn new(verbose: bool) -> Self {
+    fn new(detailed: bool) -> Self {
         Self {
             tokens: TokenCounts::default(),
             cost: 0.0,
             models: HashSet::new(),
-            verbose_entries: if verbose { Some(Vec::new()) } else { None },
+            verbose_entries: if detailed { Some(Vec::new()) } else { None },
         }
     }
 
@@ -440,12 +440,12 @@ impl Aggregator {
             .await
     }
 
-    /// Aggregate entries by day with optional verbose mode
+    /// Aggregate entries by day with optional detailed mode
     pub async fn aggregate_daily_verbose(
         &self,
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
-        verbose: bool,
+        detailed: bool,
     ) -> Result<Vec<DailyUsage>> {
         let mut daily_map: BTreeMap<DailyDate, DailyAccumulator> = BTreeMap::new();
 
@@ -480,7 +480,7 @@ impl Aggregator {
 
             daily_map
                 .entry(date)
-                .or_insert_with(|| DailyAccumulator::new(verbose))
+                .or_insert_with(|| DailyAccumulator::new(detailed))
                 .add_entry(&entry, cost);
 
             count += 1;

@@ -107,9 +107,9 @@ Test-Command "String interning" "ccstat daily --intern"
 Test-Command "Arena allocation" "ccstat daily --arena"
 Test-Command "All performance flags" "ccstat daily --parallel --intern --arena"
 
-# Test verbose mode
-Write-Host "`n=== Verbose Mode Tests ===" -ForegroundColor Yellow
-Test-Command "Verbose daily output" "ccstat daily --verbose --since 2024-01-01 --until 2024-01-01"
+# Test detailed mode
+Write-Host "`n=== Detailed Mode Tests ===" -ForegroundColor Yellow
+Test-Command "Detailed daily output" "ccstat daily --detailed --since 2024-01-01 --until 2024-01-01"
 
 # Test project filtering
 Write-Host "`n=== Project Filter Tests ===" -ForegroundColor Yellow

@@ -148,7 +148,7 @@ ccstat daily --intern         # Use string interning for memory efficiency
 ccstat daily --arena          # Use arena allocation
 
 # Show detailed token info per entry
-ccstat daily --verbose
+ccstat daily --detailed
 ```
 
 ### Monthly Summary
@@ -257,19 +257,19 @@ ccstat daily --mode calculate
 ccstat daily --mode display
 ```
 
-### Verbose Mode
+### Detailed Output Mode
 
 Get detailed token information for each API call:
 
 ```bash
 # Show individual entries for daily usage
-ccstat daily --verbose
+ccstat daily --detailed
 
-# Verbose mode with JSON output
-ccstat daily --verbose --json
+# Detailed mode with JSON output
+ccstat daily --detailed --json
 
-# Verbose mode for specific date
-ccstat daily --verbose --since 2024-01-15 --until 2024-01-15
+# Detailed mode for specific date
+ccstat daily --detailed --since 2024-01-15 --until 2024-01-15
 ```
 
 ### Statusline Command

@@ -96,7 +96,7 @@ cargo run -- daily --project my-project
 
 ### Output Options
 - `--json` - Output results in JSON format instead of tables
-- `--verbose` - Show detailed token information per entry (daily command only)
+- `--detailed` - Show detailed token information per entry (daily command only)
 
 ### Command-Specific Options
 

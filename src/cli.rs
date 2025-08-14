@@ -133,7 +133,7 @@ pub enum Command {
 
         /// Show detailed token information per entry
         #[arg(long)]
-        verbose: bool,
+        detailed: bool,
 
         /// Performance options
         #[command(flatten)]
