@@ -212,7 +212,11 @@ impl TableFormatter {
             // Show individual session entries if requested
             if show_entries && !block.sessions.is_empty() {
                 for session in &block.sessions {
-                    let session_start = Self::format_datetime_with_tz(&session.start_time, tz);
+                    let session_start = session
+                        .start_time
+                        .with_timezone(tz)
+                        .format("%H:%M")
+                        .to_string();
                     let session_end = session
                         .end_time
                         .with_timezone(tz)
@@ -655,28 +659,25 @@ impl OutputFormatter for JsonFormatter {
         show_entries: bool,
     ) -> String {
         let output = json!({
-            "blocks": data.iter().map(|b| {
-                let mut block_json = json!({
-                    "start_time": b.start_time.to_rfc3339(),
-                    "end_time": b.end_time.to_rfc3339(),
-                    "is_active": b.is_active,
-                    "session_count": b.sessions.len(),
-                    "tokens": {
-                        "input_tokens": b.tokens.input_tokens,
-                        "output_tokens": b.tokens.output_tokens,
-                        "cache_creation_tokens": b.tokens.cache_creation_tokens,
-                        "cache_read_tokens": b.tokens.cache_read_tokens,
-                        "total": b.tokens.total(),
-                    },
-                    "total_cost": b.total_cost,
-                });
-
-                // Include full session details if requested, otherwise just session IDs
-                if show_entries {
-                    block_json["sessions"] = json!(b.sessions.iter().map(|s| json!({
+            "blocks": data.iter().map(|b| json!({
+                "start_time": b.start_time.to_rfc3339(),
+                "end_time": b.end_time.to_rfc3339(),
+                "is_active": b.is_active,
+                "session_count": b.sessions.len(),
+                "tokens": {
+                    "input_tokens": b.tokens.input_tokens,
+                    "output_tokens": b.tokens.output_tokens,
+                    "cache_creation_tokens": b.tokens.cache_creation_tokens,
+                    "cache_read_tokens": b.tokens.cache_read_tokens,
+                    "total": b.tokens.total(),
+                },
+                "total_cost": b.total_cost,
+                "sessions": if show_entries {
+                    json!(b.sessions.iter().map(|s| json!({
                         "session_id": s.session_id.as_str(),
                         "start_time": s.start_time.to_rfc3339(),
                         "end_time": s.end_time.to_rfc3339(),
+                        "duration_seconds": (s.end_time - s.start_time).num_seconds(),
                         "model": s.model.to_string(),
                         "tokens": {
                             "input_tokens": s.tokens.input_tokens,
@@ -686,13 +687,11 @@ impl OutputFormatter for JsonFormatter {
                             "total": s.tokens.total(),
                         },
                         "total_cost": s.total_cost,
-                    })).collect::<Vec<_>>());
+                    })).collect::<Vec<_>>())
                 } else {
-                    block_json["sessions"] = json!(b.sessions.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>());
+                    json!(b.sessions.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>())
                 }
-
-                block_json
-            }).collect::<Vec<_>>()
+            })).collect::<Vec<_>>()
         });
 
         serde_json::to_string_pretty(&output).unwrap()
