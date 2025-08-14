@@ -6,15 +6,9 @@
 mod common;
 
 use ccstat::{
-    aggregation::Aggregator,
-    cli::parse_date_filter,
-    cost_calculator::CostCalculator,
-    data_loader::DataLoader,
-    filters::UsageFilter,
-    output::get_formatter,
-    pricing_fetcher::PricingFetcher,
-    timezone::TimezoneConfig,
-    types::CostMode,
+    aggregation::Aggregator, cli::parse_date_filter, cost_calculator::CostCalculator,
+    data_loader::DataLoader, filters::UsageFilter, output::get_formatter,
+    pricing_fetcher::PricingFetcher, timezone::TimezoneConfig, types::CostMode,
 };
 use chrono::{Datelike, NaiveDate};
 use futures::StreamExt;
@@ -238,7 +232,7 @@ async fn test_date_filter_parsing() {
 #[tokio::test]
 async fn test_month_filter_parsing() {
     use chrono::Datelike;
-    
+
     // Test valid month formats (YYYY-MM should parse to first day of month)
     let date = parse_date_filter("2024-01").unwrap();
     assert_eq!(date.year(), 2024);

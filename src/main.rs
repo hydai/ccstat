@@ -40,27 +40,10 @@ async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Res
         .with_arena(arena))
 }
 
-/// Helper function to check for deprecated flags and show warnings
-fn check_deprecated_flags(cli: &Cli) {
-    if cli.quiet {
-        eprintln!("Warning: --quiet flag is deprecated and will be removed in v0.3.0");
-        eprintln!(
-            "         Quiet mode is now the default behavior. Use --verbose to show informational output."
-        );
-    }
-    if !cli.parallel {
-        eprintln!("Warning: --parallel=false flag is deprecated and will be removed in v0.3.0");
-        eprintln!("         Parallel processing is now always enabled for better performance.");
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Parse CLI arguments first to check for quiet flag
+    // Parse CLI arguments
     let cli = Cli::parse();
-
-    // Check for deprecated flags early
-    check_deprecated_flags(&cli);
 
     // Skip logging initialization for statusline command
     let is_statusline = matches!(cli.command, Some(Command::Statusline { .. }));

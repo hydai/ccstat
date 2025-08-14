@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-08-14
+
+### Changed
+- **BREAKING**: Unified CLI options system - common options are now global
+- All common options (json, since, until, project, etc.) can be used at the global level
+- Default to daily command when no subcommand is specified (`ccstat` = `ccstat daily`)
+- Unified date parsing to accept both YYYY-MM-DD and YYYY-MM formats
+
+### Removed
+- **BREAKING**: Removed deprecated `--quiet` flag (quiet mode is now always the default)
+- **BREAKING**: Removed deprecated `--parallel` flag (parallel processing is always enabled)
+- **BREAKING**: Removed deprecated `load_usage_entries()` method from DataLoader
+- Removed TimezoneArgs, ModelDisplayArgs, and PerformanceArgs structs (options moved to global)
+
+### Improved
+- Significantly reduced code duplication (~150+ lines removed)
+- More intuitive CLI usage (e.g., `ccstat --json` instead of `ccstat daily --json`)
+- Better user experience with unified options system
+
 ## [0.2.2] - 2025-08-13
 
 ### Changed

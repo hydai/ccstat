@@ -140,7 +140,6 @@ ccstat --full-model-names                   # Show full model names
 # Performance options (global)
 ccstat --intern                             # Use string interning
 ccstat --arena                              # Use arena allocation
-ccstat --parallel                           # [DEPRECATED] Has no effect
 ```
 
 ### Monthly Summary
@@ -309,8 +308,6 @@ ccstat daily --arena
 
 # Combine all optimizations
 ccstat daily --intern --arena
-
-# Note: --parallel flag is deprecated and has no effect (will be removed in v0.3.0)
 ```
 
 ## Output Examples
@@ -368,9 +365,8 @@ ccstat daily --intern --arena
 
 ### Logging Behavior
 
-Starting from v0.2.3, ccstat runs in quiet mode by default (only warnings and errors are shown):
+ccstat runs in quiet mode by default (only warnings and errors are shown):
 - Use `--verbose` or `-v` flag to show informational messages
-- The `--quiet` flag is deprecated and will be removed in v0.3.0 (quiet is now the default)
 - `RUST_LOG` environment variable can override these defaults
 
 ### Data Locations
@@ -489,7 +485,6 @@ The project follows a modular architecture:
 - Parallel processing is always enabled for better performance
 - Use `--intern` flag to reduce memory usage for repeated strings
 - Use `--arena` flag for more efficient memory allocation
-- Note: The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Debug Mode
 

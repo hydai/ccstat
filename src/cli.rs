@@ -32,15 +32,6 @@ use clap::{Parser, Subcommand};
 #[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// \[DEPRECATED\] This flag is deprecated and will be removed in v0.3.0. Quiet mode is now the default behavior.
-    #[arg(
-        long,
-        short = 'q',
-        global = true,
-        help = "[DEPRECATED] This flag no longer affects logging output. Quiet mode is now the default. Use --verbose to show informational output."
-    )]
-    pub quiet: bool,
-
     /// Show informational output (default is quiet mode with only warnings and errors)
     #[arg(long, short = 'v', global = true)]
     pub verbose: bool,
@@ -77,15 +68,6 @@ pub struct Cli {
     /// Show full model names instead of shortened versions
     #[arg(long, global = true)]
     pub full_model_names: bool,
-
-    /// \[DEPRECATED\] This flag is deprecated and will be removed in v0.3.0. Parallel processing is now always enabled.
-    #[arg(
-        long,
-        default_value_t = true,
-        global = true,
-        help = "[DEPRECATED] This flag has no effect. Parallel processing is always enabled."
-    )]
-    pub parallel: bool,
 
     /// Enable string interning for memory optimization
     #[arg(long, global = true)]

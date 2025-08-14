@@ -88,7 +88,7 @@ run_stress_test() {
     export CLAUDE_DATA_PATH=stress-test-data
     for i in {1..10}; do
         echo -n "Run $i: "
-        ccstat daily --parallel --intern --arena > /dev/null 2>&1
+        ccstat daily --intern --arena > /dev/null 2>&1
 
         # Check memory after each run
         if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -181,7 +181,7 @@ run_valgrind_test "daily" "target/release/ccstat daily"
 run_valgrind_test "monthly" "target/release/ccstat monthly"
 run_valgrind_test "session" "target/release/ccstat session"
 run_valgrind_test "blocks" "target/release/ccstat blocks"
-run_valgrind_test "parallel" "target/release/ccstat daily --parallel --intern --arena"
+run_valgrind_test "performance" "target/release/ccstat daily --intern --arena"
 
 # Run stress test
 run_stress_test

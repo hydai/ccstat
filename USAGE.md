@@ -57,7 +57,6 @@ ccstat daily [OPTIONS]
 - `--project <NAME>`: Filter by project name
 - `--mode <MODE>`: Cost calculation mode (auto/calculate/display)
 - `--verbose`: Show individual API calls
-- `--parallel`: [DEPRECATED] This flag has no effect (will be removed in v0.3.0)
 - `--intern`: Use string interning
 - `--arena`: Use arena allocation
 - `--by-instance`: Group by instance ID
@@ -79,8 +78,6 @@ ccstat daily --verbose
 
 # Optimized for large datasets (parallel is always enabled)
 ccstat daily --intern --arena
-
-# Note: --parallel flag is deprecated and has no effect
 ```
 
 ### Monthly Command
@@ -364,7 +361,6 @@ A: Use the optimization flags:
 - Parallel processing is always enabled (as of v0.2.2)
 - `--intern`: Deduplicate strings in memory
 - `--arena`: Use arena allocation for better memory layout
-- Note: The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Q: Can I use ccstat in scripts?
 

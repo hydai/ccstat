@@ -102,10 +102,9 @@ Test-Command "Display cost mode" "ccstat daily --mode display"
 
 # Test performance flags
 Write-Host "`n=== Performance Flag Tests ===" -ForegroundColor Yellow
-Test-Command "Parallel processing" "ccstat daily --parallel"
 Test-Command "String interning" "ccstat daily --intern"
 Test-Command "Arena allocation" "ccstat daily --arena"
-Test-Command "All performance flags" "ccstat daily --parallel --intern --arena"
+Test-Command "All performance flags" "ccstat daily --intern --arena"
 
 # Test detailed mode
 Write-Host "`n=== Detailed Mode Tests ===" -ForegroundColor Yellow

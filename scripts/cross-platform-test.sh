@@ -98,10 +98,9 @@ run_test "Invalid cost mode" "ccstat daily --mode invalid" "Invalid value" || tr
 
 # Test performance flags
 echo -e "\n=== Performance Flag Tests ==="
-run_test "Parallel processing" "ccstat daily --parallel" ""
 run_test "String interning" "ccstat daily --intern" ""
 run_test "Arena allocation" "ccstat daily --arena" ""
-run_test "All performance flags" "ccstat daily --parallel --intern --arena" ""
+run_test "All performance flags" "ccstat daily --intern --arena" ""
 
 # Test detailed mode
 echo -e "\n=== Detailed Mode Tests ==="

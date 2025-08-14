@@ -75,7 +75,6 @@ cargo run -- blocks --active                # Active blocks only
 
 ### Global Options (work with all commands)
 - `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
-- `--quiet` / `-q` - **[DEPRECATED]** This flag no longer affects logging output and will be removed in v0.3.0. Quiet mode is now the default.
 - `--mode` - Cost calculation mode (auto, calculate, fetch, offline, none)
 - `--json` - Output results in JSON format instead of tables
 - `--since` - Filter by start date (YYYY-MM-DD or YYYY-MM format)
@@ -84,7 +83,6 @@ cargo run -- blocks --active                # Active blocks only
 - `--timezone` / `-z` - Specify timezone for date grouping (e.g., "America/New_York", "Asia/Tokyo")
 - `--utc` - Use UTC for date grouping (overrides --timezone)
 - `--full-model-names` - Show full model names instead of shortened versions
-- `--parallel` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Parallel processing is always enabled.
 - `--intern` - Enable string interning for memory optimization
 - `--arena` - Enable arena allocation for parsing
 
@@ -133,10 +131,9 @@ No command-specific options. Uses all global options.
 The project includes several performance optimization features:
 
 ### Parallel Processing
-- Parallel file processing is always enabled (as of v0.2.2)
+- Parallel file processing is always enabled
 - Significantly improves performance for large datasets
 - Automatically utilizes available CPU cores
-- The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Memory Optimization
 - **String Interning** (`--intern`): Reduces memory usage by sharing identical strings
