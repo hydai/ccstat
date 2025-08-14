@@ -2,7 +2,8 @@
 
 use ccstat::{
     aggregation::{
-        Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_blocks_by_date, filter_monthly_data,
+        Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_blocks_by_date,
+        filter_monthly_data,
     },
     cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
@@ -270,8 +271,16 @@ async fn main() -> Result<()> {
                     .await?;
 
                 // Apply date range filter to blocks
-                let since_date = cli.since.as_ref().map(|s| parse_date_filter(s)).transpose()?;
-                let until_date = cli.until.as_ref().map(|s| parse_date_filter(s)).transpose()?;
+                let since_date = cli
+                    .since
+                    .as_ref()
+                    .map(|s| parse_date_filter(s))
+                    .transpose()?;
+                let until_date = cli
+                    .until
+                    .as_ref()
+                    .map(|s| parse_date_filter(s))
+                    .transpose()?;
                 filter_blocks_by_date(&mut blocks, since_date, until_date);
 
                 // Apply other filters

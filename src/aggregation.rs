@@ -647,12 +647,17 @@ impl Aggregator {
                 blocks.push(SessionBlock {
                     start_time: block_start,
                     end_time: block_start + five_hours,
-                    actual_start_time: current_sessions.first().map(|s: &SessionUsage| s.start_time),
+                    actual_start_time: current_sessions
+                        .first()
+                        .map(|s: &SessionUsage| s.start_time),
                     actual_end_time: current_sessions.last().map(|s: &SessionUsage| s.end_time),
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
                     total_cost: std::mem::take(&mut current_cost),
-                    models_used: models_used.drain().map(|m: ModelName| m.to_string()).collect(),
+                    models_used: models_used
+                        .drain()
+                        .map(|m: ModelName| m.to_string())
+                        .collect(),
                     is_active: now < block_start + five_hours,
                     is_gap: false,
                     warning: None,
@@ -694,7 +699,46 @@ impl Aggregator {
         blocks
     }
 
+    /// Helper function to finalize a block and add it to the blocks vector
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_block(
+        blocks: &mut Vec<SessionBlock>,
+        block_start: chrono::DateTime<chrono::Utc>,
+        session_duration: chrono::Duration,
+        first_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+        last_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+        tokens: TokenCounts,
+        cost: f64,
+        models: HashSet<ModelName>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) {
+        let block_end = block_start + session_duration;
+        let actual_end = last_entry_time.unwrap_or(block_start);
+
+        // Check if block is active: recent activity AND within block time window
+        let is_active = (now - actual_end < session_duration) && (now < block_end);
+
+        blocks.push(SessionBlock {
+            start_time: block_start,
+            end_time: block_end,
+            actual_start_time: first_entry_time,
+            actual_end_time: Some(actual_end),
+            sessions: Vec::new(), // We don't aggregate into sessions for this method
+            tokens,
+            total_cost: cost,
+            models_used: models.into_iter().map(|m| m.to_string()).collect(),
+            is_active,
+            is_gap: false,
+            warning: None,
+        });
+    }
+
     /// Create billing blocks directly from usage entries (matching TypeScript implementation)
+    ///
+    /// **Note:** This function collects all entries into memory to sort them by timestamp,
+    /// which is necessary for accurate block boundary calculation. For very large datasets,
+    /// this may consume significant memory. The entries must be sorted to ensure blocks
+    /// are created with correct boundaries and gap detection works properly.
     pub async fn create_billing_blocks_from_entries(
         &self,
         entries: impl Stream<Item = Result<UsageEntry>>,
@@ -745,7 +789,8 @@ impl Aggregator {
                 // New block if either:
                 // 1. Time since block start exceeds session duration
                 // 2. Time since last entry exceeds session duration (gap)
-                time_since_block_start > session_duration || time_since_last_entry > session_duration
+                time_since_block_start > session_duration
+                    || time_since_last_entry > session_duration
             } else {
                 true // First entry always starts a new block
             };
@@ -753,25 +798,17 @@ impl Aggregator {
             if needs_new_block {
                 // Finish current block if it exists
                 if let Some(block_start) = current_block_start {
-                    let block_end = block_start + session_duration;
-                    let actual_end = last_entry_time.unwrap_or(block_start);
-
-                    // Check if block is active: recent activity AND within block time window
-                    let is_active = (now - actual_end < session_duration) && (now < block_end);
-
-                    blocks.push(SessionBlock {
-                        start_time: block_start,
-                        end_time: block_end,
-                        actual_start_time: first_entry_time,
-                        actual_end_time: Some(actual_end),
-                        sessions: Vec::new(), // We don't aggregate into sessions for this method
-                        tokens: std::mem::take(&mut current_tokens),
-                        total_cost: std::mem::take(&mut current_cost),
-                        models_used: current_models.drain().map(|m: ModelName| m.to_string()).collect(),
-                        is_active,
-                        is_gap: false,
-                        warning: None,
-                    });
+                    Self::finalize_block(
+                        &mut blocks,
+                        block_start,
+                        session_duration,
+                        first_entry_time,
+                        last_entry_time,
+                        std::mem::take(&mut current_tokens),
+                        std::mem::take(&mut current_cost),
+                        std::mem::take(&mut current_models),
+                        now,
+                    );
                 }
 
                 // Create gap block if needed
@@ -824,25 +861,17 @@ impl Aggregator {
 
         // Handle remaining entries in the last block
         if let Some(block_start) = current_block_start {
-            let block_end = block_start + session_duration;
-            let actual_end = last_entry_time.unwrap_or(block_start);
-
-            // Check if block is active: recent activity AND within block time window
-            let is_active = (now - actual_end < session_duration) && (now < block_end);
-
-            blocks.push(SessionBlock {
-                start_time: block_start,
-                end_time: block_end,
-                actual_start_time: first_entry_time,
-                actual_end_time: Some(actual_end),
-                sessions: Vec::new(),
-                tokens: current_tokens,
-                total_cost: current_cost,
-                models_used: current_models.into_iter().map(|m| m.to_string()).collect(),
-                is_active,
-                is_gap: false,
-                warning: None,
-            });
+            Self::finalize_block(
+                &mut blocks,
+                block_start,
+                session_duration,
+                first_entry_time,
+                last_entry_time,
+                current_tokens,
+                current_cost,
+                current_models,
+                now,
+            );
         }
 
         Ok(blocks)
@@ -935,19 +964,13 @@ pub fn filter_blocks_by_date(
     until: Option<chrono::NaiveDate>,
 ) {
     if let Some(since_date) = since {
-        let since_datetime = since_date
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc();
+        let since_datetime = since_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
         blocks.retain(|b| b.start_time >= since_datetime);
     }
 
     if let Some(until_date) = until {
         // Include blocks that start on or before the until date (end of day)
-        let until_datetime = until_date
-            .and_hms_opt(23, 59, 59)
-            .unwrap()
-            .and_utc();
+        let until_datetime = until_date.and_hms_opt(23, 59, 59).unwrap().and_utc();
         blocks.retain(|b| b.start_time <= until_datetime);
     }
 }
@@ -1280,18 +1303,29 @@ mod tests {
         assert_eq!(blocks.len(), 3);
 
         // First block: starts at 10:00 (floored from 10:30)
-        assert_eq!(blocks[0].start_time, chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap());
+        assert_eq!(
+            blocks[0].start_time,
+            chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap()
+        );
         assert_eq!(blocks[0].tokens.input_tokens, 300); // 100 + 200
         assert!(!blocks[0].is_gap);
         assert_eq!(blocks[0].models_used, vec!["claude-3-opus"]);
 
-        // Gap block
+        // Gap block: starts at 13:30 + 5 hours = 18:30, ends at 19:30
         assert!(blocks[1].is_gap);
+        assert_eq!(
+            blocks[1].start_time,
+            base_time + chrono::Duration::hours(3) + chrono::Duration::hours(5)
+        ); // 18:30
+        assert_eq!(blocks[1].end_time, base_time + chrono::Duration::hours(9)); // 19:30
         assert_eq!(blocks[1].tokens.input_tokens, 0);
         assert!(!blocks[1].is_active);
 
         // Second block: starts at 19:00 (floored from 19:30)
-        assert_eq!(blocks[2].start_time, chrono::Utc.with_ymd_and_hms(2024, 1, 1, 19, 0, 0).unwrap());
+        assert_eq!(
+            blocks[2].start_time,
+            chrono::Utc.with_ymd_and_hms(2024, 1, 1, 19, 0, 0).unwrap()
+        );
         assert_eq!(blocks[2].tokens.input_tokens, 150);
         assert!(!blocks[2].is_gap);
         assert_eq!(blocks[2].models_used, vec!["claude-3-sonnet"]);
@@ -1338,20 +1372,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(blocks.len(), 1);
-        assert!(blocks[0].is_active, "Block with recent activity (30 min ago) should be active");
+        assert!(
+            blocks[0].is_active,
+            "Block with recent activity (30 min ago) should be active"
+        );
 
         // Test 2: No recent activity even if within block time = inactive
-        let old_entries = vec![
-            UsageEntry {
-                session_id: SessionId::new("old"),
-                timestamp: crate::types::ISOTimestamp::new(now - chrono::Duration::hours(4)),
-                model: ModelName::new("claude-3-opus"),
-                tokens: TokenCounts::new(100, 50, 0, 0),
-                total_cost: Some(0.01),
-                project: None,
-                instance_id: None,
-            },
-        ];
+        let old_entries = vec![UsageEntry {
+            session_id: SessionId::new("old"),
+            timestamp: crate::types::ISOTimestamp::new(now - chrono::Duration::hours(4)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        }];
 
         let stream = stream::iter(old_entries.into_iter().map(Ok));
         let blocks = aggregator
@@ -1362,6 +1397,9 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         // Block started 4 hours ago, last activity 4 hours ago, 2-hour session duration
         // Both conditions fail: activity > 2 hours ago, and possibly outside block window
-        assert!(!blocks[0].is_active, "Block with no recent activity should be inactive");
+        assert!(
+            !blocks[0].is_active,
+            "Block with no recent activity should be inactive"
+        );
     }
 }
