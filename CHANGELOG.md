@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-08-14
+
+### Fixed
+- **Blocks command date filtering**: Fixed issue where `ccstat blocks --since` and `--until` filters were not being applied
+  - The blocks command now correctly filters billing blocks by date range
+  - Both normal and watch modes now respect date filters
+  - Example: `ccstat blocks --since 2025-08-14` now shows only blocks starting from that date
+
 ## [0.3.0] - 2025-08-14
 
 ### Added

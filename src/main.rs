@@ -46,6 +46,27 @@ async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Res
         .with_arena(arena))
 }
 
+/// Helper function to build a UsageFilter from CLI arguments
+fn build_usage_filter(cli: &Cli, aggregator: &Aggregator) -> Result<UsageFilter> {
+    let mut filter = UsageFilter::new();
+
+    if let Some(since_str) = &cli.since {
+        let since_date = parse_date_filter(since_str)?;
+        filter = filter.with_since(since_date);
+    }
+    if let Some(until_str) = &cli.until {
+        let until_date = parse_date_filter(until_str)?;
+        filter = filter.with_until(until_date);
+    }
+    if let Some(project_name) = &cli.project {
+        filter = filter.with_project(project_name.clone());
+    }
+    // Apply timezone to filter
+    filter = filter.with_timezone(aggregator.timezone_config().tz);
+
+    Ok(filter)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Parse CLI arguments
@@ -157,21 +178,7 @@ async fn main() -> Result<()> {
             )?);
 
             // Build filter
-            let mut filter = UsageFilter::new();
-
-            if let Some(since_str) = &cli.since {
-                let since_date = parse_date_filter(since_str)?;
-                filter = filter.with_since(since_date);
-            }
-            if let Some(until_str) = &cli.until {
-                let until_date = parse_date_filter(until_str)?;
-                filter = filter.with_until(until_date);
-            }
-            if let Some(project_name) = &cli.project {
-                filter = filter.with_project(project_name.clone());
-            }
-            // Apply timezone to filter
-            filter = filter.with_timezone(aggregator.timezone_config().tz);
+            let filter = build_usage_filter(&cli, &aggregator)?;
 
             // Check if we're in watch mode
             if cli.watch {
@@ -231,10 +238,12 @@ async fn main() -> Result<()> {
                 cli.utc,
             )?);
 
+            // Build filter for date ranges
+            let filter = build_usage_filter(&cli, &aggregator)?;
+
             // Check if we're in watch mode
             if cli.watch {
                 info!("Starting live monitoring mode");
-                let filter = UsageFilter::new(); // No filters for blocks at the entry level
                 let monitor = LiveMonitor::new(
                     data_loader,
                     aggregator,
@@ -252,9 +261,12 @@ async fn main() -> Result<()> {
                 );
                 monitor.run().await?;
             } else {
-                // Load entries and aggregate sessions
+                // Load and filter entries, then aggregate sessions
                 let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                let session_data = aggregator.aggregate_sessions(entries, cli.mode).await?;
+                let filtered_entries = filter.filter_stream(entries).await;
+                let session_data = aggregator
+                    .aggregate_sessions(filtered_entries, cli.mode)
+                    .await?;
 
                 // Create billing blocks
                 let mut blocks = Aggregator::create_billing_blocks(&session_data);
@@ -317,21 +329,7 @@ async fn handle_daily_command(cli: &Cli, instances: bool, detailed: bool) -> Res
     )?);
 
     // Build filter
-    let mut filter = UsageFilter::new();
-
-    if let Some(since_str) = &cli.since {
-        let since_date = parse_date_filter(since_str)?;
-        filter = filter.with_since(since_date);
-    }
-    if let Some(until_str) = &cli.until {
-        let until_date = parse_date_filter(until_str)?;
-        filter = filter.with_until(until_date);
-    }
-    if let Some(project_name) = &cli.project {
-        filter = filter.with_project(project_name.clone());
-    }
-    // Apply timezone to filter
-    filter = filter.with_timezone(aggregator.timezone_config().tz);
+    let filter = build_usage_filter(cli, &aggregator)?;
 
     // Check if we're in watch mode
     if cli.watch {

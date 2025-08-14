@@ -238,6 +238,10 @@ ccstat blocks --json
 # Filter by project
 ccstat blocks --project my-project
 
+# Filter by date range
+ccstat blocks --since 2025-08-01
+ccstat blocks --since 2025-08-01 --until 2025-08-15
+
 # Set token limit for warnings
 ccstat blocks --token-limit "80%"
 

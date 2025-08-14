@@ -54,6 +54,8 @@ cargo run -- blocks --watch --active        # Watch active billing blocks
 cargo run -- daily --instances              # Per-instance breakdown
 cargo run -- daily --detailed               # Show detailed token info
 cargo run -- blocks --active                # Active blocks only
+cargo run -- blocks --since 2025-08-01      # Blocks from August 1, 2025
+cargo run -- blocks --since 2025-08-01 --until 2025-08-15  # Blocks in date range
 ```
 
 ## Project Structure
@@ -123,7 +125,7 @@ No command-specific options. Uses all global options.
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
 ## Important Notes
-- Current version: 0.3.0
+- Current version: 0.3.1
 - The project requires Rust 1.75 or later
 - Dependencies are managed in `ccusage/Cargo.toml`
 - Tests are co-located with source files
