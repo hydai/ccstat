@@ -928,6 +928,30 @@ pub fn filter_blocks(blocks: &mut Vec<SessionBlock>, active: bool, recent: bool)
     }
 }
 
+/// Helper function to filter blocks based on date range
+pub fn filter_blocks_by_date(
+    blocks: &mut Vec<SessionBlock>,
+    since: Option<chrono::NaiveDate>,
+    until: Option<chrono::NaiveDate>,
+) {
+    if let Some(since_date) = since {
+        let since_datetime = since_date
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        blocks.retain(|b| b.start_time >= since_datetime);
+    }
+
+    if let Some(until_date) = until {
+        // Include blocks that start on or before the until date (end of day)
+        let until_datetime = until_date
+            .and_hms_opt(23, 59, 59)
+            .unwrap()
+            .and_utc();
+        blocks.retain(|b| b.start_time <= until_datetime);
+    }
+}
+
 /// Helper function to apply token limit warnings to blocks
 /// Returns Result to handle parsing errors
 pub fn apply_token_limit_warnings(
