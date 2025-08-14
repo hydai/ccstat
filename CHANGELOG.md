@@ -9,8 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2025-08-14
 
+### Added
+- **Live Monitoring for All Commands**: Extended `--watch` functionality to all commands
+  - `ccstat monthly --watch` - Monitor monthly aggregations in real-time
+  - `ccstat session --watch` - Watch active sessions live
+  - `ccstat blocks --watch` - Track billing blocks as they update
+  - Works with all filters and options (e.g., `--watch --project my-project`)
+- CommandType enum for flexible command-specific monitoring modes
+- Enhanced LiveMonitor to support all aggregation types (daily, monthly, session, blocks)
+
 ### Changed
 - **BREAKING**: Unified CLI options system - common options are now global
+- **BREAKING**: Moved `--watch` and `--interval` flags from daily command to global level
+- **BREAKING**: LiveMonitor::new() API signature changed to support all command types
 - All common options (json, since, until, project, etc.) can be used at the global level
 - Default to daily command when no subcommand is specified (`ccstat` = `ccstat daily`)
 - Unified date parsing to accept both YYYY-MM-DD and YYYY-MM formats
@@ -25,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Significantly reduced code duplication (~150+ lines removed)
 - More intuitive CLI usage (e.g., `ccstat --json` instead of `ccstat daily --json`)
 - Better user experience with unified options system
+- Live monitoring now available for all report types, not just daily
 
 ## [0.2.2] - 2025-08-13
 

@@ -22,7 +22,7 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 - 🔍 **Automatic Discovery**: Finds Claude data directories across platforms
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
-- 👀 **Live Monitoring**: Real-time usage tracking with auto-refresh
+- 👀 **Universal Live Monitoring**: Real-time tracking with auto-refresh for ALL commands
 - ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
 - 🔧 **Advanced Filtering**: By date, project, instance, and more
 - 🌍 **Timezone Support**: Accurate daily aggregation across different timezones
@@ -104,6 +104,12 @@ ccstat statusline
 
 # Export data as JSON for further processing (global option)
 ccstat --json > usage.json
+
+# Live monitoring (works with all commands)
+ccstat --watch                    # Watch daily usage (default)
+ccstat monthly --watch            # Watch monthly aggregations
+ccstat session --watch            # Watch active sessions
+ccstat blocks --watch --active    # Watch active billing blocks
 ```
 
 ## Usage
@@ -127,9 +133,11 @@ ccstat --since 2024-01                      # From January 2024
 
 # Daily-specific options
 ccstat daily --instances                    # Show per-instance breakdown
-ccstat daily --watch                        # Live monitoring mode
-ccstat daily --watch --interval 30          # Custom refresh interval
 ccstat daily --detailed                     # Show detailed token info
+
+# Live monitoring (global option, works with all commands)
+ccstat --watch                              # Watch daily usage (default)
+ccstat --watch --interval 30                # Custom refresh interval
 
 # Global options work with all commands
 ccstat --project my-project                 # Filter by project
@@ -154,14 +162,15 @@ ccstat monthly
 ccstat monthly --since 2024-01-01 --until 2024-03-31
 ccstat monthly --since 2024-01 --until 2024-03  # Also works
 
+# Live monitoring
+ccstat monthly --watch                      # Watch monthly aggregations
+ccstat monthly --watch --interval 10        # Custom refresh interval
+
 # JSON output
 ccstat monthly --json
 
 # Filter by project
 ccstat monthly --project my-project
-
-# Show per-instance breakdown
-ccstat monthly --instances
 
 # Timezone configuration
 ccstat monthly --timezone "Asia/Tokyo"      # Use specific timezone
@@ -179,6 +188,10 @@ Analyze individual sessions:
 # List all sessions
 ccstat session
 
+# Live monitoring
+ccstat session --watch                      # Watch active sessions
+ccstat session --watch --interval 5         # Refresh every 5 seconds
+
 # JSON output with full details
 ccstat session --json
 
@@ -187,9 +200,6 @@ ccstat session --since 2024-01-01 --until 2024-01-31
 
 # Filter by project
 ccstat session --project my-project
-
-# Show detailed models per session
-ccstat session --models
 
 # Timezone configuration
 ccstat session --timezone "Europe/London"   # Use specific timezone
@@ -210,6 +220,11 @@ Track 5-hour billing blocks:
 ```bash
 # Show all blocks
 ccstat blocks
+
+# Live monitoring
+ccstat blocks --watch                       # Watch billing blocks update
+ccstat blocks --watch --active              # Watch only active blocks
+ccstat blocks --watch --interval 10         # Custom refresh interval
 
 # Only active blocks
 ccstat blocks --active
