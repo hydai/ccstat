@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CommandType enum for flexible command-specific monitoring modes
 - Enhanced LiveMonitor to support all aggregation types (daily, monthly, session, blocks)
 
+### Fixed
+- **Billing blocks --active flag regression**: Fixed issue where `ccstat blocks --active` would not show any active blocks
+  - Corrected `is_active` logic in `create_billing_blocks` to properly check if a block is within its 5-hour window
+  - Added comprehensive test coverage for active block detection
+
 ### Changed
 - **BREAKING**: Unified CLI options system - common options are now global
 - **BREAKING**: Moved `--watch` and `--interval` flags from daily command to global level

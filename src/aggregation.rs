@@ -632,7 +632,7 @@ impl Aggregator {
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
                     total_cost: std::mem::take(&mut current_cost),
-                    is_active: false,
+                    is_active: now < block_start + five_hours,
                     warning: None,
                 });
                 current_block_start = None;
@@ -865,5 +865,73 @@ mod tests {
             expected_block2_start + chrono::Duration::hours(5)
         );
         assert_eq!(blocks[1].sessions.len(), 1); // s3
+    }
+
+    #[test]
+    fn test_billing_blocks_active_status() {
+        // Test that blocks are correctly marked as active/inactive
+        // This test reproduces the bug where closed blocks are incorrectly marked as inactive
+        
+        // Create a session that started 2 hours ago (should be in an active block)
+        let now = chrono::Utc::now();
+        let two_hours_ago = now - chrono::Duration::hours(2);
+        let six_hours_ago = now - chrono::Duration::hours(6);
+        
+        let sessions = vec![
+            // Session in a block that should still be active (started 2 hours ago)
+            SessionUsage {
+                session_id: SessionId::new("active_session"),
+                start_time: two_hours_ago,
+                end_time: two_hours_ago + chrono::Duration::minutes(30),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+            // Session that starts a new block (more than 5 hours after the first)
+            SessionUsage {
+                session_id: SessionId::new("new_block_session"),
+                start_time: two_hours_ago + chrono::Duration::hours(5) + chrono::Duration::minutes(1),
+                end_time: two_hours_ago + chrono::Duration::hours(5) + chrono::Duration::minutes(31),
+                tokens: TokenCounts::new(200, 100, 0, 0),
+                total_cost: 0.02,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert_eq!(blocks.len(), 2);
+        
+        // The first block should be active because it started 2 hours ago
+        // and billing blocks are 5 hours long
+        assert!(
+            blocks[0].is_active,
+            "First block should be active as it started {} hours ago",
+            2
+        );
+        
+        // The second block just started, so it should definitely be active
+        assert!(
+            blocks[1].is_active,
+            "Second block should be active as it just started"
+        );
+        
+        // Test with an old session (should be inactive)
+        let old_sessions = vec![
+            SessionUsage {
+                session_id: SessionId::new("old_session"),
+                start_time: six_hours_ago,
+                end_time: six_hours_ago + chrono::Duration::minutes(30),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+        
+        let old_blocks = Aggregator::create_billing_blocks(&old_sessions);
+        assert_eq!(old_blocks.len(), 1);
+        assert!(
+            !old_blocks[0].is_active,
+            "Old block should be inactive as it started 6 hours ago"
+        );
     }
 }
