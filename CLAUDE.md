@@ -71,7 +71,7 @@ cargo run -- daily --project my-project
 
 ### Global Options
 - `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
-- `--quiet` / `-q` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Quiet mode is now the default.
+- `--quiet` / `-q` - **[DEPRECATED]** This flag no longer affects logging output and will be removed in v0.3.0. Quiet mode is now the default.
 
 ### Timezone Options
 - `--timezone` / `-z` - Specify timezone for date grouping (e.g., "America/New_York", "Asia/Tokyo")

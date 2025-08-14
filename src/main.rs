@@ -41,14 +41,18 @@ async fn init_data_loader(
         .with_arena(perf_args.arena))
 }
 
-/// Helper function to check for deprecated flags and show warnings
-fn check_deprecated_flags(quiet: bool, perf_args: &ccstat::cli::PerformanceArgs) {
-    if quiet {
+/// Helper function to check for deprecated global flags and show warnings
+fn check_deprecated_global_flags(cli: &Cli) {
+    if cli.quiet {
         eprintln!("Warning: --quiet flag is deprecated and will be removed in v0.3.0");
         eprintln!(
             "         Quiet mode is now the default behavior. Use --verbose to show informational output."
         );
     }
+}
+
+/// Helper function to check for deprecated command-specific flags and show warnings
+fn check_deprecated_perf_flags(perf_args: &ccstat::cli::PerformanceArgs) {
     if !perf_args.parallel {
         eprintln!("Warning: --parallel=false flag is deprecated and will be removed in v0.3.0");
         eprintln!("         Parallel processing is now always enabled for better performance.");
@@ -59,6 +63,9 @@ fn check_deprecated_flags(quiet: bool, perf_args: &ccstat::cli::PerformanceArgs)
 async fn main() -> Result<()> {
     // Parse CLI arguments first to check for quiet flag
     let cli = Cli::parse();
+
+    // Check for deprecated global flags early
+    check_deprecated_global_flags(&cli);
 
     // Skip logging initialization for statusline command
     let is_statusline = matches!(cli.command, Some(Command::Statusline { .. }));
@@ -93,7 +100,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running daily usage report");
-            check_deprecated_flags(cli.quiet, &performance_args);
+            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
@@ -176,7 +183,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running monthly usage report");
-            check_deprecated_flags(cli.quiet, &performance_args);
+            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -241,7 +248,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running session usage report");
-            check_deprecated_flags(cli.quiet, &performance_args);
+            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -292,7 +299,7 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running billing blocks report");
-            check_deprecated_flags(cli.quiet, &performance_args);
+            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());

@@ -37,7 +37,7 @@ pub struct Cli {
         long,
         short = 'q',
         global = true,
-        help = "[DEPRECATED] This flag has no effect. Quiet mode is now the default. Use --verbose to show informational output."
+        help = "[DEPRECATED] This flag no longer affects logging output. Quiet mode is now the default. Use --verbose to show informational output."
     )]
     pub quiet: bool,
 
