@@ -148,6 +148,18 @@ impl TableFormatter {
         dt.with_timezone(tz).format("%Y-%m-%d %H:%M %Z").to_string()
     }
 
+    /// Format a duration as "Xh Ym" or "Xm" if less than an hour
+    fn format_duration(duration: chrono::Duration) -> String {
+        let total_minutes = duration.num_minutes();
+        if total_minutes < 60 {
+            format!("{}m", total_minutes)
+        } else {
+            let hours = total_minutes / 60;
+            let minutes = total_minutes % 60;
+            format!("{}h {}m", hours, minutes)
+        }
+    }
+
     /// Format blocks with custom current time (for testing)
     pub(crate) fn format_blocks_with_now(
         &self,
@@ -192,7 +204,40 @@ impl TableFormatter {
                 "-".to_string()
             };
 
-            let formatted_start = Self::format_datetime_with_tz(&block.start_time, tz);
+            // Format the Block Start column based on block type
+            let formatted_start = if block.is_gap {
+                // Gap blocks: "start_time - end_time (Xh gap)"
+                let gap_duration = block.end_time - block.start_time;
+                format!(
+                    "{} - {} ({} gap)",
+                    Self::format_datetime_with_tz(&block.start_time, tz),
+                    Self::format_datetime_with_tz(&block.end_time, tz),
+                    Self::format_duration(gap_duration)
+                )
+            } else if block.is_active {
+                // Active blocks: "YYYY-MM-DD, HH:MM:SS (Xh Ym elapsed, Xh Ym remaining)"
+                let elapsed = now - block.start_time;
+                let remaining = block.end_time - now;
+                format!(
+                    "{} ({} elapsed, {} remaining)",
+                    Self::format_datetime_with_tz(&block.start_time, tz),
+                    Self::format_duration(elapsed),
+                    Self::format_duration(remaining)
+                )
+            } else {
+                // Regular blocks: "YYYY-MM-DD, HH:MM:SS (Xh Ym)" with actual activity duration
+                if let (Some(start), Some(end)) = (block.actual_start_time, block.actual_end_time) {
+                    let activity_duration = end - start;
+                    format!(
+                        "{} ({})",
+                        Self::format_datetime_with_tz(&block.start_time, tz),
+                        Self::format_duration(activity_duration)
+                    )
+                } else {
+                    // Fallback if no actual times (shouldn't happen in normal use)
+                    Self::format_datetime_with_tz(&block.start_time, tz)
+                }
+            };
 
             table.add_row(row![
                 formatted_start,
@@ -944,6 +989,7 @@ mod tests {
         let active_block = SessionBlock {
             start_time: now - chrono::Duration::hours(2),
             end_time: now + chrono::Duration::hours(3),
+            actual_start_time: Some(now - chrono::Duration::hours(2)),
             actual_end_time: Some(now - chrono::Duration::minutes(30)),
             is_active: true,
             is_gap: false,
@@ -957,6 +1003,7 @@ mod tests {
         let expired_block = SessionBlock {
             start_time: now - chrono::Duration::hours(10),
             end_time: now - chrono::Duration::hours(5),
+            actual_start_time: Some(now - chrono::Duration::hours(10)),
             actual_end_time: Some(now - chrono::Duration::hours(5) - chrono::Duration::minutes(30)),
             is_active: false,
             is_gap: false,
@@ -971,6 +1018,7 @@ mod tests {
         let gap_block = SessionBlock {
             start_time: now - chrono::Duration::hours(20),
             end_time: now - chrono::Duration::hours(15),
+            actual_start_time: None,
             actual_end_time: None,
             is_active: false,
             is_gap: true,
@@ -1108,6 +1156,7 @@ mod tests {
         let block = SessionBlock {
             start_time: now - chrono::Duration::hours(2),
             end_time: now + chrono::Duration::hours(3),
+            actual_start_time: Some(now - chrono::Duration::hours(2)),
             actual_end_time: Some(now - chrono::Duration::hours(1)),
             is_active: true,
             is_gap: false,

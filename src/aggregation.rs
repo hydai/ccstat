@@ -212,6 +212,7 @@ pub struct MonthlyUsage {
 /// let block = SessionBlock {
 ///     start_time: Utc::now() - chrono::Duration::hours(3),
 ///     end_time: Utc::now() + chrono::Duration::hours(2),
+///     actual_start_time: Some(Utc::now() - chrono::Duration::hours(3)),
 ///     actual_end_time: Some(Utc::now() - chrono::Duration::minutes(30)),
 ///     sessions: vec![],
 ///     tokens: TokenCounts::new(8_000_000, 4_000_000, 0, 0),
@@ -228,6 +229,9 @@ pub struct SessionBlock {
     pub start_time: chrono::DateTime<chrono::Utc>,
     /// Block end time (5 hours after start)
     pub end_time: chrono::DateTime<chrono::Utc>,
+    /// First activity timestamp in this block (None for gap blocks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_start_time: Option<chrono::DateTime<chrono::Utc>>,
     /// Last activity timestamp in this block (None for gap blocks)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_end_time: Option<chrono::DateTime<chrono::Utc>>,
@@ -643,6 +647,7 @@ impl Aggregator {
                 blocks.push(SessionBlock {
                     start_time: block_start,
                     end_time: block_start + five_hours,
+                    actual_start_time: current_sessions.first().map(|s: &SessionUsage| s.start_time),
                     actual_end_time: current_sessions.last().map(|s: &SessionUsage| s.end_time),
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
@@ -674,6 +679,7 @@ impl Aggregator {
             blocks.push(SessionBlock {
                 start_time: block_start,
                 end_time: block_start + five_hours,
+                actual_start_time: current_sessions.first().map(|s| s.start_time),
                 actual_end_time: current_sessions.last().map(|s| s.end_time),
                 sessions: current_sessions,
                 tokens: current_tokens,
@@ -719,6 +725,7 @@ impl Aggregator {
         let mut current_tokens = TokenCounts::default();
         let mut current_cost = 0.0;
         let mut current_models = HashSet::new();
+        let mut first_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
         let mut last_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
 
         let now = chrono::Utc::now();
@@ -755,6 +762,7 @@ impl Aggregator {
                     blocks.push(SessionBlock {
                         start_time: block_start,
                         end_time: block_end,
+                        actual_start_time: first_entry_time,
                         actual_end_time: Some(actual_end),
                         sessions: Vec::new(), // We don't aggregate into sessions for this method
                         tokens: std::mem::take(&mut current_tokens),
@@ -776,6 +784,7 @@ impl Aggregator {
                         blocks.push(SessionBlock {
                             start_time: gap_start,
                             end_time: gap_end,
+                            actual_start_time: None,
                             actual_end_time: None,
                             sessions: Vec::new(),
                             tokens: TokenCounts::default(),
@@ -791,6 +800,12 @@ impl Aggregator {
                 // Start new block (floored to hour)
                 current_block_start = Some(Self::truncate_to_hour(entry_time));
                 current_block_entries.clear();
+                first_entry_time = None; // Reset first entry time for new block
+            }
+
+            // Track first entry time in this block
+            if first_entry_time.is_none() {
+                first_entry_time = Some(entry_time);
             }
 
             // Calculate cost for this entry
@@ -818,6 +833,7 @@ impl Aggregator {
             blocks.push(SessionBlock {
                 start_time: block_start,
                 end_time: block_end,
+                actual_start_time: first_entry_time,
                 actual_end_time: Some(actual_end),
                 sessions: Vec::new(),
                 tokens: current_tokens,
