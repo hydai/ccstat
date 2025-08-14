@@ -103,7 +103,7 @@ pub enum Command {
         instances: bool,
 
         /// Show detailed token information per entry
-        #[arg(long, short = 'd')]
+        #[arg(long, short = 'd', conflicts_with = "instances")]
         detailed: bool,
     },
 

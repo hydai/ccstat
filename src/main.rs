@@ -131,11 +131,7 @@ async fn main() -> Result<()> {
                 // Apply month filter to aggregated monthly data
                 filter_monthly_data(&mut monthly_data, &month_filter);
 
-                let mut totals = Totals::default();
-                for monthly in &monthly_data {
-                    totals.tokens += monthly.tokens;
-                    totals.total_cost += monthly.total_cost;
-                }
+                let totals = Totals::from_monthly(&monthly_data);
 
                 // Format and output
                 let formatter = get_formatter(cli.json, cli.full_model_names);

@@ -727,18 +727,12 @@ impl Totals {
 pub fn filter_monthly_data(monthly_data: &mut Vec<MonthlyUsage>, month_filter: &MonthFilter) {
     monthly_data.retain(|monthly| {
         // Parse month string (YYYY-MM) to check filter
-        if let Ok((year, month)) = monthly
-            .month
-            .split_once('-')
-            .and_then(|(y, m)| Some((y.parse::<i32>().ok()?, m.parse::<u32>().ok()?)))
-            .ok_or(())
-        {
-            // Create a date for the first day of the month to check filter
-            if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, 1) {
-                return month_filter.matches_date(&date);
-            }
+        if let Ok(date) = crate::cli::parse_date_filter(&monthly.month) {
+            month_filter.matches_date(&date)
+        } else {
+            // This should not happen if the month format is always "YYYY-MM"
+            false
         }
-        false
     });
 }
 
@@ -779,35 +773,33 @@ pub fn apply_token_limit_warnings(
 
     // Apply warnings to blocks
     for block in blocks {
-        if block.is_active {
-            let total_tokens = block.tokens.total();
-            let threshold = if is_percentage {
-                approx_max_tokens * limit_value
-            } else {
-                limit_value
-            };
+        let total_tokens = block.tokens.total();
+        let threshold = if is_percentage {
+            approx_max_tokens * limit_value
+        } else {
+            limit_value
+        };
 
-            if total_tokens as f64 >= threshold {
-                block.warning = Some(format!(
-                    "⚠️  Block has used {} tokens, exceeding threshold of {}",
-                    total_tokens,
-                    if is_percentage {
-                        format!(
-                            "{}% (~{:.0} tokens)",
-                            (limit_value * 100.0) as u32,
-                            threshold
-                        )
-                    } else {
-                        format!("{} tokens", threshold as u64)
-                    }
-                ));
-            } else if total_tokens as f64 >= threshold * 0.8 {
-                block.warning = Some(format!(
-                    "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
-                    total_tokens,
-                    ((total_tokens as f64 / threshold) * 100.0) as u32
-                ));
-            }
+        if total_tokens as f64 >= threshold {
+            block.warning = Some(format!(
+                "⚠️  Block has used {} tokens, exceeding threshold of {}",
+                total_tokens,
+                if is_percentage {
+                    format!(
+                        "{}% (~{:.0} tokens)",
+                        (limit_value * 100.0) as u32,
+                        threshold
+                    )
+                } else {
+                    format!("{} tokens", threshold as u64)
+                }
+            ));
+        } else if total_tokens as f64 >= threshold * 0.8 {
+            block.warning = Some(format!(
+                "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
+                total_tokens,
+                ((total_tokens as f64 / threshold) * 100.0) as u32
+            ));
         }
     }
 

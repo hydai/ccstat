@@ -8,7 +8,7 @@
 use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{
-        Aggregator, SessionBlock, Totals, apply_token_limit_warnings, filter_blocks,
+        Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
         filter_monthly_data,
     },
     data_loader::DataLoader,
@@ -249,6 +249,19 @@ impl LiveMonitor {
         Ok(())
     }
 
+    /// Helper method to aggregate session data from filtered entries
+    async fn aggregate_sessions_for_watch(
+        &self,
+        filtered_entries: &[UsageEntry],
+    ) -> Result<Vec<SessionUsage>> {
+        self.aggregator
+            .aggregate_sessions(
+                futures::stream::iter(filtered_entries).map(|e| Ok(e.clone())),
+                self.cost_mode,
+            )
+            .await
+    }
+
     /// Prepare data for display by loading, filtering and aggregating
     pub async fn prepare_data(&self) -> Result<PreparedData> {
         // Load and aggregate data
@@ -335,13 +348,7 @@ impl LiveMonitor {
                 prepared_data.monthly_data = Some(monthly_data);
             }
             CommandType::Session => {
-                let session_data = self
-                    .aggregator
-                    .aggregate_sessions(
-                        futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
-                        self.cost_mode,
-                    )
-                    .await?;
+                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
                 prepared_data.totals = Totals::from_sessions(&session_data);
                 prepared_data.session_data = Some(session_data);
             }
@@ -351,13 +358,7 @@ impl LiveMonitor {
                 token_limit,
             } => {
                 // First aggregate sessions, then create blocks
-                let session_data = self
-                    .aggregator
-                    .aggregate_sessions(
-                        futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
-                        self.cost_mode,
-                    )
-                    .await?;
+                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
 
                 let mut blocks = Aggregator::create_billing_blocks(&session_data);
 
