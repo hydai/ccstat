@@ -23,27 +23,31 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### Running the tool
 ```bash
-# Basic commands
+# Basic commands (ccstat defaults to daily command)
+cargo run                                    # Same as cargo run -- daily
 cargo run -- daily
 cargo run -- monthly
 cargo run -- session
 cargo run -- blocks
 cargo run -- statusline
-cargo run -- mcp
 
-# With timezone options
-cargo run -- daily --timezone "America/New_York"
-cargo run -- daily --utc
+# Global options can be used without a command (defaults to daily)
+cargo run -- --json                         # Daily report in JSON
+cargo run -- --since 2025-01-01             # Daily report from Jan 1
+cargo run -- --timezone "America/New_York"   # Daily report in NY timezone
 
-# With model display options
-cargo run -- daily --full-model-names
+# Global options work with all commands
+cargo run -- --json monthly                 # Monthly report in JSON
+cargo run -- --project my-project session   # Sessions for a project
 
-# With live monitoring
-cargo run -- daily --watch --interval 5
+# Date filters accept YYYY-MM-DD or YYYY-MM format
+cargo run -- --since 2025-01-01 --until 2025-01-31
+cargo run -- --since 2025-01                # From January 2025
 
-# With filters
-cargo run -- daily --since 2025-01-01 --until 2025-01-31
-cargo run -- daily --project my-project
+# Command-specific options
+cargo run -- daily --watch --interval 5     # Live monitoring
+cargo run -- daily --instances              # Per-instance breakdown
+cargo run -- blocks --active                # Active blocks only
 ```
 
 ## Project Structure
@@ -69,36 +73,34 @@ cargo run -- daily --project my-project
 
 ## Command-Line Options
 
-### Global Options
+### Global Options (work with all commands)
 - `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
 - `--quiet` / `-q` - **[DEPRECATED]** This flag no longer affects logging output and will be removed in v0.3.0. Quiet mode is now the default.
-
-### Timezone Options
+- `--mode` - Cost calculation mode (auto, calculate, fetch, offline, none)
+- `--json` - Output results in JSON format instead of tables
+- `--since` - Filter by start date (YYYY-MM-DD or YYYY-MM format)
+- `--until` - Filter by end date (YYYY-MM-DD or YYYY-MM format)
+- `--project` / `-p` - Filter by project name
 - `--timezone` / `-z` - Specify timezone for date grouping (e.g., "America/New_York", "Asia/Tokyo")
 - `--utc` - Use UTC for date grouping (overrides --timezone)
-- Default: Uses system's local timezone
-
-### Model Display Options
 - `--full-model-names` - Show full model names instead of shortened versions
-
-### Performance Options
-- `--watch` / `-w` - Enable live monitoring mode with auto-refresh
-- `--interval` - Refresh interval in seconds for watch mode (default: 5)
 - `--parallel` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Parallel processing is always enabled.
 - `--intern` - Enable string interning for memory optimization
 - `--arena` - Enable arena allocation for parsing
 
-### Filtering Options
-- `--since` - Filter by start date (YYYY-MM-DD) or month (YYYY-MM)
-- `--until` - Filter by end date (YYYY-MM-DD) or month (YYYY-MM)
-- `--project` / `-p` - Filter by project name
-- `--instances` / `-i` - Show per-instance breakdown (daily command)
-
-### Output Options
-- `--json` - Output results in JSON format instead of tables
-- `--detailed` - Show detailed token information per entry (daily command only)
-
 ### Command-Specific Options
+
+#### Daily Command
+- `--instances` / `-i` - Show per-instance breakdown
+- `--watch` / `-w` - Enable live monitoring mode with auto-refresh
+- `--interval` - Refresh interval in seconds for watch mode (default: 5)
+- `--detailed` / `-d` - Show detailed token information per entry
+
+#### Monthly Command
+No command-specific options. Uses all global options.
+
+#### Session Command
+No command-specific options. Uses all global options.
 
 #### Blocks Command
 - `--active` - Show only active billing blocks

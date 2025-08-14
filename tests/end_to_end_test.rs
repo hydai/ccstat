@@ -7,7 +7,7 @@ mod common;
 
 use ccstat::{
     aggregation::Aggregator,
-    cli::{parse_date_filter, parse_month_filter},
+    cli::parse_date_filter,
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::CcstatError,
@@ -430,7 +430,7 @@ async fn test_error_handling_workflow() {
     let result = parse_date_filter("not-a-date");
     assert!(result.is_err());
 
-    let result = parse_month_filter("2024-13"); // Invalid month
+    let result = parse_date_filter("2024-13"); // Invalid month
     assert!(result.is_err());
 
     // Test with non-existent data directory - use mutex for thread safety

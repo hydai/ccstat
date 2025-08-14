@@ -87,11 +87,11 @@ The Docker image is multi-platform and supports both `linux/amd64` and `linux/ar
 ## Quick Start
 
 ```bash
-# View today's usage (quiet by default)
-ccstat daily
+# View today's usage (defaults to daily command)
+ccstat
 
 # View with informational messages
-ccstat daily --verbose
+ccstat --verbose
 
 # View this month's usage
 ccstat monthly
@@ -102,53 +102,45 @@ ccstat session
 # Show statusline for Claude Code integration
 ccstat statusline
 
-# Export data as JSON for further processing
-ccstat daily --json > usage.json
+# Export data as JSON for further processing (global option)
+ccstat --json > usage.json
 ```
 
 ## Usage
 
 ### Daily Usage Report
 
-Show daily token usage and costs:
+Show daily token usage and costs. The daily command is the default when no command is specified.
 
 ```bash
-# Default table output
+# Default table output (these are equivalent)
+ccstat
 ccstat daily
 
-# JSON output for processing
-ccstat daily --json
+# Common options can be used globally or with commands
+ccstat --json                               # JSON output (global)
+ccstat daily --json                         # JSON output (command-specific, backward compatible)
 
-# Filter by date range
-ccstat daily --since 2024-01-01 --until 2024-01-31
+# Filter by date range (accepts YYYY-MM-DD or YYYY-MM format)
+ccstat --since 2024-01-01 --until 2024-01-31
+ccstat --since 2024-01                      # From January 2024
 
-# Show per-instance breakdown
-ccstat daily --instances
+# Daily-specific options
+ccstat daily --instances                    # Show per-instance breakdown
+ccstat daily --watch                        # Live monitoring mode
+ccstat daily --watch --interval 30          # Custom refresh interval
+ccstat daily --detailed                     # Show detailed token info
 
-# Filter by project
-ccstat daily --project my-project
+# Global options work with all commands
+ccstat --project my-project                 # Filter by project
+ccstat --timezone "America/New_York"        # Use specific timezone
+ccstat --utc                                # Force UTC timezone
+ccstat --full-model-names                   # Show full model names
 
-# Timezone configuration
-ccstat daily --timezone "America/New_York"  # Use specific timezone
-ccstat daily --utc                          # Force UTC timezone
-
-# Model display options
-ccstat daily --full-model-names             # Show full model names
-
-# Live monitoring mode (auto-refresh)
-ccstat daily --watch
-
-# Custom refresh interval (seconds)
-ccstat daily --watch --interval 30
-
-# Performance options
-ccstat daily                  # Parallel processing is always enabled
-ccstat daily --parallel       # [DEPRECATED] This flag has no effect (will be removed in v0.3.0)
-ccstat daily --intern         # Use string interning for memory efficiency
-ccstat daily --arena          # Use arena allocation
-
-# Show detailed token info per entry
-ccstat daily --detailed
+# Performance options (global)
+ccstat --intern                             # Use string interning
+ccstat --arena                              # Use arena allocation
+ccstat --parallel                           # [DEPRECATED] Has no effect
 ```
 
 ### Monthly Summary
@@ -159,8 +151,9 @@ Aggregate usage by month:
 # Monthly totals
 ccstat monthly
 
-# Filter specific months
-ccstat monthly --since 2024-01 --until 2024-03
+# Filter specific months (accepts YYYY-MM-DD or YYYY-MM format)
+ccstat monthly --since 2024-01-01 --until 2024-03-31
+ccstat monthly --since 2024-01 --until 2024-03  # Also works
 
 # JSON output
 ccstat monthly --json

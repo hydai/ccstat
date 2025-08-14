@@ -45,50 +45,59 @@ pub struct Cli {
     #[arg(long, short = 'v', global = true)]
     pub verbose: bool,
 
-    /// Subcommand to execute
-    #[command(subcommand)]
-    pub command: Option<Command>,
-}
+    /// Cost calculation mode
+    #[arg(long, value_enum, default_value = "auto", global = true)]
+    pub mode: CostMode,
 
-/// Common timezone options
-#[derive(clap::Args, Debug)]
-pub struct TimezoneArgs {
+    /// Output as JSON
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Filter by start date (YYYY-MM-DD or YYYY-MM)
+    #[arg(long, global = true)]
+    pub since: Option<String>,
+
+    /// Filter by end date (YYYY-MM-DD or YYYY-MM)
+    #[arg(long, global = true)]
+    pub until: Option<String>,
+
+    /// Filter by project name
+    #[arg(long, short = 'p', global = true)]
+    pub project: Option<String>,
+
     /// Timezone for date grouping (e.g. "America/New_York", "Asia/Tokyo", "UTC")
     /// If not specified, uses the system's local timezone
-    #[arg(long, short = 'z')]
+    #[arg(long, short = 'z', global = true)]
     pub timezone: Option<String>,
 
     /// Use UTC for date grouping (overrides --timezone)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub utc: bool,
-}
 
-/// Common model display options
-#[derive(clap::Args, Debug)]
-pub struct ModelDisplayArgs {
     /// Show full model names instead of shortened versions
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub full_model_names: bool,
-}
 
-/// Common performance optimization options
-#[derive(clap::Args, Debug)]
-pub struct PerformanceArgs {
     /// \[DEPRECATED\] This flag is deprecated and will be removed in v0.3.0. Parallel processing is now always enabled.
     #[arg(
         long,
         default_value_t = true,
+        global = true,
         help = "[DEPRECATED] This flag has no effect. Parallel processing is always enabled."
     )]
     pub parallel: bool,
 
     /// Enable string interning for memory optimization
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub intern: bool,
 
     /// Enable arena allocation for parsing
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub arena: bool,
+
+    /// Subcommand to execute
+    #[command(subcommand)]
+    pub command: Option<Command>,
 }
 
 /// Available commands
@@ -99,29 +108,9 @@ pub struct PerformanceArgs {
 pub enum Command {
     /// Show daily usage summary
     Daily {
-        /// Cost calculation mode
-        #[arg(long, value_enum, default_value = "auto")]
-        mode: CostMode,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-
-        /// Filter by start date (YYYY-MM-DD)
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Filter by end date (YYYY-MM-DD)
-        #[arg(long)]
-        until: Option<String>,
-
         /// Show per-instance breakdown
         #[arg(long, short = 'i')]
         instances: bool,
-
-        /// Filter by project name
-        #[arg(long, short = 'p')]
-        project: Option<String>,
 
         /// Enable live monitoring mode
         #[arg(long, short = 'w')]
@@ -132,94 +121,18 @@ pub enum Command {
         interval: u64,
 
         /// Show detailed token information per entry
-        #[arg(long)]
+        #[arg(long, short = 'd')]
         detailed: bool,
-
-        /// Performance options
-        #[command(flatten)]
-        performance_args: PerformanceArgs,
-
-        /// Model display options
-        #[command(flatten)]
-        model_display_args: ModelDisplayArgs,
-
-        /// Timezone options
-        #[command(flatten)]
-        timezone_args: TimezoneArgs,
     },
 
     /// Show monthly usage summary
-    Monthly {
-        /// Cost calculation mode
-        #[arg(long, value_enum, default_value = "auto")]
-        mode: CostMode,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-
-        /// Filter by start month (YYYY-MM)
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Filter by end month (YYYY-MM)
-        #[arg(long)]
-        until: Option<String>,
-
-        /// Performance options
-        #[command(flatten)]
-        performance_args: PerformanceArgs,
-
-        /// Model display options
-        #[command(flatten)]
-        model_display_args: ModelDisplayArgs,
-
-        /// Timezone options
-        #[command(flatten)]
-        timezone_args: TimezoneArgs,
-    },
+    Monthly,
 
     /// Show session-based usage
-    Session {
-        /// Cost calculation mode
-        #[arg(long, value_enum, default_value = "auto")]
-        mode: CostMode,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-
-        /// Filter by start date
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Filter by end date
-        #[arg(long)]
-        until: Option<String>,
-
-        /// Performance options
-        #[command(flatten)]
-        performance_args: PerformanceArgs,
-
-        /// Model display options
-        #[command(flatten)]
-        model_display_args: ModelDisplayArgs,
-
-        /// Timezone options
-        #[command(flatten)]
-        timezone_args: TimezoneArgs,
-    },
+    Session,
 
     /// Show 5-hour billing blocks
     Blocks {
-        /// Cost calculation mode
-        #[arg(long, value_enum, default_value = "auto")]
-        mode: CostMode,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-
         /// Show only active blocks
         #[arg(long)]
         active: bool,
@@ -231,18 +144,6 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
-
-        /// Performance options
-        #[command(flatten)]
-        performance_args: PerformanceArgs,
-
-        /// Model display options
-        #[command(flatten)]
-        model_display_args: ModelDisplayArgs,
-
-        /// Timezone options
-        #[command(flatten)]
-        timezone_args: TimezoneArgs,
     },
 
     /// Generate statusline output for Claude Code
@@ -265,52 +166,10 @@ pub enum Command {
     },
 }
 
-impl Command {
-    /// Get the cost mode for this command
-    pub fn cost_mode(&self) -> CostMode {
-        match self {
-            Self::Daily { mode, .. } => *mode,
-            Self::Monthly { mode, .. } => *mode,
-            Self::Session { mode, .. } => *mode,
-            Self::Blocks { mode, .. } => *mode,
-            Self::Statusline { .. } => CostMode::Auto,
-        }
-    }
-
-    /// Check if JSON output is requested
-    pub fn is_json(&self) -> bool {
-        match self {
-            Self::Daily { json, .. } => *json,
-            Self::Monthly { json, .. } => *json,
-            Self::Session { json, .. } => *json,
-            Self::Blocks { json, .. } => *json,
-            Self::Statusline { .. } => false,
-        }
-    }
-
-    /// Get performance args if the command has them
-    pub fn performance_args(&self) -> Option<&PerformanceArgs> {
-        match self {
-            Self::Daily {
-                performance_args, ..
-            }
-            | Self::Monthly {
-                performance_args, ..
-            }
-            | Self::Session {
-                performance_args, ..
-            }
-            | Self::Blocks {
-                performance_args, ..
-            } => Some(performance_args),
-            Self::Statusline { .. } => None,
-        }
-    }
-}
-
 /// Parse date filter from string
 ///
-/// Expects dates in YYYY-MM-DD format.
+/// Accepts dates in YYYY-MM-DD or YYYY-MM format.
+/// For YYYY-MM format, defaults to the first day of the month.
 ///
 /// # Arguments
 ///
@@ -328,89 +187,88 @@ impl Command {
 ///
 /// let date = parse_date_filter("2024-01-15").unwrap();
 /// assert_eq!(date.year(), 2024);
+/// assert_eq!(date.day(), 15);
+///
+/// let date = parse_date_filter("2024-01").unwrap();
+/// assert_eq!(date.year(), 2024);
+/// assert_eq!(date.month(), 1);
+/// assert_eq!(date.day(), 1);
 /// ```
 pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
-    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .map_err(|e| CcstatError::InvalidDate(format!("Invalid date format '{date_str}': {e}")))
-}
-
-/// Parse month filter from string
-///
-/// Expects months in YYYY-MM format.
-///
-/// # Arguments
-///
-/// * `month_str` - Month string to parse
-///
-/// # Returns
-///
-/// A tuple of (year, month) or an error if the format is invalid
-///
-/// # Example
-///
-/// ```
-/// use ccstat::cli::parse_month_filter;
-///
-/// let (year, month) = parse_month_filter("2024-01").unwrap();
-/// assert_eq!(year, 2024);
-/// assert_eq!(month, 1);
-/// ```
-pub fn parse_month_filter(month_str: &str) -> Result<(i32, u32)> {
-    let parts: Vec<&str> = month_str.split('-').collect();
-    if parts.len() != 2 {
-        return Err(CcstatError::InvalidDate(format!(
-            "Invalid month format '{month_str}', expected YYYY-MM"
-        )));
+    // Try YYYY-MM-DD format first
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        return Ok(date);
     }
 
-    let year = parts[0]
-        .parse::<i32>()
-        .map_err(|_| CcstatError::InvalidDate(format!("Invalid year in '{month_str}'")))?;
-    let month = parts[1]
-        .parse::<u32>()
-        .map_err(|_| CcstatError::InvalidDate(format!("Invalid month in '{month_str}'")))?;
+    // Try YYYY-MM format (convert to first day of month)
+    let parts: Vec<&str> = date_str.split('-').collect();
+    if parts.len() == 2 {
+        let year = parts[0]
+            .parse::<i32>()
+            .map_err(|_| CcstatError::InvalidDate(format!("Invalid year in '{date_str}'")))?;
+        let month = parts[1]
+            .parse::<u32>()
+            .map_err(|_| CcstatError::InvalidDate(format!("Invalid month in '{date_str}'")))?;
 
-    if !(1..=12).contains(&month) {
-        return Err(CcstatError::InvalidDate(format!(
-            "Month must be between 1-12, got {month}"
-        )));
+        if !(1..=12).contains(&month) {
+            return Err(CcstatError::InvalidDate(format!(
+                "Month must be between 1-12, got {month}"
+            )));
+        }
+
+        chrono::NaiveDate::from_ymd_opt(year, month, 1)
+            .ok_or_else(|| CcstatError::InvalidDate(format!("Invalid date: {date_str}")))
+    } else {
+        Err(CcstatError::InvalidDate(format!(
+            "Invalid date format '{}', expected YYYY-MM-DD or YYYY-MM",
+            date_str
+        )))
     }
-
-    Ok((year, month))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
 
     #[test]
     fn test_cli_parsing() {
-        let cli = Cli::parse_from(["ccstat", "daily", "--json"]);
+        // Test global JSON flag
+        let cli = Cli::parse_from(["ccstat", "--json"]);
+        assert!(cli.json);
+
+        // Test with daily command
+        let cli = Cli::parse_from(["ccstat", "daily", "--instances"]);
         match cli.command {
-            Some(Command::Daily { json, .. }) => assert!(json),
+            Some(Command::Daily { instances, .. }) => assert!(instances),
             _ => panic!("Expected Daily command"),
         }
     }
 
     #[test]
     fn test_cost_mode_parsing() {
-        let cli = Cli::parse_from(["ccstat", "daily", "--mode", "calculate"]);
-        match cli.command {
-            Some(Command::Daily { mode, .. }) => assert_eq!(mode, CostMode::Calculate),
-            _ => panic!("Expected Daily command"),
-        }
+        // Test global mode flag
+        let cli = Cli::parse_from(["ccstat", "--mode", "calculate"]);
+        assert_eq!(cli.mode, CostMode::Calculate);
     }
 
     #[test]
     fn test_date_parsing() {
-        assert!(parse_date_filter("2024-01-15").is_ok());
-        assert!(parse_date_filter("invalid").is_err());
-    }
+        // Test YYYY-MM-DD format
+        let date = parse_date_filter("2024-01-15").unwrap();
+        assert_eq!(date.year(), 2024);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.day(), 15);
 
-    #[test]
-    fn test_month_parsing() {
-        assert_eq!(parse_month_filter("2024-01").unwrap(), (2024, 1));
-        assert!(parse_month_filter("2024-13").is_err());
-        assert!(parse_month_filter("invalid").is_err());
+        // Test YYYY-MM format (should default to first day)
+        let date = parse_date_filter("2024-01").unwrap();
+        assert_eq!(date.year(), 2024);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.day(), 1);
+
+        // Test invalid formats
+        assert!(parse_date_filter("invalid").is_err());
+        assert!(parse_date_filter("2024-13").is_err());
+        assert!(parse_date_filter("2024").is_err());
     }
 }

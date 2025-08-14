@@ -7,7 +7,7 @@ mod common;
 
 use ccstat::{
     aggregation::Aggregator,
-    cli::{parse_date_filter, parse_month_filter},
+    cli::parse_date_filter,
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     filters::UsageFilter,
@@ -237,20 +237,24 @@ async fn test_date_filter_parsing() {
 
 #[tokio::test]
 async fn test_month_filter_parsing() {
-    // Test valid month formats
-    let (year, month) = parse_month_filter("2024-01").unwrap();
-    assert_eq!(year, 2024);
-    assert_eq!(month, 1);
+    use chrono::Datelike;
+    
+    // Test valid month formats (YYYY-MM should parse to first day of month)
+    let date = parse_date_filter("2024-01").unwrap();
+    assert_eq!(date.year(), 2024);
+    assert_eq!(date.month(), 1);
+    assert_eq!(date.day(), 1);
 
-    let (year, month) = parse_month_filter("2024-12").unwrap();
-    assert_eq!(year, 2024);
-    assert_eq!(month, 12);
+    let date = parse_date_filter("2024-12").unwrap();
+    assert_eq!(date.year(), 2024);
+    assert_eq!(date.month(), 12);
+    assert_eq!(date.day(), 1);
 
     // Test invalid month format
-    assert!(parse_month_filter("2024").is_err());
-    assert!(parse_month_filter("2024-13").is_err());
-    assert!(parse_month_filter("2024-00").is_err());
-    assert!(parse_month_filter("invalid").is_err());
+    assert!(parse_date_filter("2024").is_err());
+    assert!(parse_date_filter("2024-13").is_err());
+    assert!(parse_date_filter("2024-00").is_err());
+    assert!(parse_date_filter("invalid").is_err());
 }
 
 #[tokio::test]

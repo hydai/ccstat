@@ -2,7 +2,7 @@
 
 use ccstat::{
     aggregation::{Aggregator, Totals},
-    cli::{Cli, Command, TimezoneArgs, parse_date_filter, parse_month_filter},
+    cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
     error::Result,
@@ -12,6 +12,7 @@ use ccstat::{
     pricing_fetcher::PricingFetcher,
     timezone::TimezoneConfig,
 };
+use chrono::Datelike;
 use clap::Parser;
 use std::sync::Arc;
 use tracing::info;
@@ -21,39 +22,33 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn create_aggregator_with_timezone(
     cost_calculator: Arc<CostCalculator>,
     show_progress: bool,
-    timezone_args: &TimezoneArgs,
+    timezone: Option<&str>,
+    utc: bool,
 ) -> Result<Aggregator> {
-    let tz_config = TimezoneConfig::from_cli(timezone_args.timezone.as_deref(), timezone_args.utc)?;
+    let tz_config = TimezoneConfig::from_cli(timezone, utc)?;
     info!("Using timezone: {}", tz_config.display_name());
 
     Ok(Aggregator::new(cost_calculator, tz_config).with_progress(show_progress))
 }
 
 /// Helper function to initialize a DataLoader with common configuration
-async fn init_data_loader(
-    show_progress: bool,
-    perf_args: &ccstat::cli::PerformanceArgs,
-) -> Result<DataLoader> {
+async fn init_data_loader(show_progress: bool, intern: bool, arena: bool) -> Result<DataLoader> {
     Ok(DataLoader::new()
         .await?
         .with_progress(show_progress)
-        .with_interning(perf_args.intern)
-        .with_arena(perf_args.arena))
+        .with_interning(intern)
+        .with_arena(arena))
 }
 
-/// Helper function to check for deprecated global flags and show warnings
-fn check_deprecated_global_flags(cli: &Cli) {
+/// Helper function to check for deprecated flags and show warnings
+fn check_deprecated_flags(cli: &Cli) {
     if cli.quiet {
         eprintln!("Warning: --quiet flag is deprecated and will be removed in v0.3.0");
         eprintln!(
             "         Quiet mode is now the default behavior. Use --verbose to show informational output."
         );
     }
-}
-
-/// Helper function to check for deprecated command-specific flags and show warnings
-fn check_deprecated_perf_flags(perf_args: &ccstat::cli::PerformanceArgs) {
-    if !perf_args.parallel {
+    if !cli.parallel {
         eprintln!("Warning: --parallel=false flag is deprecated and will be removed in v0.3.0");
         eprintln!("         Parallel processing is now always enabled for better performance.");
     }
@@ -64,15 +59,8 @@ async fn main() -> Result<()> {
     // Parse CLI arguments first to check for quiet flag
     let cli = Cli::parse();
 
-    // Check for deprecated global flags early
-    check_deprecated_global_flags(&cli);
-
-    // Check for deprecated command-specific flags
-    if let Some(command) = &cli.command
-        && let Some(perf_args) = command.performance_args()
-    {
-        check_deprecated_perf_flags(perf_args);
-    }
+    // Check for deprecated flags early
+    check_deprecated_flags(&cli);
 
     // Skip logging initialization for statusline command
     let is_statusline = matches!(cli.command, Some(Command::Statusline { .. }));
@@ -90,47 +78,46 @@ async fn main() -> Result<()> {
             .init();
     }
 
-    // Handle commands
-    match cli.command {
+    // Handle commands - default to daily if no command specified
+    match &cli.command {
         Some(Command::Daily {
-            mode,
-            json,
-            since,
-            until,
             instances,
-            project,
             watch,
             interval,
             detailed,
-            performance_args,
-            model_display_args,
-            timezone_args,
         }) => {
             info!("Running daily usage report");
 
+            let instances = *instances;
+            let watch = *watch;
+            let interval = *interval;
+            let detailed = *detailed;
+
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = Arc::new(init_data_loader(show_progress, &performance_args).await?);
+            let show_progress = !cli.json && !watch && is_terminal::is_terminal(std::io::stdout());
+            let data_loader =
+                Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
             let aggregator = Arc::new(create_aggregator_with_timezone(
                 cost_calculator,
                 show_progress,
-                &timezone_args,
+                cli.timezone.as_deref(),
+                cli.utc,
             )?);
 
             // Build filter
             let mut filter = UsageFilter::new();
 
-            if let Some(since_str) = &since {
+            if let Some(since_str) = &cli.since {
                 let since_date = parse_date_filter(since_str)?;
                 filter = filter.with_since(since_date);
             }
-            if let Some(until_str) = &until {
+            if let Some(until_str) = &cli.until {
                 let until_date = parse_date_filter(until_str)?;
                 filter = filter.with_until(until_date);
             }
-            if let Some(project_name) = &project {
+            if let Some(project_name) = &cli.project {
                 filter = filter.with_project(project_name.clone());
             }
             // Apply timezone to filter
@@ -143,11 +130,11 @@ async fn main() -> Result<()> {
                     data_loader,
                     aggregator,
                     filter,
-                    mode,
-                    json,
+                    cli.mode,
+                    cli.json,
                     instances,
                     interval,
-                    model_display_args.full_model_names,
+                    cli.full_model_names,
                 );
                 monitor.run().await?;
             } else {
@@ -157,10 +144,10 @@ async fn main() -> Result<()> {
                     let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let instance_data = aggregator
-                        .aggregate_daily_by_instance(filtered_entries, mode)
+                        .aggregate_daily_by_instance(filtered_entries, cli.mode)
                         .await?;
                     let totals = Totals::from_daily_instances(&instance_data);
-                    let formatter = get_formatter(json, model_display_args.full_model_names);
+                    let formatter = get_formatter(cli.json, cli.full_model_names);
                     println!(
                         "{}",
                         formatter.format_daily_by_instance(&instance_data, &totals)
@@ -170,49 +157,45 @@ async fn main() -> Result<()> {
                     let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
-                        .aggregate_daily_detailed(filtered_entries, mode, detailed)
+                        .aggregate_daily_detailed(filtered_entries, cli.mode, detailed)
                         .await?;
                     let totals = Totals::from_daily(&daily_data);
-                    let formatter = get_formatter(json, model_display_args.full_model_names);
+                    let formatter = get_formatter(cli.json, cli.full_model_names);
                     println!("{}", formatter.format_daily(&daily_data, &totals));
                 }
             }
         }
 
-        Some(Command::Monthly {
-            mode,
-            json,
-            since,
-            until,
-            performance_args,
-            model_display_args,
-            timezone_args,
-        }) => {
+        Some(Command::Monthly) => {
             info!("Running monthly usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(show_progress, &performance_args).await?;
+            let show_progress = !cli.json && is_terminal::is_terminal(std::io::stdout());
+            let data_loader = init_data_loader(show_progress, cli.intern, cli.arena).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator =
-                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
+            let aggregator = create_aggregator_with_timezone(
+                cost_calculator,
+                show_progress,
+                cli.timezone.as_deref(),
+                cli.utc,
+            )?;
 
             // Build month filter
             let mut month_filter = MonthFilter::new();
 
-            if let Some(since_str) = &since {
-                let (year, month) = parse_month_filter(since_str)?;
-                month_filter = month_filter.with_since(year, month);
+            if let Some(since_str) = &cli.since {
+                let since_date = parse_date_filter(since_str)?;
+                month_filter = month_filter.with_since(since_date.year(), since_date.month());
             }
-            if let Some(until_str) = &until {
-                let (year, month) = parse_month_filter(until_str)?;
-                month_filter = month_filter.with_until(year, month);
+            if let Some(until_str) = &cli.until {
+                let until_date = parse_date_filter(until_str)?;
+                month_filter = month_filter.with_until(until_date.year(), until_date.month());
             }
 
             // Load entries and aggregate data
             let entries = Box::pin(data_loader.load_usage_entries_parallel());
-            let daily_data = aggregator.aggregate_daily(entries, mode).await?;
+            let daily_data = aggregator.aggregate_daily(entries, cli.mode).await?;
             let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
 
             // Apply month filter to aggregated monthly data
@@ -239,39 +222,38 @@ async fn main() -> Result<()> {
             }
 
             // Format and output
-            let formatter = get_formatter(json, model_display_args.full_model_names);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
             println!("{}", formatter.format_monthly(&monthly_data, &totals));
         }
 
-        Some(Command::Session {
-            mode,
-            json,
-            since,
-            until,
-            performance_args,
-            model_display_args,
-            timezone_args,
-        }) => {
+        Some(Command::Session) => {
             info!("Running session usage report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(show_progress, &performance_args).await?;
+            let show_progress = !cli.json && is_terminal::is_terminal(std::io::stdout());
+            let data_loader = init_data_loader(show_progress, cli.intern, cli.arena).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator =
-                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
+            let aggregator = create_aggregator_with_timezone(
+                cost_calculator,
+                show_progress,
+                cli.timezone.as_deref(),
+                cli.utc,
+            )?;
 
             // Build filter
             let mut filter = UsageFilter::new();
 
-            if let Some(since_str) = &since {
+            if let Some(since_str) = &cli.since {
                 let since_date = parse_date_filter(since_str)?;
                 filter = filter.with_since(since_date);
             }
-            if let Some(until_str) = &until {
+            if let Some(until_str) = &cli.until {
                 let until_date = parse_date_filter(until_str)?;
                 filter = filter.with_until(until_date);
+            }
+            if let Some(project_name) = &cli.project {
+                filter = filter.with_project(project_name.clone());
             }
             // Apply timezone to filter
             filter = filter.with_timezone(aggregator.timezone_config().tz);
@@ -280,12 +262,12 @@ async fn main() -> Result<()> {
             let entries = Box::pin(data_loader.load_usage_entries_parallel());
             let filtered_entries = filter.filter_stream(entries).await;
             let session_data = aggregator
-                .aggregate_sessions(filtered_entries, mode)
+                .aggregate_sessions(filtered_entries, cli.mode)
                 .await?;
             let totals = Totals::from_sessions(&session_data);
 
             // Format and output
-            let formatter = get_formatter(json, model_display_args.full_model_names);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
             println!(
                 "{}",
                 formatter.format_sessions(&session_data, &totals, &aggregator.timezone_config().tz)
@@ -293,44 +275,43 @@ async fn main() -> Result<()> {
         }
 
         Some(Command::Blocks {
-            mode,
-            json,
             active,
             recent,
             token_limit,
-            performance_args,
-            model_display_args,
-            timezone_args,
         }) => {
             info!("Running billing blocks report");
 
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
-            let data_loader = init_data_loader(show_progress, &performance_args).await?;
+            let show_progress = !cli.json && is_terminal::is_terminal(std::io::stdout());
+            let data_loader = init_data_loader(show_progress, cli.intern, cli.arena).await?;
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator =
-                create_aggregator_with_timezone(cost_calculator, show_progress, &timezone_args)?;
+            let aggregator = create_aggregator_with_timezone(
+                cost_calculator,
+                show_progress,
+                cli.timezone.as_deref(),
+                cli.utc,
+            )?;
 
             // Load entries and aggregate sessions
             let entries = Box::pin(data_loader.load_usage_entries_parallel());
-            let session_data = aggregator.aggregate_sessions(entries, mode).await?;
+            let session_data = aggregator.aggregate_sessions(entries, cli.mode).await?;
 
             // Create billing blocks
             let mut blocks = Aggregator::create_billing_blocks(&session_data);
 
             // Apply filters
-            if active {
+            if *active {
                 blocks.retain(|b| b.is_active);
             }
 
-            if recent {
+            if *recent {
                 let cutoff = chrono::Utc::now() - chrono::Duration::days(1);
                 blocks.retain(|b| b.start_time > cutoff);
             }
 
             // Apply token limit warnings
-            if let Some(limit_str) = &token_limit {
+            if let Some(limit_str) = token_limit {
                 // Parse token limit (can be a number or percentage like "80%")
                 let (limit_value, is_percentage) = if limit_str.ends_with('%') {
                     let value = limit_str
@@ -388,7 +369,7 @@ async fn main() -> Result<()> {
             }
 
             // Format and output
-            let formatter = get_formatter(json, model_display_args.full_model_names);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
             println!(
                 "{}",
                 formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
@@ -402,32 +383,56 @@ async fn main() -> Result<()> {
             show_git,
         }) => {
             // Run statusline handler
-            ccstat::statusline::run(monthly_fee, no_color, show_date, show_git).await?;
+            ccstat::statusline::run(*monthly_fee, *no_color, *show_date, *show_git).await?;
         }
 
         None => {
             // Default to daily report
             info!("No command specified, running daily report");
 
+            let _instances = false;
+            let watch = false;
+            let _interval = 5;
+            let detailed = false;
+
             // Initialize components with progress bars enabled for terminal output
-            let show_progress = is_terminal::is_terminal(std::io::stdout());
-            let data_loader = DataLoader::new().await?.with_progress(show_progress);
+            let show_progress = !cli.json && !watch && is_terminal::is_terminal(std::io::stdout());
+            let data_loader =
+                Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
             let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
             let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default())
-                .with_progress(show_progress);
+            let aggregator = Arc::new(create_aggregator_with_timezone(
+                cost_calculator,
+                show_progress,
+                cli.timezone.as_deref(),
+                cli.utc,
+            )?);
 
-            // Load entries (always use parallel loading)
-            let entries = data_loader.load_usage_entries_parallel();
+            // Build filter
+            let mut filter = UsageFilter::new();
 
-            // Aggregate data
+            if let Some(since_str) = &cli.since {
+                let since_date = parse_date_filter(since_str)?;
+                filter = filter.with_since(since_date);
+            }
+            if let Some(until_str) = &cli.until {
+                let until_date = parse_date_filter(until_str)?;
+                filter = filter.with_until(until_date);
+            }
+            if let Some(project_name) = &cli.project {
+                filter = filter.with_project(project_name.clone());
+            }
+            // Apply timezone to filter
+            filter = filter.with_timezone(aggregator.timezone_config().tz);
+
+            // Load and filter entries, then aggregate normally
+            let entries = Box::pin(data_loader.load_usage_entries_parallel());
+            let filtered_entries = filter.filter_stream(entries).await;
             let daily_data = aggregator
-                .aggregate_daily(entries, Default::default())
+                .aggregate_daily_detailed(filtered_entries, cli.mode, detailed)
                 .await?;
             let totals = Totals::from_daily(&daily_data);
-
-            // Format and output
-            let formatter = get_formatter(false, false);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
             println!("{}", formatter.format_daily(&daily_data, &totals));
         }
     }
