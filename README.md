@@ -87,8 +87,11 @@ The Docker image is multi-platform and supports both `linux/amd64` and `linux/ar
 ## Quick Start
 
 ```bash
-# View today's usage
+# View today's usage (quiet by default)
 ccstat daily
+
+# View with informational messages
+ccstat daily --verbose
 
 # View this month's usage
 ccstat monthly
@@ -144,7 +147,7 @@ ccstat daily --parallel       # [DEPRECATED] This flag has no effect (will be re
 ccstat daily --intern         # Use string interning for memory efficiency
 ccstat daily --arena          # Use arena allocation
 
-# Verbose mode (show detailed token info per entry)
+# Show detailed token info per entry
 ccstat daily --verbose
 ```
 
@@ -369,6 +372,13 @@ ccstat daily --intern --arena
 
 - `CLAUDE_DATA_PATH`: Override default Claude data directory location
 - `RUST_LOG`: Control logging level (e.g., `RUST_LOG=ccstat=debug`)
+
+### Logging Behavior
+
+Starting from v0.2.3, ccstat runs in quiet mode by default (only warnings and errors are shown):
+- Use `--verbose` or `-v` flag to show informational messages
+- The `--quiet` flag is deprecated and will be removed in v0.3.0 (quiet is now the default)
+- `RUST_LOG` environment variable can override these defaults
 
 ### Data Locations
 

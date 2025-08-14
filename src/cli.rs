@@ -32,9 +32,18 @@ use clap::{Parser, Subcommand};
 #[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// Suppress informational output (only show warnings and errors)
-    #[arg(long, short = 'q', global = true)]
+    /// \[DEPRECATED\] This flag is deprecated and will be removed in v0.3.0. Quiet mode is now the default behavior.
+    #[arg(
+        long,
+        short = 'q',
+        global = true,
+        help = "[DEPRECATED] This flag has no effect. Quiet mode is now the default. Use --verbose to show informational output."
+    )]
     pub quiet: bool,
+
+    /// Show informational output (default is quiet mode with only warnings and errors)
+    #[arg(long, short = 'v', global = true)]
+    pub verbose: bool,
 
     /// Subcommand to execute
     #[command(subcommand)]
@@ -123,7 +132,7 @@ pub enum Command {
         interval: u64,
 
         /// Show detailed token information per entry
-        #[arg(long, short = 'v')]
+        #[arg(long)]
         verbose: bool,
 
         /// Performance options

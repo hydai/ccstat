@@ -70,7 +70,8 @@ cargo run -- daily --project my-project
 ## Command-Line Options
 
 ### Global Options
-- `--quiet` / `-q` - Suppress informational output (only show warnings and errors)
+- `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
+- `--quiet` / `-q` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Quiet mode is now the default.
 
 ### Timezone Options
 - `--timezone` / `-z` - Specify timezone for date grouping (e.g., "America/New_York", "Asia/Tokyo")
@@ -95,7 +96,7 @@ cargo run -- daily --project my-project
 
 ### Output Options
 - `--json` - Output results in JSON format instead of tables
-- `--verbose` / `-v` - Show detailed token information per entry
+- `--verbose` - Show detailed token information per entry (daily command only)
 
 ### Command-Specific Options
 
