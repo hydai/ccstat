@@ -528,44 +528,6 @@ impl DataLoader {
         }
     }
 
-    /// Load usage entries as an async stream
-    ///
-    /// **DEPRECATED**: This method now internally calls `load_usage_entries_parallel()`.
-    /// Direct use of `load_usage_entries_parallel()` is recommended.
-    /// This method will be removed in v0.3.0.
-    ///
-    /// # Returns
-    ///
-    /// An async stream of `Result<UsageEntry>` items
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use ccstat::data_loader::DataLoader;
-    /// # use futures::StreamExt;
-    /// # async fn example() -> ccstat::Result<()> {
-    /// let loader = DataLoader::new().await?;
-    /// let entries = loader.load_usage_entries();
-    /// tokio::pin!(entries);
-    ///
-    /// while let Some(entry) = entries.next().await {
-    ///     match entry {
-    ///         Ok(usage) => println!("Loaded entry for session {}", usage.session_id),
-    ///         Err(e) => eprintln!("Error loading entry: {}", e),
-    ///     }
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[deprecated(
-        since = "0.2.2",
-        note = "Use load_usage_entries_parallel() instead. This method now internally calls load_usage_entries_parallel()."
-    )]
-    pub fn load_usage_entries(&self) -> impl Stream<Item = Result<UsageEntry>> + '_ {
-        // Now just calls the parallel version
-        self.load_usage_entries_parallel()
-    }
-
     /// Parse a single JSONL file as a stream
     fn parse_jsonl_stream<'a>(
         &'a self,

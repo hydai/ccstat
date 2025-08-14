@@ -251,12 +251,13 @@ proptest! {
         month in 1u32..=12,
     ) {
         let month_str = format!("{year:04}-{month:02}");
-        let result = ccstat::cli::parse_month_filter(&month_str);
+        let result = ccstat::cli::parse_date_filter(&month_str);
         prop_assert!(result.is_ok());
 
-        let (parsed_year, parsed_month) = result.unwrap();
-        prop_assert_eq!(parsed_year, year);
-        prop_assert_eq!(parsed_month, month);
+        let parsed_date = result.unwrap();
+        prop_assert_eq!(parsed_date.year(), year);
+        prop_assert_eq!(parsed_date.month(), month);
+        prop_assert_eq!(parsed_date.day(), 1); // Should default to first day
     }
 }
 

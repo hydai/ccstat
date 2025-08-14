@@ -22,7 +22,7 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 - 🔍 **Automatic Discovery**: Finds Claude data directories across platforms
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
-- 👀 **Live Monitoring**: Real-time usage tracking with auto-refresh
+- 👀 **Universal Live Monitoring**: Real-time tracking with auto-refresh for ALL commands
 - ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
 - 🔧 **Advanced Filtering**: By date, project, instance, and more
 - 🌍 **Timezone Support**: Accurate daily aggregation across different timezones
@@ -87,8 +87,11 @@ The Docker image is multi-platform and supports both `linux/amd64` and `linux/ar
 ## Quick Start
 
 ```bash
-# View today's usage
-ccstat daily
+# View today's usage (defaults to daily command)
+ccstat
+
+# View with informational messages
+ccstat --verbose
 
 # View this month's usage
 ccstat monthly
@@ -99,53 +102,52 @@ ccstat session
 # Show statusline for Claude Code integration
 ccstat statusline
 
-# Export data as JSON for further processing
-ccstat daily --json > usage.json
+# Export data as JSON for further processing (global option)
+ccstat --json > usage.json
+
+# Live monitoring (works with all commands)
+ccstat --watch                    # Watch daily usage (default)
+ccstat monthly --watch            # Watch monthly aggregations
+ccstat session --watch            # Watch active sessions
+ccstat blocks --watch --active    # Watch active billing blocks
 ```
 
 ## Usage
 
 ### Daily Usage Report
 
-Show daily token usage and costs:
+Show daily token usage and costs. The daily command is the default when no command is specified.
 
 ```bash
-# Default table output
+# Default table output (these are equivalent)
+ccstat
 ccstat daily
 
-# JSON output for processing
-ccstat daily --json
+# Common options can be used globally or with commands
+ccstat --json                               # JSON output (global)
+ccstat daily --json                         # JSON output (command-specific, backward compatible)
 
-# Filter by date range
-ccstat daily --since 2024-01-01 --until 2024-01-31
+# Filter by date range (accepts YYYY-MM-DD or YYYY-MM format)
+ccstat --since 2024-01-01 --until 2024-01-31
+ccstat --since 2024-01                      # From January 2024
 
-# Show per-instance breakdown
-ccstat daily --instances
+# Daily-specific options
+ccstat daily --instances                    # Show per-instance breakdown
+ccstat daily --detailed                     # Show detailed token info
 
-# Filter by project
-ccstat daily --project my-project
+# Live monitoring (global option, works with all commands)
+ccstat --watch                              # Watch daily usage (default)
+ccstat --watch --interval 30                # Custom refresh interval
 
-# Timezone configuration
-ccstat daily --timezone "America/New_York"  # Use specific timezone
-ccstat daily --utc                          # Force UTC timezone
+# Global options work with all commands
+ccstat --project my-project                 # Filter by project
+ccstat --timezone "America/New_York"        # Use specific timezone
+ccstat --utc                                # Force UTC timezone
+ccstat --full-model-names                   # Show full model names
 
-# Model display options
-ccstat daily --full-model-names             # Show full model names
-
-# Live monitoring mode (auto-refresh)
-ccstat daily --watch
-
-# Custom refresh interval (seconds)
-ccstat daily --watch --interval 30
-
-# Performance options
-ccstat daily                  # Parallel processing is always enabled
-ccstat daily --parallel       # [DEPRECATED] This flag has no effect (will be removed in v0.3.0)
-ccstat daily --intern         # Use string interning for memory efficiency
-ccstat daily --arena          # Use arena allocation
-
-# Verbose mode (show detailed token info per entry)
-ccstat daily --verbose
+# Performance options (global)
+ccstat --intern                             # Use string interning
+ccstat --arena                              # Use arena allocation
 ```
 
 ### Monthly Summary
@@ -156,17 +158,19 @@ Aggregate usage by month:
 # Monthly totals
 ccstat monthly
 
-# Filter specific months
-ccstat monthly --since 2024-01 --until 2024-03
+# Filter specific months (accepts YYYY-MM-DD or YYYY-MM format)
+ccstat monthly --since 2024-01-01 --until 2024-03-31
+ccstat monthly --since 2024-01 --until 2024-03  # Also works
+
+# Live monitoring
+ccstat monthly --watch                      # Watch monthly aggregations
+ccstat monthly --watch --interval 10        # Custom refresh interval
 
 # JSON output
 ccstat monthly --json
 
 # Filter by project
 ccstat monthly --project my-project
-
-# Show per-instance breakdown
-ccstat monthly --instances
 
 # Timezone configuration
 ccstat monthly --timezone "Asia/Tokyo"      # Use specific timezone
@@ -184,6 +188,10 @@ Analyze individual sessions:
 # List all sessions
 ccstat session
 
+# Live monitoring
+ccstat session --watch                      # Watch active sessions
+ccstat session --watch --interval 5         # Refresh every 5 seconds
+
 # JSON output with full details
 ccstat session --json
 
@@ -192,9 +200,6 @@ ccstat session --since 2024-01-01 --until 2024-01-31
 
 # Filter by project
 ccstat session --project my-project
-
-# Show detailed models per session
-ccstat session --models
 
 # Timezone configuration
 ccstat session --timezone "Europe/London"   # Use specific timezone
@@ -215,6 +220,11 @@ Track 5-hour billing blocks:
 ```bash
 # Show all blocks
 ccstat blocks
+
+# Live monitoring
+ccstat blocks --watch                       # Watch billing blocks update
+ccstat blocks --watch --active              # Watch only active blocks
+ccstat blocks --watch --interval 10         # Custom refresh interval
 
 # Only active blocks
 ccstat blocks --active
@@ -254,19 +264,19 @@ ccstat daily --mode calculate
 ccstat daily --mode display
 ```
 
-### Verbose Mode
+### Detailed Output Mode
 
 Get detailed token information for each API call:
 
 ```bash
 # Show individual entries for daily usage
-ccstat daily --verbose
+ccstat daily --detailed
 
-# Verbose mode with JSON output
-ccstat daily --verbose --json
+# Detailed mode with JSON output
+ccstat daily --detailed --json
 
-# Verbose mode for specific date
-ccstat daily --verbose --since 2024-01-15 --until 2024-01-15
+# Detailed mode for specific date
+ccstat daily --detailed --since 2024-01-15 --until 2024-01-15
 ```
 
 ### Statusline Command
@@ -313,8 +323,6 @@ ccstat daily --arena
 
 # Combine all optimizations
 ccstat daily --intern --arena
-
-# Note: --parallel flag is deprecated and has no effect (will be removed in v0.3.0)
 ```
 
 ## Output Examples
@@ -369,6 +377,12 @@ ccstat daily --intern --arena
 
 - `CLAUDE_DATA_PATH`: Override default Claude data directory location
 - `RUST_LOG`: Control logging level (e.g., `RUST_LOG=ccstat=debug`)
+
+### Logging Behavior
+
+ccstat runs in quiet mode by default (only warnings and errors are shown):
+- Use `--verbose` or `-v` flag to show informational messages
+- `RUST_LOG` environment variable can override these defaults
 
 ### Data Locations
 
@@ -486,7 +500,6 @@ The project follows a modular architecture:
 - Parallel processing is always enabled for better performance
 - Use `--intern` flag to reduce memory usage for repeated strings
 - Use `--arena` flag for more efficient memory allocation
-- Note: The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Debug Mode
 

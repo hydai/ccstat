@@ -53,6 +53,7 @@
 
 use crate::cost_calculator::CostCalculator;
 use crate::error::Result;
+use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
 use futures::stream::{Stream, StreamExt};
@@ -245,12 +246,12 @@ struct DailyAccumulator {
 }
 
 impl DailyAccumulator {
-    fn new(verbose: bool) -> Self {
+    fn new(detailed: bool) -> Self {
         Self {
             tokens: TokenCounts::default(),
             cost: 0.0,
             models: HashSet::new(),
-            verbose_entries: if verbose { Some(Vec::new()) } else { None },
+            verbose_entries: if detailed { Some(Vec::new()) } else { None },
         }
     }
 
@@ -436,16 +437,16 @@ impl Aggregator {
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
     ) -> Result<Vec<DailyUsage>> {
-        self.aggregate_daily_verbose(entries, cost_mode, false)
+        self.aggregate_daily_detailed(entries, cost_mode, false)
             .await
     }
 
-    /// Aggregate entries by day with optional verbose mode
-    pub async fn aggregate_daily_verbose(
+    /// Aggregate entries by day with optional detailed mode
+    pub async fn aggregate_daily_detailed(
         &self,
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
-        verbose: bool,
+        detailed: bool,
     ) -> Result<Vec<DailyUsage>> {
         let mut daily_map: BTreeMap<DailyDate, DailyAccumulator> = BTreeMap::new();
 
@@ -480,7 +481,7 @@ impl Aggregator {
 
             daily_map
                 .entry(date)
-                .or_insert_with(|| DailyAccumulator::new(verbose))
+                .or_insert_with(|| DailyAccumulator::new(detailed))
                 .add_entry(&entry, cost);
 
             count += 1;
@@ -632,7 +633,7 @@ impl Aggregator {
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
                     total_cost: std::mem::take(&mut current_cost),
-                    is_active: false,
+                    is_active: now < block_start + five_hours,
                     warning: None,
                 });
                 current_block_start = None;
@@ -711,6 +712,98 @@ impl Totals {
         }
         totals
     }
+
+    pub fn from_blocks(blocks: &[SessionBlock]) -> Self {
+        let mut totals = Self::default();
+        for block in blocks {
+            totals.tokens += block.tokens;
+            totals.total_cost += block.total_cost;
+        }
+        totals
+    }
+}
+
+/// Helper function to filter monthly data based on a MonthFilter
+pub fn filter_monthly_data(monthly_data: &mut Vec<MonthlyUsage>, month_filter: &MonthFilter) {
+    monthly_data.retain(|monthly| {
+        // Parse month string (YYYY-MM) to check filter
+        if let Ok(date) = crate::cli::parse_date_filter(&monthly.month) {
+            month_filter.matches_date(&date)
+        } else {
+            // This should not happen if the month format is always "YYYY-MM"
+            false
+        }
+    });
+}
+
+/// Helper function to filter blocks based on active and recent flags
+pub fn filter_blocks(blocks: &mut Vec<SessionBlock>, active: bool, recent: bool) {
+    if active {
+        blocks.retain(|b| b.is_active);
+    }
+
+    if recent {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(1);
+        blocks.retain(|b| b.start_time > cutoff);
+    }
+}
+
+/// Helper function to apply token limit warnings to blocks
+/// Returns Result to handle parsing errors
+pub fn apply_token_limit_warnings(
+    blocks: &mut Vec<SessionBlock>,
+    limit_str: &str,
+    approx_max_tokens: f64,
+) -> crate::error::Result<()> {
+    use crate::error::CcstatError;
+
+    // Parse token limit (can be a number or percentage like "80%")
+    let (limit_value, is_percentage) = if limit_str.ends_with('%') {
+        let value = limit_str
+            .trim_end_matches('%')
+            .parse::<f64>()
+            .map_err(|_| CcstatError::InvalidTokenLimit(limit_str.to_string()))?;
+        (value / 100.0, true)
+    } else {
+        let value = limit_str
+            .parse::<u64>()
+            .map_err(|_| CcstatError::InvalidTokenLimit(limit_str.to_string()))?;
+        (value as f64, false)
+    };
+
+    // Apply warnings to blocks
+    for block in blocks {
+        let total_tokens = block.tokens.total();
+        let threshold = if is_percentage {
+            approx_max_tokens * limit_value
+        } else {
+            limit_value
+        };
+
+        if total_tokens as f64 >= threshold {
+            block.warning = Some(format!(
+                "⚠️  Block has used {} tokens, exceeding threshold of {}",
+                total_tokens,
+                if is_percentage {
+                    format!(
+                        "{}% (~{:.0} tokens)",
+                        (limit_value * 100.0) as u32,
+                        threshold
+                    )
+                } else {
+                    format!("{} tokens", threshold as u64)
+                }
+            ));
+        } else if total_tokens as f64 >= threshold * 0.8 {
+            block.warning = Some(format!(
+                "⚠️  Block approaching limit: {} tokens used ({}% of threshold)",
+                total_tokens,
+                ((total_tokens as f64 / threshold) * 100.0) as u32
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -856,5 +949,75 @@ mod tests {
             expected_block2_start + chrono::Duration::hours(5)
         );
         assert_eq!(blocks[1].sessions.len(), 1); // s3
+    }
+
+    #[test]
+    fn test_billing_blocks_active_status() {
+        // Test that blocks are correctly marked as active/inactive
+        // This test reproduces the bug where closed blocks are incorrectly marked as inactive
+
+        // Create a session that started 2 hours ago (should be in an active block)
+        let now = chrono::Utc::now();
+        let two_hours_ago = now - chrono::Duration::hours(2);
+        let six_hours_ago = now - chrono::Duration::hours(6);
+
+        let sessions = vec![
+            // Session in a block that should still be active (started 2 hours ago)
+            SessionUsage {
+                session_id: SessionId::new("active_session"),
+                start_time: two_hours_ago,
+                end_time: two_hours_ago + chrono::Duration::minutes(30),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: 0.01,
+                model: ModelName::new("claude-3-opus"),
+            },
+            // Session that starts a new block (more than 5 hours after the first)
+            SessionUsage {
+                session_id: SessionId::new("new_block_session"),
+                start_time: two_hours_ago
+                    + chrono::Duration::hours(5)
+                    + chrono::Duration::minutes(1),
+                end_time: two_hours_ago
+                    + chrono::Duration::hours(5)
+                    + chrono::Duration::minutes(31),
+                tokens: TokenCounts::new(200, 100, 0, 0),
+                total_cost: 0.02,
+                model: ModelName::new("claude-3-opus"),
+            },
+        ];
+
+        let blocks = Aggregator::create_billing_blocks(&sessions);
+        assert_eq!(blocks.len(), 2);
+
+        // The first block should be active because it started 2 hours ago
+        // and billing blocks are 5 hours long
+        assert!(
+            blocks[0].is_active,
+            "First block should be active as it started {} hours ago",
+            2
+        );
+
+        // The second block just started, so it should definitely be active
+        assert!(
+            blocks[1].is_active,
+            "Second block should be active as it just started"
+        );
+
+        // Test with an old session (should be inactive)
+        let old_sessions = vec![SessionUsage {
+            session_id: SessionId::new("old_session"),
+            start_time: six_hours_ago,
+            end_time: six_hours_ago + chrono::Duration::minutes(30),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: 0.01,
+            model: ModelName::new("claude-3-opus"),
+        }];
+
+        let old_blocks = Aggregator::create_billing_blocks(&old_sessions);
+        assert_eq!(old_blocks.len(), 1);
+        assert!(
+            !old_blocks[0].is_active,
+            "Old block should be inactive as it started 6 hours ago"
+        );
     }
 }

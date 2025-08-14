@@ -98,14 +98,13 @@ run_test "Invalid cost mode" "ccstat daily --mode invalid" "Invalid value" || tr
 
 # Test performance flags
 echo -e "\n=== Performance Flag Tests ==="
-run_test "Parallel processing" "ccstat daily --parallel" ""
 run_test "String interning" "ccstat daily --intern" ""
 run_test "Arena allocation" "ccstat daily --arena" ""
-run_test "All performance flags" "ccstat daily --parallel --intern --arena" ""
+run_test "All performance flags" "ccstat daily --intern --arena" ""
 
-# Test verbose mode
-echo -e "\n=== Verbose Mode Tests ==="
-run_test "Verbose daily output" "ccstat daily --verbose --since 2024-01-01 --until 2024-01-01" ""
+# Test detailed mode
+echo -e "\n=== Detailed Mode Tests ==="
+run_test "Detailed daily output" "ccstat daily --detailed --since 2024-01-01 --until 2024-01-01" ""
 
 # Test project filtering
 echo -e "\n=== Project Filter Tests ==="

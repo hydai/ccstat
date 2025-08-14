@@ -578,7 +578,7 @@ async fn test_error_handling() {
     }
 
     // Test with invalid month filter
-    let result = ccstat::cli::parse_month_filter("2024-13");
+    let result = ccstat::cli::parse_date_filter("2024-13");
     assert!(result.is_err());
     match result {
         Err(CcstatError::InvalidDate(_)) => {}

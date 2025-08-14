@@ -7,10 +7,13 @@
 #[cfg(test)]
 use crate::timezone::TimezoneConfig;
 use crate::{
-    aggregation::{Aggregator, Totals},
+    aggregation::{
+        Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
+        filter_monthly_data,
+    },
     data_loader::DataLoader,
     error::{CcstatError, Result},
-    filters::UsageFilter,
+    filters::{MonthFilter, UsageFilter},
     output::get_formatter,
     types::{CostMode, UsageEntry},
 };
@@ -33,14 +36,35 @@ use tokio::{
 const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200); // 2x poll interval
 
+/// Approximate maximum tokens for a 5-hour billing block
+/// This is an empirical value based on typical usage patterns
+const APPROX_MAX_TOKENS_PER_BLOCK: f64 = 10_000_000.0;
+
+/// Command type for live monitoring
+#[derive(Debug, Clone)]
+pub enum CommandType {
+    Daily {
+        instances: bool,
+        detailed: bool,
+    },
+    Monthly,
+    Session,
+    Blocks {
+        active: bool,
+        recent: bool,
+        token_limit: Option<String>,
+    },
+}
+
 /// Live monitoring state
 pub struct LiveMonitor {
     data_loader: Arc<DataLoader>,
     aggregator: Arc<Aggregator>,
     filter: UsageFilter,
+    month_filter: Option<MonthFilter>,
     cost_mode: CostMode,
     json_output: bool,
-    instances: bool,
+    command_type: CommandType,
     interval_secs: u64,
     full_model_names: bool,
 }
@@ -55,6 +79,12 @@ pub struct PreparedData {
     pub instance_data: Option<Vec<crate::aggregation::DailyInstanceUsage>>,
     /// Daily aggregation (if instances mode is disabled)
     pub daily_data: Option<Vec<crate::aggregation::DailyUsage>>,
+    /// Monthly aggregation
+    pub monthly_data: Option<Vec<crate::aggregation::MonthlyUsage>>,
+    /// Session aggregation
+    pub session_data: Option<Vec<crate::aggregation::SessionUsage>>,
+    /// Billing blocks
+    pub blocks_data: Option<Vec<SessionBlock>>,
     /// Totals calculated from the aggregated data
     pub totals: Totals,
 }
@@ -66,9 +96,10 @@ impl LiveMonitor {
         data_loader: Arc<DataLoader>,
         aggregator: Arc<Aggregator>,
         filter: UsageFilter,
+        month_filter: Option<MonthFilter>,
         cost_mode: CostMode,
         json_output: bool,
-        instances: bool,
+        command_type: CommandType,
         interval_secs: u64,
         full_model_names: bool,
     ) -> Self {
@@ -76,9 +107,10 @@ impl LiveMonitor {
             data_loader,
             aggregator,
             filter,
+            month_filter,
             cost_mode,
             json_output,
-            instances,
+            command_type,
             interval_secs,
             full_model_names,
         }
@@ -217,6 +249,19 @@ impl LiveMonitor {
         Ok(())
     }
 
+    /// Helper method to aggregate session data from filtered entries
+    async fn aggregate_sessions_for_watch(
+        &self,
+        filtered_entries: &[UsageEntry],
+    ) -> Result<Vec<SessionUsage>> {
+        self.aggregator
+            .aggregate_sessions(
+                futures::stream::iter(filtered_entries).map(|e| Ok(e.clone())),
+                self.cost_mode,
+            )
+            .await
+    }
+
     /// Prepare data for display by loading, filtering and aggregating
     pub async fn prepare_data(&self) -> Result<PreparedData> {
         // Load and aggregate data
@@ -243,38 +288,99 @@ impl LiveMonitor {
             .map(|entry| entry.session_id.as_ref().to_string())
             .collect();
 
-        // Generate aggregated data based on mode
-        // Note: We clone entries here to preserve them in PreparedData while
-        // passing ownership to the aggregator.
-        let (instance_data, daily_data, totals) = if self.instances {
-            let instance_data = self
-                .aggregator
-                .aggregate_daily_by_instance(
-                    futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
-                    self.cost_mode,
-                )
-                .await?;
-            let totals = Totals::from_daily_instances(&instance_data);
-            (Some(instance_data), None, totals)
-        } else {
-            let daily_data = self
-                .aggregator
-                .aggregate_daily(
-                    futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
-                    self.cost_mode,
-                )
-                .await?;
-            let totals = Totals::from_daily(&daily_data);
-            (None, Some(daily_data), totals)
+        // Generate aggregated data based on command type
+        let mut prepared_data = PreparedData {
+            filtered_entries: filtered_entries.clone(),
+            active_sessions,
+            instance_data: None,
+            daily_data: None,
+            monthly_data: None,
+            session_data: None,
+            blocks_data: None,
+            totals: Totals::default(),
         };
 
-        Ok(PreparedData {
-            filtered_entries,
-            active_sessions,
-            instance_data,
-            daily_data,
-            totals,
-        })
+        match &self.command_type {
+            CommandType::Daily {
+                instances,
+                detailed,
+            } => {
+                if *instances {
+                    let instance_data = self
+                        .aggregator
+                        .aggregate_daily_by_instance(
+                            futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
+                            self.cost_mode,
+                        )
+                        .await?;
+                    prepared_data.totals = Totals::from_daily_instances(&instance_data);
+                    prepared_data.instance_data = Some(instance_data);
+                } else {
+                    let daily_data = self
+                        .aggregator
+                        .aggregate_daily_detailed(
+                            futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
+                            self.cost_mode,
+                            *detailed,
+                        )
+                        .await?;
+                    prepared_data.totals = Totals::from_daily(&daily_data);
+                    prepared_data.daily_data = Some(daily_data);
+                }
+            }
+            CommandType::Monthly => {
+                // First aggregate daily, then monthly
+                let daily_data = self
+                    .aggregator
+                    .aggregate_daily(
+                        futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
+                        self.cost_mode,
+                    )
+                    .await?;
+                let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
+
+                // Apply month filter if present
+                if let Some(month_filter) = &self.month_filter {
+                    filter_monthly_data(&mut monthly_data, month_filter);
+                }
+
+                prepared_data.totals = Totals::from_monthly(&monthly_data);
+                prepared_data.monthly_data = Some(monthly_data);
+            }
+            CommandType::Session => {
+                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
+                prepared_data.totals = Totals::from_sessions(&session_data);
+                prepared_data.session_data = Some(session_data);
+            }
+            CommandType::Blocks {
+                active,
+                recent,
+                token_limit,
+            } => {
+                // First aggregate sessions, then create blocks
+                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
+
+                let mut blocks = Aggregator::create_billing_blocks(&session_data);
+
+                // Apply filters
+                filter_blocks(&mut blocks, *active, *recent);
+
+                // Apply token limit warnings
+                if let Some(limit_str) = token_limit {
+                    apply_token_limit_warnings(
+                        &mut blocks,
+                        limit_str,
+                        APPROX_MAX_TOKENS_PER_BLOCK,
+                    )?;
+                }
+
+                // Calculate totals from blocks
+                prepared_data.totals = Totals::from_blocks(&blocks);
+                prepared_data.blocks_data = Some(blocks);
+            }
+        }
+
+        Ok(prepared_data)
     }
 
     /// Refresh the display with current data
@@ -287,8 +393,16 @@ impl LiveMonitor {
         // Show current time and mode
         if !self.json_output {
             let now = Local::now();
+            let command_name = match &self.command_type {
+                CommandType::Daily { .. } => "Daily Usage",
+                CommandType::Monthly => "Monthly Usage",
+                CommandType::Session => "Session Usage",
+                CommandType::Blocks { .. } => "Billing Blocks",
+            };
+
             println!(
-                "Live Monitoring - Last updated: {}",
+                "Live Monitoring - {} - Last updated: {}",
+                command_name,
                 now.format("%Y-%m-%d %H:%M:%S")
             );
             println!(
@@ -305,29 +419,68 @@ impl LiveMonitor {
         let formatter = get_formatter(self.json_output, self.full_model_names);
 
         if !self.json_output {
-            // Add active session indicators for table output
-            println!(
-                "\nActive Sessions: {}",
-                if prepared_data.active_sessions.is_empty() {
-                    "None".to_string()
-                } else {
-                    format!("{} session(s)", prepared_data.active_sessions.len())
+            // Add active session indicators for table output (relevant for daily and session views)
+            match &self.command_type {
+                CommandType::Daily { .. } | CommandType::Session => {
+                    println!(
+                        "\nActive Sessions: {}",
+                        if prepared_data.active_sessions.is_empty() {
+                            "None".to_string()
+                        } else {
+                            format!("{} session(s)", prepared_data.active_sessions.len())
+                        }
+                    );
                 }
-            );
+                _ => {}
+            }
         }
 
-        if self.instances {
-            if let Some(ref instance_data) = prepared_data.instance_data {
-                println!(
-                    "{}",
-                    formatter.format_daily_by_instance(instance_data, &prepared_data.totals)
-                );
+        // Format output based on command type
+        match &self.command_type {
+            CommandType::Daily { instances, .. } => {
+                if *instances {
+                    if let Some(ref instance_data) = prepared_data.instance_data {
+                        println!(
+                            "{}",
+                            formatter
+                                .format_daily_by_instance(instance_data, &prepared_data.totals)
+                        );
+                    }
+                } else if let Some(ref daily_data) = prepared_data.daily_data {
+                    println!(
+                        "{}",
+                        formatter.format_daily(daily_data, &prepared_data.totals)
+                    );
+                }
             }
-        } else if let Some(ref daily_data) = prepared_data.daily_data {
-            println!(
-                "{}",
-                formatter.format_daily(daily_data, &prepared_data.totals)
-            );
+            CommandType::Monthly => {
+                if let Some(ref monthly_data) = prepared_data.monthly_data {
+                    println!(
+                        "{}",
+                        formatter.format_monthly(monthly_data, &prepared_data.totals)
+                    );
+                }
+            }
+            CommandType::Session => {
+                if let Some(ref session_data) = prepared_data.session_data {
+                    println!(
+                        "{}",
+                        formatter.format_sessions(
+                            session_data,
+                            &prepared_data.totals,
+                            &self.aggregator.timezone_config().tz
+                        )
+                    );
+                }
+            }
+            CommandType::Blocks { .. } => {
+                if let Some(ref blocks_data) = prepared_data.blocks_data {
+                    println!(
+                        "{}",
+                        formatter.format_blocks(blocks_data, &self.aggregator.timezone_config().tz)
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -410,9 +563,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -457,9 +614,13 @@ mod tests {
             data_loader.clone(),
             aggregator.clone(),
             filter.clone(),
+            None,
             CostMode::Auto,
             true, // json_output
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             10,
             false,
         );
@@ -471,13 +632,21 @@ mod tests {
             data_loader.clone(),
             aggregator.clone(),
             filter.clone(),
+            None,
             CostMode::Calculate,
             false,
-            true, // instances
+            CommandType::Daily {
+                instances: true,
+                detailed: false,
+            },
             15,
             false,
         );
-        assert!(monitor_instances.instances);
+        // Check command type instead of instances field
+        match monitor_instances.command_type {
+            CommandType::Daily { instances, .. } => assert!(instances),
+            _ => panic!("Expected Daily command"),
+        }
         assert_eq!(monitor_instances.cost_mode, CostMode::Calculate);
 
         // Test with full model names
@@ -485,9 +654,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Display,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             20,
             true, // full_model_names
         );
@@ -509,9 +682,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -541,9 +718,13 @@ mod tests {
             data_loader,
             aggregator,
             filter.clone(),
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -580,9 +761,13 @@ mod tests {
                 data_loader.clone(),
                 aggregator.clone(),
                 filter.clone(),
+                None,
                 mode,
                 false,
-                false,
+                CommandType::Daily {
+                    instances: false,
+                    detailed: false,
+                },
                 5,
                 false,
             );
@@ -608,9 +793,13 @@ mod tests {
                 data_loader.clone(),
                 aggregator.clone(),
                 filter.clone(),
+                None,
                 CostMode::Auto,
                 false,
-                false,
+                CommandType::Daily {
+                    instances: false,
+                    detailed: false,
+                },
                 interval,
                 false,
             );
@@ -639,9 +828,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -694,9 +887,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             true, // json_output
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -723,9 +920,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             true, // json_output
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -752,9 +953,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            true, // instances mode
+            CommandType::Daily {
+                instances: true, // instances mode
+                detailed: false,
+            },
             5,
             false,
         );
@@ -781,9 +986,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             true, // full_model_names
         );
@@ -818,9 +1027,13 @@ mod tests {
             data_loader,
             aggregator,
             filter.clone(),
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -897,9 +1110,13 @@ mod tests {
                 data_loader.clone(),
                 aggregator.clone(),
                 filter,
+                None,
                 cost_mode,
                 json_output,
-                instances,
+                CommandType::Daily {
+                    instances,
+                    detailed: false,
+                },
                 5,
                 full_model_names,
             );
@@ -1015,9 +1232,13 @@ mod tests {
             data_loader,
             aggregator,
             filter,
+            None,
             CostMode::Auto,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -1055,9 +1276,13 @@ mod tests {
             data_loader.clone(),
             aggregator.clone(),
             filter.clone(),
+            None,
             CostMode::Display,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -1070,9 +1295,13 @@ mod tests {
             data_loader.clone(),
             aggregator.clone(),
             empty_filter,
+            None,
             CostMode::Display,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );
@@ -1104,9 +1333,13 @@ mod tests {
                 data_loader.clone(),
                 aggregator.clone(),
                 filter.clone(),
+                None,
                 CostMode::Display,
                 false,
-                false,
+                CommandType::Daily {
+                    instances: false,
+                    detailed: false,
+                },
                 5,
                 false,
             );
@@ -1130,9 +1363,13 @@ mod tests {
             data_loader,
             aggregator,
             invalid_filter,
+            None,
             CostMode::Display,
             false,
-            false,
+            CommandType::Daily {
+                instances: false,
+                detailed: false,
+            },
             5,
             false,
         );

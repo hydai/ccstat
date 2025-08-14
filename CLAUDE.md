@@ -23,27 +23,37 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### Running the tool
 ```bash
-# Basic commands
+# Basic commands (ccstat defaults to daily command)
+cargo run                                    # Same as cargo run -- daily
 cargo run -- daily
 cargo run -- monthly
 cargo run -- session
 cargo run -- blocks
 cargo run -- statusline
-cargo run -- mcp
 
-# With timezone options
-cargo run -- daily --timezone "America/New_York"
-cargo run -- daily --utc
+# Global options can be used without a command (defaults to daily)
+cargo run -- --json                         # Daily report in JSON
+cargo run -- --since 2025-01-01             # Daily report from Jan 1
+cargo run -- --timezone "America/New_York"   # Daily report in NY timezone
 
-# With model display options
-cargo run -- daily --full-model-names
+# Global options work with all commands
+cargo run -- --json monthly                 # Monthly report in JSON
+cargo run -- --project my-project session   # Sessions for a project
 
-# With live monitoring
-cargo run -- daily --watch --interval 5
+# Date filters accept YYYY-MM-DD or YYYY-MM format
+cargo run -- --since 2025-01-01 --until 2025-01-31
+cargo run -- --since 2025-01                # From January 2025
 
-# With filters
-cargo run -- daily --since 2025-01-01 --until 2025-01-31
-cargo run -- daily --project my-project
+# Live monitoring (global option, works with all commands)
+cargo run -- --watch                        # Watch daily usage (default)
+cargo run -- monthly --watch                # Watch monthly aggregations
+cargo run -- session --watch --interval 10  # Watch sessions with 10s refresh
+cargo run -- blocks --watch --active        # Watch active billing blocks
+
+# Command-specific options
+cargo run -- daily --instances              # Per-instance breakdown
+cargo run -- daily --detailed               # Show detailed token info
+cargo run -- blocks --active                # Active blocks only
 ```
 
 ## Project Structure
@@ -69,35 +79,32 @@ cargo run -- daily --project my-project
 
 ## Command-Line Options
 
-### Global Options
-- `--quiet` / `-q` - Suppress informational output (only show warnings and errors)
-
-### Timezone Options
+### Global Options (work with all commands)
+- `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
+- `--watch` / `-w` - Enable live monitoring mode with auto-refresh (works with all commands)
+- `--interval` - Refresh interval in seconds for watch mode (default: 5)
+- `--mode` - Cost calculation mode (auto, calculate, fetch, offline, none)
+- `--json` - Output results in JSON format instead of tables
+- `--since` - Filter by start date (YYYY-MM-DD or YYYY-MM format)
+- `--until` - Filter by end date (YYYY-MM-DD or YYYY-MM format)
+- `--project` / `-p` - Filter by project name
 - `--timezone` / `-z` - Specify timezone for date grouping (e.g., "America/New_York", "Asia/Tokyo")
 - `--utc` - Use UTC for date grouping (overrides --timezone)
-- Default: Uses system's local timezone
-
-### Model Display Options
 - `--full-model-names` - Show full model names instead of shortened versions
-
-### Performance Options
-- `--watch` / `-w` - Enable live monitoring mode with auto-refresh
-- `--interval` - Refresh interval in seconds for watch mode (default: 5)
-- `--parallel` - **[DEPRECATED]** This flag has no effect and will be removed in v0.3.0. Parallel processing is always enabled.
 - `--intern` - Enable string interning for memory optimization
 - `--arena` - Enable arena allocation for parsing
 
-### Filtering Options
-- `--since` - Filter by start date (YYYY-MM-DD) or month (YYYY-MM)
-- `--until` - Filter by end date (YYYY-MM-DD) or month (YYYY-MM)
-- `--project` / `-p` - Filter by project name
-- `--instances` / `-i` - Show per-instance breakdown (daily command)
-
-### Output Options
-- `--json` - Output results in JSON format instead of tables
-- `--verbose` / `-v` - Show detailed token information per entry
-
 ### Command-Specific Options
+
+#### Daily Command
+- `--instances` / `-i` - Show per-instance breakdown
+- `--detailed` / `-d` - Show detailed token information per entry
+
+#### Monthly Command
+No command-specific options. Uses all global options.
+
+#### Session Command
+No command-specific options. Uses all global options.
 
 #### Blocks Command
 - `--active` - Show only active billing blocks
@@ -116,7 +123,7 @@ cargo run -- daily --project my-project
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
 ## Important Notes
-- Current version: 0.2.2
+- Current version: 0.3.0
 - The project requires Rust 1.75 or later
 - Dependencies are managed in `ccusage/Cargo.toml`
 - Tests are co-located with source files
@@ -130,10 +137,9 @@ cargo run -- daily --project my-project
 The project includes several performance optimization features:
 
 ### Parallel Processing
-- Parallel file processing is always enabled (as of v0.2.2)
+- Parallel file processing is always enabled
 - Significantly improves performance for large datasets
 - Automatically utilizes available CPU cores
-- The `--parallel` flag is deprecated and will be removed in v0.3.0
 
 ### Memory Optimization
 - **String Interning** (`--intern`): Reduces memory usage by sharing identical strings
@@ -142,9 +148,10 @@ The project includes several performance optimization features:
 - **Stream Processing**: Processes data in chunks to minimize memory footprint
 
 ### Live Monitoring
-- Use `--watch` flag for real-time updates
+- Use `--watch` flag for real-time updates with ALL commands (daily, monthly, session, blocks)
 - Configurable refresh interval with `--interval`
 - Optimized for minimal CPU and memory usage during monitoring
+- Automatically refreshes when data files change or at specified intervals
 
 ### Statusline Performance
 - Optimized specifically for Claude Code integration
