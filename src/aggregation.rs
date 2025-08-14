@@ -436,12 +436,12 @@ impl Aggregator {
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,
     ) -> Result<Vec<DailyUsage>> {
-        self.aggregate_daily_verbose(entries, cost_mode, false)
+        self.aggregate_daily_detailed(entries, cost_mode, false)
             .await
     }
 
     /// Aggregate entries by day with optional detailed mode
-    pub async fn aggregate_daily_verbose(
+    pub async fn aggregate_daily_detailed(
         &self,
         entries: impl Stream<Item = Result<UsageEntry>>,
         cost_mode: CostMode,

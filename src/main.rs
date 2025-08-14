@@ -67,6 +67,13 @@ async fn main() -> Result<()> {
     // Check for deprecated global flags early
     check_deprecated_global_flags(&cli);
 
+    // Check for deprecated command-specific flags
+    if let Some(command) = &cli.command
+        && let Some(perf_args) = command.performance_args()
+    {
+        check_deprecated_perf_flags(perf_args);
+    }
+
     // Skip logging initialization for statusline command
     let is_statusline = matches!(cli.command, Some(Command::Statusline { .. }));
 
@@ -100,7 +107,6 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running daily usage report");
-            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && !watch && is_terminal::is_terminal(std::io::stdout());
@@ -164,7 +170,7 @@ async fn main() -> Result<()> {
                     let entries = Box::pin(data_loader.load_usage_entries_parallel());
                     let filtered_entries = filter.filter_stream(entries).await;
                     let daily_data = aggregator
-                        .aggregate_daily_verbose(filtered_entries, mode, detailed)
+                        .aggregate_daily_detailed(filtered_entries, mode, detailed)
                         .await?;
                     let totals = Totals::from_daily(&daily_data);
                     let formatter = get_formatter(json, model_display_args.full_model_names);
@@ -183,7 +189,6 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running monthly usage report");
-            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -248,7 +253,6 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running session usage report");
-            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());
@@ -299,7 +303,6 @@ async fn main() -> Result<()> {
             timezone_args,
         }) => {
             info!("Running billing blocks report");
-            check_deprecated_perf_flags(&performance_args);
 
             // Initialize components with progress bars enabled for terminal output
             let show_progress = !json && is_terminal::is_terminal(std::io::stdout());

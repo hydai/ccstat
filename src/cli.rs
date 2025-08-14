@@ -287,6 +287,25 @@ impl Command {
             Self::Statusline { .. } => false,
         }
     }
+
+    /// Get performance args if the command has them
+    pub fn performance_args(&self) -> Option<&PerformanceArgs> {
+        match self {
+            Self::Daily {
+                performance_args, ..
+            }
+            | Self::Monthly {
+                performance_args, ..
+            }
+            | Self::Session {
+                performance_args, ..
+            }
+            | Self::Blocks {
+                performance_args, ..
+            } => Some(performance_args),
+            Self::Statusline { .. } => None,
+        }
+    }
 }
 
 /// Parse date filter from string
