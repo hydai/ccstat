@@ -126,6 +126,10 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
+
+        /// Show individual session entries within each block
+        #[arg(long)]
+        entries: bool,
     },
 
     /// Generate statusline output for Claude Code

@@ -221,6 +221,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            entries,
         }) => {
             info!("Running billing blocks report");
 
@@ -255,6 +256,7 @@ async fn main() -> Result<()> {
                         active: *active,
                         recent: *recent,
                         token_limit: token_limit.clone(),
+                        entries: *entries,
                     },
                     cli.interval,
                     cli.full_model_names,
@@ -262,8 +264,8 @@ async fn main() -> Result<()> {
                 monitor.run().await?;
             } else {
                 // Load and filter entries, then aggregate sessions
-                let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                let filtered_entries = filter.filter_stream(entries).await;
+                let usage_entries = Box::pin(data_loader.load_usage_entries_parallel());
+                let filtered_entries = filter.filter_stream(usage_entries).await;
                 let session_data = aggregator
                     .aggregate_sessions(filtered_entries, cli.mode)
                     .await?;
@@ -287,7 +289,7 @@ async fn main() -> Result<()> {
                 let formatter = get_formatter(cli.json, cli.full_model_names);
                 println!(
                     "{}",
-                    formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
+                    formatter.format_blocks(&blocks, &aggregator.timezone_config().tz, *entries)
                 );
             }
         }

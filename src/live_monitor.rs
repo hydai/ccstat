@@ -53,6 +53,7 @@ pub enum CommandType {
         active: bool,
         recent: bool,
         token_limit: Option<String>,
+        entries: bool,
     },
 }
 
@@ -356,6 +357,7 @@ impl LiveMonitor {
                 active,
                 recent,
                 token_limit,
+                entries: _,
             } => {
                 // First aggregate sessions, then create blocks
                 let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
@@ -473,11 +475,15 @@ impl LiveMonitor {
                     );
                 }
             }
-            CommandType::Blocks { .. } => {
+            CommandType::Blocks { entries, .. } => {
                 if let Some(ref blocks_data) = prepared_data.blocks_data {
                     println!(
                         "{}",
-                        formatter.format_blocks(blocks_data, &self.aggregator.timezone_config().tz)
+                        formatter.format_blocks(
+                            blocks_data,
+                            &self.aggregator.timezone_config().tz,
+                            *entries
+                        )
                     );
                 }
             }
