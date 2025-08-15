@@ -765,7 +765,6 @@ impl Aggregator {
 
         let mut blocks = Vec::new();
         let mut current_block_start: Option<chrono::DateTime<chrono::Utc>> = None;
-        let mut current_block_entries = Vec::new();
         let mut current_tokens = TokenCounts::default();
         let mut current_cost = 0.0;
         let mut current_models = HashSet::new();
@@ -836,7 +835,6 @@ impl Aggregator {
 
                 // Start new block (floored to hour)
                 current_block_start = Some(Self::truncate_to_hour(entry_time));
-                current_block_entries.clear();
                 first_entry_time = None; // Reset first entry time for new block
             }
 
@@ -855,7 +853,6 @@ impl Aggregator {
             current_tokens += entry.tokens;
             current_cost += entry_cost;
             current_models.insert(entry.model.clone());
-            current_block_entries.push(entry);
             last_entry_time = Some(entry_time);
         }
 
@@ -964,13 +961,19 @@ pub fn filter_blocks_by_date(
     until: Option<chrono::NaiveDate>,
 ) {
     if let Some(since_date) = since {
-        let since_datetime = since_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let since_datetime = since_date
+            .and_hms_opt(0, 0, 0)
+            .expect("start of day is always a valid time")
+            .and_utc();
         blocks.retain(|b| b.start_time >= since_datetime);
     }
 
     if let Some(until_date) = until {
         // Include blocks that start on or before the until date (end of day)
-        let until_datetime = until_date.and_hms_opt(23, 59, 59).unwrap().and_utc();
+        let until_datetime = until_date
+            .and_hms_opt(23, 59, 59)
+            .expect("end of day is always a valid time")
+            .and_utc();
         blocks.retain(|b| b.start_time <= until_datetime);
     }
 }
