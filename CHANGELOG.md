@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-08-15
+
+### Fixed
+- Properly count sessions in billing blocks
+- Improve format_duration robustness and remove redundant output
+- Handle negative session duration to prevent panic
+- Correct gap block creation logic
+
 ## [0.3.1] - 2025-08-14
 
 ### Fixed
@@ -174,7 +182,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/hydai/ccstat/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/hydai/ccstat/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/hydai/ccstat/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/hydai/ccstat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/hydai/ccstat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hydai/ccstat/compare/v0.1.9...v0.2.0
