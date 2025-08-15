@@ -360,8 +360,7 @@ impl LiveMonitor {
                 session_duration,
             } => {
                 // Create billing blocks from entries to respect session_duration and gaps
-                let entries_stream =
-                    futures::stream::iter(filtered_entries.clone().into_iter().map(Ok));
+                let entries_stream = futures::stream::iter(filtered_entries.into_iter().map(Ok));
                 let mut blocks = self
                     .aggregator
                     .create_billing_blocks_from_entries(

@@ -714,7 +714,9 @@ impl Aggregator {
     /// Helper function to finalize a block and add it to the blocks vector
     fn finalize_block(blocks: &mut Vec<SessionBlock>, data: BlockData) {
         let block_end = data.start_time + data.session_duration;
-        let actual_end = data.last_entry_time.unwrap_or(data.start_time);
+        let actual_end = data
+            .last_entry_time
+            .expect("last_entry_time should be Some for a non-empty block");
 
         // Check if block is active: recent activity AND within block time window
         let is_active = (data.now - actual_end < data.session_duration) && (data.now < block_end);
