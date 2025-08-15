@@ -293,11 +293,14 @@ impl DailyAccumulator {
     }
 
     fn into_daily_usage(self, date: DailyDate) -> DailyUsage {
+        let mut models_used: Vec<String> = self.models.into_iter().map(|m| m.to_string()).collect();
+        models_used.sort();
+
         DailyUsage {
             date,
             tokens: self.tokens,
             total_cost: self.cost,
-            models_used: self.models.into_iter().map(|m| m.to_string()).collect(),
+            models_used,
             entries: self.verbose_entries,
         }
     }
@@ -455,12 +458,18 @@ impl Aggregator {
 
         Ok(daily_map
             .into_iter()
-            .map(|((date, instance_id), acc)| DailyInstanceUsage {
-                date,
-                instance_id,
-                tokens: acc.tokens,
-                total_cost: acc.cost,
-                models_used: acc.models.into_iter().map(|m| m.to_string()).collect(),
+            .map(|((date, instance_id), acc)| {
+                let mut models_used: Vec<String> =
+                    acc.models.into_iter().map(|m| m.to_string()).collect();
+                models_used.sort();
+
+                DailyInstanceUsage {
+                    date,
+                    instance_id,
+                    tokens: acc.tokens,
+                    total_cost: acc.cost,
+                    models_used,
+                }
             })
             .collect())
     }
@@ -662,6 +671,12 @@ impl Aggregator {
                 && session.start_time >= block_start + five_hours
             {
                 // Finish current block
+                let mut sorted_models: Vec<String> = models_used
+                    .drain()
+                    .map(|m: ModelName| m.to_string())
+                    .collect();
+                sorted_models.sort();
+
                 blocks.push(SessionBlock {
                     start_time: block_start,
                     end_time: block_start + five_hours,
@@ -672,10 +687,7 @@ impl Aggregator {
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
                     total_cost: std::mem::take(&mut current_cost),
-                    models_used: models_used
-                        .drain()
-                        .map(|m: ModelName| m.to_string())
-                        .collect(),
+                    models_used: sorted_models,
                     projects_used: Vec::new(), // Legacy method doesn't track projects
                     is_active: now < block_start + five_hours,
                     is_gap: false,
@@ -700,6 +712,10 @@ impl Aggregator {
         // Handle remaining sessions
         if let Some(block_start) = current_block_start {
             let is_active = now < block_start + five_hours;
+            let mut sorted_models: Vec<String> =
+                models_used.into_iter().map(|m| m.to_string()).collect();
+            sorted_models.sort();
+
             blocks.push(SessionBlock {
                 start_time: block_start,
                 end_time: block_start + five_hours,
@@ -708,7 +724,7 @@ impl Aggregator {
                 sessions: current_sessions,
                 tokens: current_tokens,
                 total_cost: current_cost,
-                models_used: models_used.into_iter().map(|m| m.to_string()).collect(),
+                models_used: sorted_models,
                 projects_used: Vec::new(), // Legacy method doesn't track projects
                 is_active,
                 is_gap: false,
@@ -733,6 +749,11 @@ impl Aggregator {
         // Check if block is active: recent activity AND within block time window
         let is_active = (data.now - actual_end < data.session_duration) && (data.now < block_end);
 
+        let mut models_used: Vec<String> = data.models.into_iter().map(|m| m.to_string()).collect();
+        models_used.sort();
+        let mut projects_used: Vec<String> = data.projects.into_iter().collect();
+        projects_used.sort();
+
         blocks.push(SessionBlock {
             start_time: data.start_time,
             end_time: block_end,
@@ -741,8 +762,8 @@ impl Aggregator {
             sessions: Vec::new(), // We don't aggregate into sessions for this method
             tokens: data.tokens,
             total_cost: data.cost,
-            models_used: data.models.into_iter().map(|m| m.to_string()).collect(),
-            projects_used: data.projects.into_iter().collect(),
+            models_used,
+            projects_used,
             is_active,
             is_gap: false,
             warning: None,
