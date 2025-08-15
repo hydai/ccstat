@@ -358,6 +358,18 @@ pub struct Aggregator {
     timezone_config: TimezoneConfig,
 }
 
+/// Helper struct to group block parameters for finalize_block function
+struct BlockData {
+    start_time: chrono::DateTime<chrono::Utc>,
+    session_duration: chrono::Duration,
+    first_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+    last_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+    tokens: TokenCounts,
+    cost: f64,
+    models: HashSet<ModelName>,
+    now: chrono::DateTime<chrono::Utc>,
+}
+
 impl Aggregator {
     /// Create a new Aggregator
     pub fn new(cost_calculator: Arc<CostCalculator>, timezone_config: TimezoneConfig) -> Self {
@@ -700,33 +712,22 @@ impl Aggregator {
     }
 
     /// Helper function to finalize a block and add it to the blocks vector
-    #[allow(clippy::too_many_arguments)]
-    fn finalize_block(
-        blocks: &mut Vec<SessionBlock>,
-        block_start: chrono::DateTime<chrono::Utc>,
-        session_duration: chrono::Duration,
-        first_entry_time: Option<chrono::DateTime<chrono::Utc>>,
-        last_entry_time: Option<chrono::DateTime<chrono::Utc>>,
-        tokens: TokenCounts,
-        cost: f64,
-        models: HashSet<ModelName>,
-        now: chrono::DateTime<chrono::Utc>,
-    ) {
-        let block_end = block_start + session_duration;
-        let actual_end = last_entry_time.unwrap_or(block_start);
+    fn finalize_block(blocks: &mut Vec<SessionBlock>, data: BlockData) {
+        let block_end = data.start_time + data.session_duration;
+        let actual_end = data.last_entry_time.unwrap_or(data.start_time);
 
         // Check if block is active: recent activity AND within block time window
-        let is_active = (now - actual_end < session_duration) && (now < block_end);
+        let is_active = (data.now - actual_end < data.session_duration) && (data.now < block_end);
 
         blocks.push(SessionBlock {
-            start_time: block_start,
+            start_time: data.start_time,
             end_time: block_end,
-            actual_start_time: first_entry_time,
+            actual_start_time: data.first_entry_time,
             actual_end_time: Some(actual_end),
             sessions: Vec::new(), // We don't aggregate into sessions for this method
-            tokens,
-            total_cost: cost,
-            models_used: models.into_iter().map(|m| m.to_string()).collect(),
+            tokens: data.tokens,
+            total_cost: data.cost,
+            models_used: data.models.into_iter().map(|m| m.to_string()).collect(),
             is_active,
             is_gap: false,
             warning: None,
@@ -799,14 +800,16 @@ impl Aggregator {
                 if let Some(block_start) = current_block_start {
                     Self::finalize_block(
                         &mut blocks,
-                        block_start,
-                        session_duration,
-                        first_entry_time,
-                        last_entry_time,
-                        std::mem::take(&mut current_tokens),
-                        std::mem::take(&mut current_cost),
-                        std::mem::take(&mut current_models),
-                        now,
+                        BlockData {
+                            start_time: block_start,
+                            session_duration,
+                            first_entry_time,
+                            last_entry_time,
+                            tokens: std::mem::take(&mut current_tokens),
+                            cost: std::mem::take(&mut current_cost),
+                            models: std::mem::take(&mut current_models),
+                            now,
+                        },
                     );
                 }
 
@@ -860,14 +863,16 @@ impl Aggregator {
         if let Some(block_start) = current_block_start {
             Self::finalize_block(
                 &mut blocks,
-                block_start,
-                session_duration,
-                first_entry_time,
-                last_entry_time,
-                current_tokens,
-                current_cost,
-                current_models,
-                now,
+                BlockData {
+                    start_time: block_start,
+                    session_duration,
+                    first_entry_time,
+                    last_entry_time,
+                    tokens: current_tokens,
+                    cost: current_cost,
+                    models: current_models,
+                    now,
+                },
             );
         }
 

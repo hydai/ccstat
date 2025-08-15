@@ -126,6 +126,10 @@ pub enum Command {
         /// Token limit for warnings
         #[arg(long)]
         token_limit: Option<String>,
+
+        /// Session duration in hours for billing blocks
+        #[arg(long, default_value = "5.0")]
+        session_duration: f64,
     },
 
     /// Generate statusline output for Claude Code

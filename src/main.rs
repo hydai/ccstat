@@ -222,6 +222,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            session_duration,
         }) => {
             info!("Running billing blocks report");
 
@@ -256,6 +257,7 @@ async fn main() -> Result<()> {
                         active: *active,
                         recent: *recent,
                         token_limit: token_limit.clone(),
+                        session_duration: *session_duration,
                     },
                     cli.interval,
                     cli.full_model_names,
@@ -265,9 +267,9 @@ async fn main() -> Result<()> {
                 // Load ALL entries (no filtering) to create blocks with full context
                 let entries = Box::pin(data_loader.load_usage_entries_parallel());
 
-                // Create billing blocks from all entries (5 hour default)
+                // Create billing blocks from all entries
                 let mut blocks = aggregator
-                    .create_billing_blocks_from_entries(entries, cli.mode, 5.0)
+                    .create_billing_blocks_from_entries(entries, cli.mode, *session_duration)
                     .await?;
 
                 // Apply date range filter to blocks

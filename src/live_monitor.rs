@@ -53,6 +53,7 @@ pub enum CommandType {
         active: bool,
         recent: bool,
         token_limit: Option<String>,
+        session_duration: f64,
     },
 }
 
@@ -356,10 +357,13 @@ impl LiveMonitor {
                 active,
                 recent,
                 token_limit,
+                session_duration: _,
             } => {
                 // First aggregate sessions, then create blocks
                 let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
 
+                // TODO: Consider updating create_billing_blocks to accept session_duration parameter
+                // Currently using the legacy method with hardcoded 5-hour duration
                 let mut blocks = Aggregator::create_billing_blocks(&session_data);
 
                 // Apply filters
