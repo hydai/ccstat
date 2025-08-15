@@ -919,6 +919,11 @@ impl Aggregator {
                 if let Some(last_time) = last_entry_time {
                     let time_gap = entry_time - last_time;
                     if time_gap > session_duration {
+                        // Gap blocks represent periods of inactivity that exceed the session duration.
+                        // If the last activity ended at T1, the next activity starts at T2, and the
+                        // session duration is D, the gap block spans from T1+D to T2.
+                        // This means the gap block only captures the "excessive" inactivity beyond
+                        // the expected session duration, not the entire inactive period.
                         let gap_start = last_time + session_duration;
                         let gap_end = entry_time;
 
