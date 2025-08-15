@@ -218,6 +218,7 @@ pub struct MonthlyUsage {
 ///     tokens: TokenCounts::new(8_000_000, 4_000_000, 0, 0),
 ///     total_cost: 240.0,
 ///     models_used: vec!["claude-3-opus".to_string()],
+///     projects_used: vec![],
 ///     is_active: true,
 ///     is_gap: false,
 ///     warning: Some("⚠️  Block has used 12,000,000 tokens, exceeding threshold of 10,000,000 tokens".to_string()),
@@ -243,6 +244,9 @@ pub struct SessionBlock {
     pub total_cost: f64,
     /// List of unique models used in this block
     pub models_used: Vec<String>,
+    /// List of unique projects used in this block
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub projects_used: Vec<String>,
     /// Whether this block is currently active (recent activity AND within block time)
     pub is_active: bool,
     /// Whether this is a gap block (period of inactivity)
@@ -367,6 +371,7 @@ struct BlockData {
     tokens: TokenCounts,
     cost: f64,
     models: HashSet<ModelName>,
+    projects: HashSet<String>,
     now: chrono::DateTime<chrono::Utc>,
 }
 
@@ -670,6 +675,7 @@ impl Aggregator {
                         .drain()
                         .map(|m: ModelName| m.to_string())
                         .collect(),
+                    projects_used: Vec::new(), // Legacy method doesn't track projects
                     is_active: now < block_start + five_hours,
                     is_gap: false,
                     warning: None,
@@ -702,6 +708,7 @@ impl Aggregator {
                 tokens: current_tokens,
                 total_cost: current_cost,
                 models_used: models_used.into_iter().map(|m| m.to_string()).collect(),
+                projects_used: Vec::new(), // Legacy method doesn't track projects
                 is_active,
                 is_gap: false,
                 warning: None,
@@ -716,6 +723,9 @@ impl Aggregator {
         let block_end = data.start_time + data.session_duration;
         let Some(actual_end) = data.last_entry_time else {
             // This should not happen for a non-empty block, but we'll handle it gracefully.
+            tracing::warn!(
+                "finalize_block called with no last_entry_time, skipping block finalization"
+            );
             return;
         };
 
@@ -731,6 +741,7 @@ impl Aggregator {
             tokens: data.tokens,
             total_cost: data.cost,
             models_used: data.models.into_iter().map(|m| m.to_string()).collect(),
+            projects_used: data.projects.into_iter().collect(),
             is_active,
             is_gap: false,
             warning: None,
@@ -774,6 +785,7 @@ impl Aggregator {
         let mut current_tokens = TokenCounts::default();
         let mut current_cost = 0.0;
         let mut current_models = HashSet::new();
+        let mut current_projects = HashSet::new();
         let mut first_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
         let mut last_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
 
@@ -810,6 +822,7 @@ impl Aggregator {
                             tokens: std::mem::take(&mut current_tokens),
                             cost: std::mem::take(&mut current_cost),
                             models: std::mem::take(&mut current_models),
+                            projects: std::mem::take(&mut current_projects),
                             now,
                         },
                     );
@@ -831,6 +844,7 @@ impl Aggregator {
                             tokens: TokenCounts::default(),
                             total_cost: 0.0,
                             models_used: Vec::new(),
+                            projects_used: Vec::new(),
                             is_active: false,
                             is_gap: true,
                             warning: None,
@@ -856,6 +870,9 @@ impl Aggregator {
             current_tokens += entry.tokens;
             current_cost += entry_cost;
             current_models.insert(entry.model.clone());
+            if let Some(ref project) = entry.project {
+                current_projects.insert(project.clone());
+            }
             last_entry_time = Some(entry_time);
         }
 
@@ -871,6 +888,7 @@ impl Aggregator {
                     tokens: current_tokens,
                     cost: current_cost,
                     models: current_models,
+                    projects: current_projects,
                     now,
                 },
             );
@@ -981,6 +999,11 @@ pub fn filter_blocks_by_date(
             .and_utc();
         blocks.retain(|b| b.start_time <= until_datetime);
     }
+}
+
+/// Helper function to filter blocks based on project
+pub fn filter_blocks_by_project(blocks: &mut Vec<SessionBlock>, project: &str) {
+    blocks.retain(|b| b.projects_used.iter().any(|p| p == project));
 }
 
 /// Helper function to apply token limit warnings to blocks

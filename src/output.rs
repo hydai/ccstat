@@ -997,6 +997,7 @@ mod tests {
             tokens: TokenCounts::new(3000, 1500, 300, 150),
             total_cost: 4.50,
             models_used: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string()],
+            projects_used: vec![],
             warning: None,
         };
 
@@ -1011,6 +1012,7 @@ mod tests {
             tokens: TokenCounts::new(1000, 500, 100, 50),
             total_cost: 1.50,
             models_used: vec!["claude-3-haiku".to_string()],
+            projects_used: vec![],
             warning: None,
         };
 
@@ -1026,6 +1028,7 @@ mod tests {
             tokens: TokenCounts::new(0, 0, 0, 0),
             total_cost: 0.0,
             models_used: vec![],
+            projects_used: vec![],
             warning: None,
         };
 
@@ -1164,6 +1167,7 @@ mod tests {
             tokens: TokenCounts::new(3000, 1500, 0, 0),
             total_cost: 4.50,
             models_used: vec!["claude-3-opus".to_string()],
+            projects_used: vec![],
             warning: None,
         };
 

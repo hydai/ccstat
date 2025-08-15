@@ -3,7 +3,7 @@
 use ccstat::{
     aggregation::{
         Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_blocks_by_date,
-        filter_monthly_data,
+        filter_blocks_by_project, filter_monthly_data,
     },
     cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
@@ -284,6 +284,11 @@ async fn main() -> Result<()> {
                     .map(|s| parse_date_filter(s))
                     .transpose()?;
                 filter_blocks_by_date(&mut blocks, since_date, until_date);
+
+                // Apply project filter if specified
+                if let Some(project) = &cli.project {
+                    filter_blocks_by_project(&mut blocks, project);
+                }
 
                 // Apply other filters
                 filter_blocks(&mut blocks, *active, *recent);

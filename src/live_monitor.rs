@@ -9,7 +9,7 @@ use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{
         Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
-        filter_monthly_data,
+        filter_blocks_by_project, filter_monthly_data,
     },
     data_loader::DataLoader,
     error::{CcstatError, Result},
@@ -359,8 +359,12 @@ impl LiveMonitor {
                 token_limit,
                 session_duration,
             } => {
-                // Create billing blocks from entries to respect session_duration and gaps
-                let entries_stream = futures::stream::iter(filtered_entries.into_iter().map(Ok));
+                // For blocks, we need ALL entries to properly detect gaps
+                // Load all entries without filtering
+                let all_entries = self.data_loader.load_usage_entries_parallel();
+                let entries_stream = Box::pin(all_entries);
+
+                // Create billing blocks from ALL entries to respect session_duration and gaps
                 let mut blocks = self
                     .aggregator
                     .create_billing_blocks_from_entries(
@@ -370,7 +374,12 @@ impl LiveMonitor {
                     )
                     .await?;
 
-                // Apply filters
+                // Apply project filter if present
+                if let Some(project) = self.filter.get_project() {
+                    filter_blocks_by_project(&mut blocks, project);
+                }
+
+                // Apply other filters
                 filter_blocks(&mut blocks, *active, *recent);
 
                 // Apply token limit warnings
