@@ -56,7 +56,7 @@ use crate::error::{CcstatError, Result};
 use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
-use futures::stream::{Stream, StreamExt};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -759,12 +759,7 @@ impl Aggregator {
         })?;
 
         // Collect and sort entries by timestamp
-        let mut all_entries = Vec::new();
-        tokio::pin!(entries);
-        while let Some(result) = entries.next().await {
-            let entry = result?;
-            all_entries.push(entry);
-        }
+        let mut all_entries: Vec<UsageEntry> = entries.try_collect().await?;
 
         if all_entries.is_empty() {
             return Ok(Vec::new());
