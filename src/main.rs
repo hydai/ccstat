@@ -264,15 +264,6 @@ async fn main() -> Result<()> {
                 );
                 monitor.run().await?;
             } else {
-                // Load ALL entries (no filtering) to create blocks with full context
-                let entries = Box::pin(data_loader.load_usage_entries_parallel());
-
-                // Create billing blocks from all entries
-                let mut blocks = aggregator
-                    .create_billing_blocks_from_entries(entries, cli.mode, *session_duration)
-                    .await?;
-
-                // Apply date range filter to blocks
                 let since_date = cli
                     .since
                     .as_ref()
@@ -283,7 +274,40 @@ async fn main() -> Result<()> {
                     .as_ref()
                     .map(|s| parse_date_filter(s))
                     .transpose()?;
-                filter_blocks_by_date(&mut blocks, since_date, until_date);
+
+                let entries = data_loader.load_usage_entries_parallel();
+
+                let mut blocks = if cli.project.is_none() {
+                    // If no project filter, we can safely filter entries by date first for performance.
+                    let mut date_filter =
+                        UsageFilter::new().with_timezone(aggregator.timezone_config().tz);
+                    if let Some(since) = since_date {
+                        date_filter = date_filter.with_since(since);
+                    }
+                    if let Some(until) = until_date {
+                        date_filter = date_filter.with_until(until);
+                    }
+                    let filtered_entries = date_filter.filter_stream(Box::pin(entries)).await;
+                    aggregator
+                        .create_billing_blocks_from_entries(
+                            filtered_entries,
+                            cli.mode,
+                            *session_duration,
+                        )
+                        .await?
+                } else {
+                    // With a project filter, process all entries to find inter-project gaps, then filter blocks.
+                    let mut blocks = aggregator
+                        .create_billing_blocks_from_entries(
+                            Box::pin(entries),
+                            cli.mode,
+                            *session_duration,
+                        )
+                        .await?;
+                    // Filter blocks by date after creation
+                    filter_blocks_by_date(&mut blocks, since_date, until_date);
+                    blocks
+                };
 
                 // Apply project filter if specified
                 if let Some(project) = &cli.project {

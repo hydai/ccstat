@@ -9,7 +9,7 @@ use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{
         Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
-        filter_blocks_by_project, filter_monthly_data,
+        filter_blocks_by_date, filter_blocks_by_project, filter_monthly_data,
     },
     data_loader::DataLoader,
     error::{CcstatError, Result},
@@ -378,6 +378,9 @@ impl LiveMonitor {
                 if let Some(project) = self.filter.get_project() {
                     filter_blocks_by_project(&mut blocks, project);
                 }
+
+                // Apply date filters from the filter object
+                filter_blocks_by_date(&mut blocks, self.filter.since_date, self.filter.until_date);
 
                 // Apply other filters
                 filter_blocks(&mut blocks, *active, *recent);
