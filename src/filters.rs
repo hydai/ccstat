@@ -137,6 +137,16 @@ impl UsageFilter {
         true
     }
 
+    /// Check if this filter has a project filter configured
+    pub fn has_project_filter(&self) -> bool {
+        self.project.is_some()
+    }
+
+    /// Get the project filter value if configured
+    pub fn get_project(&self) -> Option<&str> {
+        self.project.as_deref()
+    }
+
     /// Filter a stream of entries
     ///
     /// Applies the configured filters to a stream of usage entries,

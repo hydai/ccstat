@@ -8,8 +8,8 @@
 use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{
-        Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
-        filter_monthly_data,
+        Aggregator, BillingBlockParams, SessionBlock, SessionUsage, Totals,
+        create_and_filter_billing_blocks, filter_monthly_data,
     },
     data_loader::DataLoader,
     error::{CcstatError, Result},
@@ -53,6 +53,7 @@ pub enum CommandType {
         active: bool,
         recent: bool,
         token_limit: Option<String>,
+        session_duration: f64,
     },
 }
 
@@ -356,23 +357,22 @@ impl LiveMonitor {
                 active,
                 recent,
                 token_limit,
+                session_duration,
             } => {
-                // First aggregate sessions, then create blocks
-                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
-
-                let mut blocks = Aggregator::create_billing_blocks(&session_data);
-
-                // Apply filters
-                filter_blocks(&mut blocks, *active, *recent);
-
-                // Apply token limit warnings
-                if let Some(limit_str) = token_limit {
-                    apply_token_limit_warnings(
-                        &mut blocks,
-                        limit_str,
-                        APPROX_MAX_TOKENS_PER_BLOCK,
-                    )?;
-                }
+                let params = BillingBlockParams {
+                    data_loader: &self.data_loader,
+                    aggregator: &self.aggregator,
+                    cost_mode: self.cost_mode,
+                    session_duration_hours: *session_duration,
+                    project: self.filter.get_project(),
+                    since_date: self.filter.since_date,
+                    until_date: self.filter.until_date,
+                    active: *active,
+                    recent: *recent,
+                    token_limit: token_limit.as_deref(),
+                    approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
+                };
+                let blocks = create_and_filter_billing_blocks(params).await?;
 
                 // Calculate totals from blocks
                 prepared_data.totals = Totals::from_blocks(&blocks);

@@ -2,7 +2,8 @@
 
 use ccstat::{
     aggregation::{
-        Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_monthly_data,
+        Aggregator, BillingBlockParams, Totals, create_and_filter_billing_blocks,
+        filter_monthly_data,
     },
     cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
@@ -221,6 +222,7 @@ async fn main() -> Result<()> {
             active,
             recent,
             token_limit,
+            session_duration,
         }) => {
             info!("Running billing blocks report");
 
@@ -255,33 +257,31 @@ async fn main() -> Result<()> {
                         active: *active,
                         recent: *recent,
                         token_limit: token_limit.clone(),
+                        session_duration: *session_duration,
                     },
                     cli.interval,
                     cli.full_model_names,
                 );
                 monitor.run().await?;
             } else {
-                // Load and filter entries, then aggregate sessions
-                let entries = Box::pin(data_loader.load_usage_entries_parallel());
-                let filtered_entries = filter.filter_stream(entries).await;
-                let session_data = aggregator
-                    .aggregate_sessions(filtered_entries, cli.mode)
-                    .await?;
+                // Reuse the already-parsed dates from the filter
+                let since_date = filter.since_date;
+                let until_date = filter.until_date;
 
-                // Create billing blocks
-                let mut blocks = Aggregator::create_billing_blocks(&session_data);
-
-                // Apply filters
-                filter_blocks(&mut blocks, *active, *recent);
-
-                // Apply token limit warnings
-                if let Some(limit_str) = token_limit {
-                    apply_token_limit_warnings(
-                        &mut blocks,
-                        limit_str,
-                        APPROX_MAX_TOKENS_PER_BLOCK,
-                    )?;
-                }
+                let params = BillingBlockParams {
+                    data_loader: &data_loader,
+                    aggregator: &aggregator,
+                    cost_mode: cli.mode,
+                    session_duration_hours: *session_duration,
+                    project: cli.project.as_deref(),
+                    since_date,
+                    until_date,
+                    active: *active,
+                    recent: *recent,
+                    token_limit: token_limit.as_deref(),
+                    approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
+                };
+                let blocks = create_and_filter_billing_blocks(params).await?;
 
                 // Format and output
                 let formatter = get_formatter(cli.json, cli.full_model_names);

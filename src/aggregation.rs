@@ -52,14 +52,15 @@
 //! ```
 
 use crate::cost_calculator::CostCalculator;
-use crate::error::Result;
+use crate::data_loader::DataLoader;
+use crate::error::{CcstatError, Result};
 use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
-use futures::stream::{Stream, StreamExt};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Daily usage summary
@@ -199,7 +200,7 @@ pub struct MonthlyUsage {
 
 /// 5-hour billing block
 ///
-/// Groups sessions into 5-hour windows based on Claude's billing model.
+/// Groups usage entries into 5-hour windows based on Claude's billing model.
 /// This helps track usage within billing periods and identify when approaching
 /// token limits.
 ///
@@ -212,28 +213,48 @@ pub struct MonthlyUsage {
 /// let block = SessionBlock {
 ///     start_time: Utc::now() - chrono::Duration::hours(3),
 ///     end_time: Utc::now() + chrono::Duration::hours(2),
+///     actual_start_time: Some(Utc::now() - chrono::Duration::hours(3)),
+///     actual_end_time: Some(Utc::now() - chrono::Duration::minutes(30)),
 ///     sessions: vec![],
 ///     tokens: TokenCounts::new(8_000_000, 4_000_000, 0, 0),
 ///     total_cost: 240.0,
+///     models_used: vec!["claude-3-opus".to_string()],
+///     projects_used: vec![],
 ///     is_active: true,
+///     is_gap: false,
 ///     warning: Some("⚠️  Block has used 12,000,000 tokens, exceeding threshold of 10,000,000 tokens".to_string()),
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBlock {
-    /// Block start time
+    /// Block start time (floored to hour boundary)
     pub start_time: chrono::DateTime<chrono::Utc>,
     /// Block end time (5 hours after start)
     pub end_time: chrono::DateTime<chrono::Utc>,
-    /// Sessions included in this block
+    /// First activity timestamp in this block (None for gap blocks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_start_time: Option<chrono::DateTime<chrono::Utc>>,
+    /// Last activity timestamp in this block (None for gap blocks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_end_time: Option<chrono::DateTime<chrono::Utc>>,
+    /// Sessions included in this block (for backward compatibility)
     pub sessions: Vec<SessionUsage>,
     /// Total tokens used in this block
     pub tokens: TokenCounts,
     /// Total cost for this block in USD
     pub total_cost: f64,
-    /// Whether this block is currently active (contains recent usage)
+    /// List of unique models used in this block
+    pub models_used: Vec<String>,
+    /// List of unique projects used in this block
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub projects_used: Vec<String>,
+    /// Whether this block is currently active (recent activity AND within block time)
     pub is_active: bool,
+    /// Whether this is a gap block (period of inactivity)
+    #[serde(default)]
+    pub is_gap: bool,
     /// Optional warning message if approaching or exceeding token limits
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }
 
@@ -272,11 +293,14 @@ impl DailyAccumulator {
     }
 
     fn into_daily_usage(self, date: DailyDate) -> DailyUsage {
+        let mut models_used: Vec<String> = self.models.into_iter().map(|m| m.to_string()).collect();
+        models_used.sort();
+
         DailyUsage {
             date,
             tokens: self.tokens,
             total_cost: self.cost,
-            models_used: self.models.into_iter().map(|m| m.to_string()).collect(),
+            models_used,
             entries: self.verbose_entries,
         }
     }
@@ -340,6 +364,20 @@ pub struct Aggregator {
     cost_calculator: Arc<CostCalculator>,
     show_progress: bool,
     timezone_config: TimezoneConfig,
+}
+
+/// Helper struct to group block parameters for finalize_block function
+struct BlockData {
+    start_time: chrono::DateTime<chrono::Utc>,
+    session_duration: chrono::Duration,
+    first_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+    last_entry_time: Option<chrono::DateTime<chrono::Utc>>,
+    tokens: TokenCounts,
+    cost: f64,
+    models: HashSet<ModelName>,
+    projects: HashSet<String>,
+    now: chrono::DateTime<chrono::Utc>,
+    entries: Vec<(UsageEntry, f64)>, // Store entries with their calculated costs
 }
 
 impl Aggregator {
@@ -421,12 +459,18 @@ impl Aggregator {
 
         Ok(daily_map
             .into_iter()
-            .map(|((date, instance_id), acc)| DailyInstanceUsage {
-                date,
-                instance_id,
-                tokens: acc.tokens,
-                total_cost: acc.cost,
-                models_used: acc.models.into_iter().map(|m| m.to_string()).collect(),
+            .map(|((date, instance_id), acc)| {
+                let mut models_used: Vec<String> =
+                    acc.models.into_iter().map(|m| m.to_string()).collect();
+                models_used.sort();
+
+                DailyInstanceUsage {
+                    date,
+                    instance_id,
+                    tokens: acc.tokens,
+                    total_cost: acc.cost,
+                    models_used,
+                }
             })
             .collect())
     }
@@ -606,7 +650,7 @@ impl Aggregator {
             .expect("truncating to hour should always be valid")
     }
 
-    /// Group sessions into 5-hour billing blocks
+    /// Group sessions into 5-hour billing blocks (legacy method for backward compatibility)
     pub fn create_billing_blocks(sessions: &[SessionUsage]) -> Vec<SessionBlock> {
         if sessions.is_empty() {
             return Vec::new();
@@ -617,6 +661,7 @@ impl Aggregator {
         let mut current_sessions = Vec::new();
         let mut current_tokens = TokenCounts::default();
         let mut current_cost = 0.0;
+        let mut models_used = HashSet::new();
 
         let now = chrono::Utc::now();
         let five_hours = chrono::Duration::hours(5);
@@ -627,13 +672,26 @@ impl Aggregator {
                 && session.start_time >= block_start + five_hours
             {
                 // Finish current block
+                let mut sorted_models: Vec<String> = models_used
+                    .drain()
+                    .map(|m: ModelName| m.to_string())
+                    .collect();
+                sorted_models.sort();
+
                 blocks.push(SessionBlock {
                     start_time: block_start,
                     end_time: block_start + five_hours,
+                    actual_start_time: current_sessions
+                        .first()
+                        .map(|s: &SessionUsage| s.start_time),
+                    actual_end_time: current_sessions.last().map(|s: &SessionUsage| s.end_time),
                     sessions: std::mem::take(&mut current_sessions),
                     tokens: std::mem::take(&mut current_tokens),
                     total_cost: std::mem::take(&mut current_cost),
+                    models_used: sorted_models,
+                    projects_used: Vec::new(), // Legacy method doesn't track projects
                     is_active: now < block_start + five_hours,
+                    is_gap: false,
                     warning: None,
                 });
                 current_block_start = None;
@@ -649,23 +707,288 @@ impl Aggregator {
             current_sessions.push(session.clone());
             current_tokens += session.tokens;
             current_cost += session.total_cost;
+            models_used.insert(session.model.clone());
         }
 
         // Handle remaining sessions
         if let Some(block_start) = current_block_start {
             let is_active = now < block_start + five_hours;
+            let mut sorted_models: Vec<String> =
+                models_used.into_iter().map(|m| m.to_string()).collect();
+            sorted_models.sort();
+
             blocks.push(SessionBlock {
                 start_time: block_start,
                 end_time: block_start + five_hours,
+                actual_start_time: current_sessions.first().map(|s| s.start_time),
+                actual_end_time: current_sessions.last().map(|s| s.end_time),
                 sessions: current_sessions,
                 tokens: current_tokens,
                 total_cost: current_cost,
+                models_used: sorted_models,
+                projects_used: Vec::new(), // Legacy method doesn't track projects
                 is_active,
+                is_gap: false,
                 warning: None,
             });
         }
 
         blocks
+    }
+
+    /// Helper function to finalize a block and add it to the blocks vector
+    fn finalize_block(blocks: &mut Vec<SessionBlock>, data: BlockData) {
+        let block_end = data.start_time + data.session_duration;
+        let Some(actual_end) = data.last_entry_time else {
+            // This should not happen for a non-empty block, but we'll handle it gracefully.
+            tracing::warn!(
+                "finalize_block called with no last_entry_time, skipping block finalization"
+            );
+            return;
+        };
+
+        // Check if block is active: recent activity AND within block time window
+        let is_active = (data.now - actual_end < data.session_duration) && (data.now < block_end);
+
+        let mut models_used: Vec<String> = data.models.into_iter().map(|m| m.to_string()).collect();
+        models_used.sort();
+        let mut projects_used: Vec<String> = data.projects.into_iter().collect();
+        projects_used.sort();
+
+        // Group entries by session_id to create SessionUsage objects
+        let mut session_map: HashMap<SessionId, Vec<(UsageEntry, f64)>> = HashMap::new();
+        for (entry, cost) in data.entries {
+            session_map
+                .entry(entry.session_id.clone())
+                .or_default()
+                .push((entry, cost));
+        }
+
+        // Create SessionUsage objects from grouped entries
+        let mut sessions = Vec::new();
+        for (session_id, entries) in session_map {
+            if entries.is_empty() {
+                continue;
+            }
+
+            let start_time = entries
+                .iter()
+                .map(|(e, _)| *e.timestamp.inner())
+                .min()
+                .unwrap();
+            let end_time = entries
+                .iter()
+                .map(|(e, _)| *e.timestamp.inner())
+                .max()
+                .unwrap();
+            let mut tokens = TokenCounts::default();
+            let mut total_cost = 0.0;
+
+            // Use the most frequently used model in the session
+            let mut model_counts: HashMap<ModelName, usize> = HashMap::new();
+            for (entry, cost) in &entries {
+                tokens += entry.tokens;
+                total_cost += cost;
+                *model_counts.entry(entry.model.clone()).or_default() += 1;
+            }
+
+            let model = model_counts
+                .into_iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(model, _)| model)
+                .unwrap_or_else(|| entries[0].0.model.clone());
+
+            sessions.push(SessionUsage {
+                session_id,
+                start_time,
+                end_time,
+                tokens,
+                total_cost,
+                model,
+            });
+        }
+
+        // Sort sessions by start time for consistent ordering
+        sessions.sort_by_key(|s| s.start_time);
+
+        blocks.push(SessionBlock {
+            start_time: data.start_time,
+            end_time: block_end,
+            actual_start_time: data.first_entry_time,
+            actual_end_time: Some(actual_end),
+            sessions,
+            tokens: data.tokens,
+            total_cost: data.cost,
+            models_used,
+            projects_used,
+            is_active,
+            is_gap: false,
+            warning: None,
+        });
+    }
+
+    /// Create billing blocks directly from usage entries (matching TypeScript implementation)
+    ///
+    /// **Note:** This function collects all entries into memory to sort them by timestamp,
+    /// which is necessary for accurate block boundary calculation. For very large datasets,
+    /// this may consume significant memory. The entries must be sorted to ensure blocks
+    /// are created with correct boundaries and gap detection works properly.
+    pub async fn create_billing_blocks_from_entries(
+        &self,
+        entries: impl Stream<Item = Result<UsageEntry>>,
+        cost_mode: CostMode,
+        session_duration_hours: f64,
+    ) -> Result<Vec<SessionBlock>> {
+        if session_duration_hours.is_sign_negative() {
+            return Err(CcstatError::InvalidArgument(format!(
+                "Session duration cannot be negative: {}",
+                session_duration_hours
+            )));
+        }
+        let session_duration = chrono::Duration::from_std(std::time::Duration::from_secs_f64(
+            session_duration_hours * 3600.0,
+        ))
+        .map_err(|_| {
+            CcstatError::InvalidArgument(format!(
+                "Invalid session duration: {}",
+                session_duration_hours
+            ))
+        })?;
+
+        // Collect and sort entries by timestamp
+        let mut all_entries: Vec<UsageEntry> = entries.try_collect().await?;
+
+        if all_entries.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Sort by timestamp
+        all_entries.sort_by_key(|e| *e.timestamp.inner());
+
+        let mut blocks = Vec::new();
+        let mut current_block_start: Option<chrono::DateTime<chrono::Utc>> = None;
+        let mut current_tokens = TokenCounts::default();
+        let mut current_cost = 0.0;
+        let mut current_models = HashSet::new();
+        let mut current_projects = HashSet::new();
+        let mut current_entries: Vec<(UsageEntry, f64)> = Vec::new(); // Track entries for current block
+        let mut first_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
+        let mut last_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
+
+        let now = chrono::Utc::now();
+
+        for entry in all_entries {
+            let entry_time = *entry.timestamp.inner();
+
+            // Determine if we need to start a new block
+            let needs_new_block = if let Some(block_start) = current_block_start {
+                let time_since_block_start = entry_time - block_start;
+                let time_since_last_entry = last_entry_time
+                    .map_or(chrono::Duration::zero(), |last_time| entry_time - last_time);
+
+                // New block if either:
+                // 1. Time since block start exceeds session duration
+                // 2. Time since last entry exceeds session duration (gap)
+                time_since_block_start > session_duration
+                    || time_since_last_entry > session_duration
+            } else {
+                true // First entry always starts a new block
+            };
+
+            if needs_new_block {
+                // Finish current block if it exists
+                if let Some(block_start) = current_block_start {
+                    Self::finalize_block(
+                        &mut blocks,
+                        BlockData {
+                            start_time: block_start,
+                            session_duration,
+                            first_entry_time,
+                            last_entry_time,
+                            tokens: std::mem::take(&mut current_tokens),
+                            cost: std::mem::take(&mut current_cost),
+                            models: std::mem::take(&mut current_models),
+                            projects: std::mem::take(&mut current_projects),
+                            now,
+                            entries: std::mem::take(&mut current_entries),
+                        },
+                    );
+                }
+
+                // Create gap block if needed
+                if let Some(last_time) = last_entry_time {
+                    let time_gap = entry_time - last_time;
+                    if time_gap > session_duration {
+                        // Gap blocks represent periods of inactivity that exceed the session duration.
+                        // If the last activity ended at T1, the next activity starts at T2, and the
+                        // session duration is D, the gap block spans from T1+D to T2.
+                        // This means the gap block only captures the "excessive" inactivity beyond
+                        // the expected session duration, not the entire inactive period.
+                        let gap_start = last_time + session_duration;
+                        let gap_end = entry_time;
+
+                        blocks.push(SessionBlock {
+                            start_time: gap_start,
+                            end_time: gap_end,
+                            actual_start_time: None,
+                            actual_end_time: None,
+                            sessions: Vec::new(),
+                            tokens: TokenCounts::default(),
+                            total_cost: 0.0,
+                            models_used: Vec::new(),
+                            projects_used: Vec::new(),
+                            is_active: false,
+                            is_gap: true,
+                            warning: None,
+                        });
+                    }
+                }
+
+                // Start new block (floored to hour)
+                current_block_start = Some(Self::truncate_to_hour(entry_time));
+                first_entry_time = None; // Reset first entry time for new block
+            }
+
+            // Track first entry time in this block
+            first_entry_time.get_or_insert(entry_time);
+
+            // Calculate cost for this entry
+            let entry_cost = self
+                .cost_calculator
+                .calculate_with_mode(&entry.tokens, &entry.model, entry.total_cost, cost_mode)
+                .await?;
+
+            // Add entry to current block
+            current_tokens += entry.tokens;
+            current_cost += entry_cost;
+            current_models.insert(entry.model.clone());
+            if let Some(ref project) = entry.project {
+                current_projects.insert(project.clone());
+            }
+            current_entries.push((entry, entry_cost)); // Track entry for session creation
+            last_entry_time = Some(entry_time);
+        }
+
+        // Handle remaining entries in the last block
+        if let Some(block_start) = current_block_start {
+            Self::finalize_block(
+                &mut blocks,
+                BlockData {
+                    start_time: block_start,
+                    session_duration,
+                    first_entry_time,
+                    last_entry_time,
+                    tokens: current_tokens,
+                    cost: current_cost,
+                    models: current_models,
+                    projects: current_projects,
+                    now,
+                    entries: current_entries,
+                },
+            );
+        }
+
+        Ok(blocks)
     }
 }
 
@@ -748,6 +1071,35 @@ pub fn filter_blocks(blocks: &mut Vec<SessionBlock>, active: bool, recent: bool)
     }
 }
 
+/// Helper function to filter blocks based on date range
+pub fn filter_blocks_by_date(
+    blocks: &mut Vec<SessionBlock>,
+    since: Option<chrono::NaiveDate>,
+    until: Option<chrono::NaiveDate>,
+) {
+    if let Some(since_date) = since {
+        let since_datetime = since_date
+            .and_hms_opt(0, 0, 0)
+            .expect("start of day is always a valid time")
+            .and_utc();
+        blocks.retain(|b| b.start_time >= since_datetime);
+    }
+
+    if let Some(until_date) = until {
+        // Include blocks that start on or before the until date (end of day)
+        let until_datetime = until_date
+            .and_hms_opt(23, 59, 59)
+            .expect("end of day is always a valid time")
+            .and_utc();
+        blocks.retain(|b| b.start_time <= until_datetime);
+    }
+}
+
+/// Helper function to filter blocks based on project
+pub fn filter_blocks_by_project(blocks: &mut Vec<SessionBlock>, project: &str) {
+    blocks.retain(|b| b.projects_used.iter().any(|p| p == project));
+}
+
 /// Helper function to apply token limit warnings to blocks
 /// Returns Result to handle parsing errors
 pub fn apply_token_limit_warnings(
@@ -804,6 +1156,73 @@ pub fn apply_token_limit_warnings(
     }
 
     Ok(())
+}
+
+/// Parameters for creating and filtering billing blocks
+pub struct BillingBlockParams<'a> {
+    /// DataLoader instance to load usage entries
+    pub data_loader: &'a DataLoader,
+    /// Aggregator instance to create billing blocks
+    pub aggregator: &'a Aggregator,
+    /// Cost calculation mode
+    pub cost_mode: CostMode,
+    /// Session duration threshold in hours
+    pub session_duration_hours: f64,
+    /// Optional project filter
+    pub project: Option<&'a str>,
+    /// Optional start date filter
+    pub since_date: Option<chrono::NaiveDate>,
+    /// Optional end date filter
+    pub until_date: Option<chrono::NaiveDate>,
+    /// Filter for active blocks only
+    pub active: bool,
+    /// Filter for recent blocks only
+    pub recent: bool,
+    /// Optional token limit warning threshold
+    pub token_limit: Option<&'a str>,
+    /// Approximate maximum tokens per block for percentage calculations
+    pub approx_max_tokens: f64,
+}
+
+/// Shared function to create and filter billing blocks from usage entries.
+///
+/// This function handles the complex logic of:
+/// 1. Creating billing blocks from all entries (to ensure correct block boundaries)
+/// 2. Filtering blocks by date, project, and other criteria
+/// 3. Applying additional filters (active, recent, token limit)
+pub async fn create_and_filter_billing_blocks(
+    params: BillingBlockParams<'_>,
+) -> Result<Vec<SessionBlock>> {
+    let entries = params.data_loader.load_usage_entries_parallel();
+
+    // Always process all entries first to correctly calculate block boundaries,
+    // especially for blocks that span across date filter boundaries. Then, filter the blocks.
+    let mut blocks = params
+        .aggregator
+        .create_billing_blocks_from_entries(
+            Box::pin(entries),
+            params.cost_mode,
+            params.session_duration_hours,
+        )
+        .await?;
+
+    // Filter blocks by date after creation
+    filter_blocks_by_date(&mut blocks, params.since_date, params.until_date);
+
+    // Apply project filter if specified
+    if let Some(project) = params.project {
+        filter_blocks_by_project(&mut blocks, project);
+    }
+
+    // Apply other filters
+    filter_blocks(&mut blocks, params.active, params.recent);
+
+    // Apply token limit warnings
+    if let Some(limit_str) = params.token_limit {
+        apply_token_limit_warnings(&mut blocks, limit_str, params.approx_max_tokens)?;
+    }
+
+    Ok(blocks)
 }
 
 #[cfg(test)]
@@ -1018,6 +1437,161 @@ mod tests {
         assert!(
             !old_blocks[0].is_active,
             "Old block should be inactive as it started 6 hours ago"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_billing_blocks_from_entries() {
+        use crate::pricing_fetcher::PricingFetcher;
+        use futures::stream;
+
+        // Create test infrastructure
+        let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
+
+        let base_time = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 30, 0).unwrap();
+
+        // Create test entries with various timestamps
+        let entries = vec![
+            UsageEntry {
+                session_id: SessionId::new("s1"),
+                timestamp: crate::types::ISOTimestamp::new(base_time),
+                model: ModelName::new("claude-3-opus"),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: Some(0.01),
+                project: None,
+                instance_id: None,
+            },
+            // Entry 3 hours later (still in same block)
+            UsageEntry {
+                session_id: SessionId::new("s1"),
+                timestamp: crate::types::ISOTimestamp::new(base_time + chrono::Duration::hours(3)),
+                model: ModelName::new("claude-3-opus"),
+                tokens: TokenCounts::new(200, 100, 0, 0),
+                total_cost: Some(0.02),
+                project: None,
+                instance_id: None,
+            },
+            // Entry 9 hours later (should create gap block and new block)
+            UsageEntry {
+                session_id: SessionId::new("s2"),
+                timestamp: crate::types::ISOTimestamp::new(base_time + chrono::Duration::hours(9)),
+                model: ModelName::new("claude-3-sonnet"),
+                tokens: TokenCounts::new(150, 75, 0, 0),
+                total_cost: Some(0.015),
+                project: None,
+                instance_id: None,
+            },
+        ];
+
+        let stream = stream::iter(entries.into_iter().map(Ok));
+        let blocks = aggregator
+            .create_billing_blocks_from_entries(stream, CostMode::Auto, 5.0)
+            .await
+            .unwrap();
+
+        // Should have 3 blocks: first block, gap block, second block
+        assert_eq!(blocks.len(), 3);
+
+        // First block: starts at 10:00 (floored from 10:30)
+        assert_eq!(
+            blocks[0].start_time,
+            chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap()
+        );
+        assert_eq!(blocks[0].tokens.input_tokens, 300); // 100 + 200
+        assert!(!blocks[0].is_gap);
+        assert_eq!(blocks[0].models_used, vec!["claude-3-opus"]);
+
+        // Gap block: starts at 13:30 + 5 hours = 18:30, ends at 19:30
+        assert!(blocks[1].is_gap);
+        assert_eq!(
+            blocks[1].start_time,
+            base_time + chrono::Duration::hours(3) + chrono::Duration::hours(5)
+        ); // 18:30
+        assert_eq!(blocks[1].end_time, base_time + chrono::Duration::hours(9)); // 19:30
+        assert_eq!(blocks[1].tokens.input_tokens, 0);
+        assert!(!blocks[1].is_active);
+
+        // Second block: starts at 19:00 (floored from 19:30)
+        assert_eq!(
+            blocks[2].start_time,
+            chrono::Utc.with_ymd_and_hms(2024, 1, 1, 19, 0, 0).unwrap()
+        );
+        assert_eq!(blocks[2].tokens.input_tokens, 150);
+        assert!(!blocks[2].is_gap);
+        assert_eq!(blocks[2].models_used, vec!["claude-3-sonnet"]);
+    }
+
+    #[tokio::test]
+    async fn test_billing_blocks_active_determination() {
+        use crate::pricing_fetcher::PricingFetcher;
+        use futures::stream;
+
+        // Create test infrastructure
+        let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+        let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+        let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
+
+        let now = chrono::Utc::now();
+
+        // Test 1: Recent activity within block time = active
+        let recent_entries = vec![
+            UsageEntry {
+                session_id: SessionId::new("recent"),
+                timestamp: crate::types::ISOTimestamp::new(now - chrono::Duration::hours(2)),
+                model: ModelName::new("claude-3-opus"),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: Some(0.01),
+                project: None,
+                instance_id: None,
+            },
+            UsageEntry {
+                session_id: SessionId::new("recent"),
+                timestamp: crate::types::ISOTimestamp::new(now - chrono::Duration::minutes(30)),
+                model: ModelName::new("claude-3-opus"),
+                tokens: TokenCounts::new(100, 50, 0, 0),
+                total_cost: Some(0.01),
+                project: None,
+                instance_id: None,
+            },
+        ];
+
+        let stream = stream::iter(recent_entries.into_iter().map(Ok));
+        let blocks = aggregator
+            .create_billing_blocks_from_entries(stream, CostMode::Auto, 5.0)
+            .await
+            .unwrap();
+
+        assert_eq!(blocks.len(), 1);
+        assert!(
+            blocks[0].is_active,
+            "Block with recent activity (30 min ago) should be active"
+        );
+
+        // Test 2: No recent activity even if within block time = inactive
+        let old_entries = vec![UsageEntry {
+            session_id: SessionId::new("old"),
+            timestamp: crate::types::ISOTimestamp::new(now - chrono::Duration::hours(4)),
+            model: ModelName::new("claude-3-opus"),
+            tokens: TokenCounts::new(100, 50, 0, 0),
+            total_cost: Some(0.01),
+            project: None,
+            instance_id: None,
+        }];
+
+        let stream = stream::iter(old_entries.into_iter().map(Ok));
+        let blocks = aggregator
+            .create_billing_blocks_from_entries(stream, CostMode::Auto, 2.0) // 2 hour blocks
+            .await
+            .unwrap();
+
+        assert_eq!(blocks.len(), 1);
+        // Block started 4 hours ago, last activity 4 hours ago, 2-hour session duration
+        // Both conditions fail: activity > 2 hours ago, and possibly outside block window
+        assert!(
+            !blocks[0].is_active,
+            "Block with no recent activity should be inactive"
         );
     }
 }
