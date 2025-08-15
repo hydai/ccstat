@@ -264,16 +264,9 @@ async fn main() -> Result<()> {
                 );
                 monitor.run().await?;
             } else {
-                let since_date = cli
-                    .since
-                    .as_ref()
-                    .map(|s| parse_date_filter(s))
-                    .transpose()?;
-                let until_date = cli
-                    .until
-                    .as_ref()
-                    .map(|s| parse_date_filter(s))
-                    .transpose()?;
+                // Reuse the already-parsed dates from the filter
+                let since_date = filter.since_date;
+                let until_date = filter.until_date;
 
                 let params = BillingBlockParams {
                     data_loader: &data_loader,

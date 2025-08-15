@@ -1094,49 +1094,27 @@ pub struct BillingBlockParams<'a> {
 /// Shared function to create and filter billing blocks from usage entries.
 ///
 /// This function handles the complex logic of:
-/// 1. Optimizing entry filtering based on project filter presence
-/// 2. Creating billing blocks from entries
-/// 3. Applying all necessary filters (date, project, active, recent, token limit)
+/// 1. Creating billing blocks from all entries (to ensure correct block boundaries)
+/// 2. Filtering blocks by date, project, and other criteria
+/// 3. Applying additional filters (active, recent, token limit)
 pub async fn create_and_filter_billing_blocks(
     params: BillingBlockParams<'_>,
 ) -> Result<Vec<SessionBlock>> {
-    use crate::filters::UsageFilter;
-
     let entries = params.data_loader.load_usage_entries_parallel();
 
-    let mut blocks = if params.project.is_none() {
-        // If no project filter, we can safely filter entries by date first for performance.
-        let mut date_filter =
-            UsageFilter::new().with_timezone(params.aggregator.timezone_config().tz);
-        if let Some(since) = params.since_date {
-            date_filter = date_filter.with_since(since);
-        }
-        if let Some(until) = params.until_date {
-            date_filter = date_filter.with_until(until);
-        }
-        let filtered_entries = date_filter.filter_stream(Box::pin(entries)).await;
-        params
-            .aggregator
-            .create_billing_blocks_from_entries(
-                filtered_entries,
-                params.cost_mode,
-                params.session_duration_hours,
-            )
-            .await?
-    } else {
-        // With a project filter, process all entries to find inter-project gaps, then filter blocks.
-        let mut blocks = params
-            .aggregator
-            .create_billing_blocks_from_entries(
-                Box::pin(entries),
-                params.cost_mode,
-                params.session_duration_hours,
-            )
-            .await?;
-        // Filter blocks by date after creation
-        filter_blocks_by_date(&mut blocks, params.since_date, params.until_date);
-        blocks
-    };
+    // Always process all entries first to correctly calculate block boundaries,
+    // especially for blocks that span across date filter boundaries. Then, filter the blocks.
+    let mut blocks = params
+        .aggregator
+        .create_billing_blocks_from_entries(
+            Box::pin(entries),
+            params.cost_mode,
+            params.session_duration_hours,
+        )
+        .await?;
+
+    // Filter blocks by date after creation
+    filter_blocks_by_date(&mut blocks, params.since_date, params.until_date);
 
     // Apply project filter if specified
     if let Some(project) = params.project {
