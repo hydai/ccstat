@@ -8,8 +8,8 @@
 use crate::timezone::TimezoneConfig;
 use crate::{
     aggregation::{
-        Aggregator, SessionBlock, SessionUsage, Totals, apply_token_limit_warnings, filter_blocks,
-        filter_blocks_by_date, filter_blocks_by_project, filter_monthly_data,
+        Aggregator, BillingBlockParams, SessionBlock, SessionUsage, Totals,
+        create_and_filter_billing_blocks, filter_monthly_data,
     },
     data_loader::DataLoader,
     error::{CcstatError, Result},
@@ -359,58 +359,20 @@ impl LiveMonitor {
                 token_limit,
                 session_duration,
             } => {
-                // Optimization: Apply date filtering before creating blocks if no project filter
-                let mut blocks = if self.filter.get_project().is_none() {
-                    // If no project filter, we can filter by date first for performance
-                    let date_filtered_entries = self
-                        .filter
-                        .clone()
-                        .filter_stream(Box::pin(self.data_loader.load_usage_entries_parallel()))
-                        .await;
-                    self.aggregator
-                        .create_billing_blocks_from_entries(
-                            date_filtered_entries,
-                            self.cost_mode,
-                            *session_duration,
-                        )
-                        .await?
-                } else {
-                    // With a project filter, process all entries to find inter-project gaps, then filter blocks
-                    let all_entries = self.data_loader.load_usage_entries_parallel();
-                    let mut blocks = self
-                        .aggregator
-                        .create_billing_blocks_from_entries(
-                            Box::pin(all_entries),
-                            self.cost_mode,
-                            *session_duration,
-                        )
-                        .await?;
-
-                    // Apply project filter if present
-                    if let Some(project) = self.filter.get_project() {
-                        filter_blocks_by_project(&mut blocks, project);
-                    }
-
-                    // Apply date filters from the filter object
-                    filter_blocks_by_date(
-                        &mut blocks,
-                        self.filter.since_date,
-                        self.filter.until_date,
-                    );
-                    blocks
+                let params = BillingBlockParams {
+                    data_loader: &self.data_loader,
+                    aggregator: &self.aggregator,
+                    cost_mode: self.cost_mode,
+                    session_duration_hours: *session_duration,
+                    project: self.filter.get_project(),
+                    since_date: self.filter.since_date,
+                    until_date: self.filter.until_date,
+                    active: *active,
+                    recent: *recent,
+                    token_limit: token_limit.as_deref(),
+                    approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
                 };
-
-                // Apply other filters
-                filter_blocks(&mut blocks, *active, *recent);
-
-                // Apply token limit warnings
-                if let Some(limit_str) = token_limit {
-                    apply_token_limit_warnings(
-                        &mut blocks,
-                        limit_str,
-                        APPROX_MAX_TOKENS_PER_BLOCK,
-                    )?;
-                }
+                let blocks = create_and_filter_billing_blocks(params).await?;
 
                 // Calculate totals from blocks
                 prepared_data.totals = Totals::from_blocks(&blocks);

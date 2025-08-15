@@ -52,6 +52,7 @@
 //! ```
 
 use crate::cost_calculator::CostCalculator;
+use crate::data_loader::DataLoader;
 use crate::error::{CcstatError, Result};
 use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
@@ -1062,6 +1063,95 @@ pub fn apply_token_limit_warnings(
     }
 
     Ok(())
+}
+
+/// Parameters for creating and filtering billing blocks
+pub struct BillingBlockParams<'a> {
+    /// DataLoader instance to load usage entries
+    pub data_loader: &'a DataLoader,
+    /// Aggregator instance to create billing blocks
+    pub aggregator: &'a Aggregator,
+    /// Cost calculation mode
+    pub cost_mode: CostMode,
+    /// Session duration threshold in hours
+    pub session_duration_hours: f64,
+    /// Optional project filter
+    pub project: Option<&'a str>,
+    /// Optional start date filter
+    pub since_date: Option<chrono::NaiveDate>,
+    /// Optional end date filter
+    pub until_date: Option<chrono::NaiveDate>,
+    /// Filter for active blocks only
+    pub active: bool,
+    /// Filter for recent blocks only
+    pub recent: bool,
+    /// Optional token limit warning threshold
+    pub token_limit: Option<&'a str>,
+    /// Approximate maximum tokens per block for percentage calculations
+    pub approx_max_tokens: f64,
+}
+
+/// Shared function to create and filter billing blocks from usage entries.
+///
+/// This function handles the complex logic of:
+/// 1. Optimizing entry filtering based on project filter presence
+/// 2. Creating billing blocks from entries
+/// 3. Applying all necessary filters (date, project, active, recent, token limit)
+pub async fn create_and_filter_billing_blocks(
+    params: BillingBlockParams<'_>,
+) -> Result<Vec<SessionBlock>> {
+    use crate::filters::UsageFilter;
+
+    let entries = params.data_loader.load_usage_entries_parallel();
+
+    let mut blocks = if params.project.is_none() {
+        // If no project filter, we can safely filter entries by date first for performance.
+        let mut date_filter =
+            UsageFilter::new().with_timezone(params.aggregator.timezone_config().tz);
+        if let Some(since) = params.since_date {
+            date_filter = date_filter.with_since(since);
+        }
+        if let Some(until) = params.until_date {
+            date_filter = date_filter.with_until(until);
+        }
+        let filtered_entries = date_filter.filter_stream(Box::pin(entries)).await;
+        params
+            .aggregator
+            .create_billing_blocks_from_entries(
+                filtered_entries,
+                params.cost_mode,
+                params.session_duration_hours,
+            )
+            .await?
+    } else {
+        // With a project filter, process all entries to find inter-project gaps, then filter blocks.
+        let mut blocks = params
+            .aggregator
+            .create_billing_blocks_from_entries(
+                Box::pin(entries),
+                params.cost_mode,
+                params.session_duration_hours,
+            )
+            .await?;
+        // Filter blocks by date after creation
+        filter_blocks_by_date(&mut blocks, params.since_date, params.until_date);
+        blocks
+    };
+
+    // Apply project filter if specified
+    if let Some(project) = params.project {
+        filter_blocks_by_project(&mut blocks, project);
+    }
+
+    // Apply other filters
+    filter_blocks(&mut blocks, params.active, params.recent);
+
+    // Apply token limit warnings
+    if let Some(limit_str) = params.token_limit {
+        apply_token_limit_warnings(&mut blocks, limit_str, params.approx_max_tokens)?;
+    }
+
+    Ok(blocks)
 }
 
 #[cfg(test)]

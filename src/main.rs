@@ -2,8 +2,8 @@
 
 use ccstat::{
     aggregation::{
-        Aggregator, Totals, apply_token_limit_warnings, filter_blocks, filter_blocks_by_date,
-        filter_blocks_by_project, filter_monthly_data,
+        Aggregator, BillingBlockParams, Totals, create_and_filter_billing_blocks,
+        filter_monthly_data,
     },
     cli::{Cli, Command, parse_date_filter},
     cost_calculator::CostCalculator,
@@ -275,56 +275,20 @@ async fn main() -> Result<()> {
                     .map(|s| parse_date_filter(s))
                     .transpose()?;
 
-                let entries = data_loader.load_usage_entries_parallel();
-
-                let mut blocks = if cli.project.is_none() {
-                    // If no project filter, we can safely filter entries by date first for performance.
-                    let mut date_filter =
-                        UsageFilter::new().with_timezone(aggregator.timezone_config().tz);
-                    if let Some(since) = since_date {
-                        date_filter = date_filter.with_since(since);
-                    }
-                    if let Some(until) = until_date {
-                        date_filter = date_filter.with_until(until);
-                    }
-                    let filtered_entries = date_filter.filter_stream(Box::pin(entries)).await;
-                    aggregator
-                        .create_billing_blocks_from_entries(
-                            filtered_entries,
-                            cli.mode,
-                            *session_duration,
-                        )
-                        .await?
-                } else {
-                    // With a project filter, process all entries to find inter-project gaps, then filter blocks.
-                    let mut blocks = aggregator
-                        .create_billing_blocks_from_entries(
-                            Box::pin(entries),
-                            cli.mode,
-                            *session_duration,
-                        )
-                        .await?;
-                    // Filter blocks by date after creation
-                    filter_blocks_by_date(&mut blocks, since_date, until_date);
-                    blocks
+                let params = BillingBlockParams {
+                    data_loader: &data_loader,
+                    aggregator: &aggregator,
+                    cost_mode: cli.mode,
+                    session_duration_hours: *session_duration,
+                    project: cli.project.as_deref(),
+                    since_date,
+                    until_date,
+                    active: *active,
+                    recent: *recent,
+                    token_limit: token_limit.as_deref(),
+                    approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
                 };
-
-                // Apply project filter if specified
-                if let Some(project) = &cli.project {
-                    filter_blocks_by_project(&mut blocks, project);
-                }
-
-                // Apply other filters
-                filter_blocks(&mut blocks, *active, *recent);
-
-                // Apply token limit warnings
-                if let Some(limit_str) = token_limit {
-                    apply_token_limit_warnings(
-                        &mut blocks,
-                        limit_str,
-                        APPROX_MAX_TOKENS_PER_BLOCK,
-                    )?;
-                }
+                let blocks = create_and_filter_billing_blocks(params).await?;
 
                 // Format and output
                 let formatter = get_formatter(cli.json, cli.full_model_names);
