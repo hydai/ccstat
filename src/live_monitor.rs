@@ -357,14 +357,19 @@ impl LiveMonitor {
                 active,
                 recent,
                 token_limit,
-                session_duration: _,
+                session_duration,
             } => {
-                // First aggregate sessions, then create blocks
-                let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
-
-                // TODO: Consider updating create_billing_blocks to accept session_duration parameter
-                // Currently using the legacy method with hardcoded 5-hour duration
-                let mut blocks = Aggregator::create_billing_blocks(&session_data);
+                // Create billing blocks from entries to respect session_duration and gaps
+                let entries_stream =
+                    futures::stream::iter(filtered_entries.clone().into_iter().map(Ok));
+                let mut blocks = self
+                    .aggregator
+                    .create_billing_blocks_from_entries(
+                        entries_stream,
+                        self.cost_mode,
+                        *session_duration,
+                    )
+                    .await?;
 
                 // Apply filters
                 filter_blocks(&mut blocks, *active, *recent);

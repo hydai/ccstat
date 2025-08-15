@@ -52,7 +52,7 @@
 //! ```
 
 use crate::cost_calculator::CostCalculator;
-use crate::error::Result;
+use crate::error::{CcstatError, Result};
 use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
@@ -746,8 +746,15 @@ impl Aggregator {
         cost_mode: CostMode,
         session_duration_hours: f64,
     ) -> Result<Vec<SessionBlock>> {
-        let session_duration_ms = (session_duration_hours * 60.0 * 60.0 * 1000.0) as i64;
-        let session_duration = chrono::Duration::milliseconds(session_duration_ms);
+        let session_duration = chrono::Duration::from_std(std::time::Duration::from_secs_f64(
+            session_duration_hours * 3600.0,
+        ))
+        .map_err(|_| {
+            CcstatError::InvalidArgument(format!(
+                "Invalid session duration: {}",
+                session_duration_hours
+            ))
+        })?;
 
         // Collect and sort entries by timestamp
         let mut all_entries = Vec::new();
