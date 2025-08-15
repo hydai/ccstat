@@ -60,7 +60,7 @@ use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, Usage
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Daily usage summary
@@ -377,6 +377,7 @@ struct BlockData {
     models: HashSet<ModelName>,
     projects: HashSet<String>,
     now: chrono::DateTime<chrono::Utc>,
+    entries: Vec<(UsageEntry, f64)>, // Store entries with their calculated costs
 }
 
 impl Aggregator {
@@ -754,12 +755,68 @@ impl Aggregator {
         let mut projects_used: Vec<String> = data.projects.into_iter().collect();
         projects_used.sort();
 
+        // Group entries by session_id to create SessionUsage objects
+        let mut session_map: HashMap<SessionId, Vec<(UsageEntry, f64)>> = HashMap::new();
+        for (entry, cost) in data.entries {
+            session_map
+                .entry(entry.session_id.clone())
+                .or_default()
+                .push((entry, cost));
+        }
+
+        // Create SessionUsage objects from grouped entries
+        let mut sessions = Vec::new();
+        for (session_id, entries) in session_map {
+            if entries.is_empty() {
+                continue;
+            }
+
+            let start_time = entries
+                .iter()
+                .map(|(e, _)| *e.timestamp.inner())
+                .min()
+                .unwrap();
+            let end_time = entries
+                .iter()
+                .map(|(e, _)| *e.timestamp.inner())
+                .max()
+                .unwrap();
+            let mut tokens = TokenCounts::default();
+            let mut total_cost = 0.0;
+
+            // Use the most frequently used model in the session
+            let mut model_counts: HashMap<ModelName, usize> = HashMap::new();
+            for (entry, cost) in &entries {
+                tokens += entry.tokens;
+                total_cost += cost;
+                *model_counts.entry(entry.model.clone()).or_default() += 1;
+            }
+
+            let model = model_counts
+                .into_iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(model, _)| model)
+                .unwrap_or_else(|| entries[0].0.model.clone());
+
+            sessions.push(SessionUsage {
+                session_id,
+                start_time,
+                end_time,
+                tokens,
+                total_cost,
+                model,
+            });
+        }
+
+        // Sort sessions by start time for consistent ordering
+        sessions.sort_by_key(|s| s.start_time);
+
         blocks.push(SessionBlock {
             start_time: data.start_time,
             end_time: block_end,
             actual_start_time: data.first_entry_time,
             actual_end_time: Some(actual_end),
-            sessions: Vec::new(), // We don't aggregate into sessions for this method
+            sessions,
             tokens: data.tokens,
             total_cost: data.cost,
             models_used,
@@ -814,6 +871,7 @@ impl Aggregator {
         let mut current_cost = 0.0;
         let mut current_models = HashSet::new();
         let mut current_projects = HashSet::new();
+        let mut current_entries: Vec<(UsageEntry, f64)> = Vec::new(); // Track entries for current block
         let mut first_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
         let mut last_entry_time: Option<chrono::DateTime<chrono::Utc>> = None;
 
@@ -852,6 +910,7 @@ impl Aggregator {
                             models: std::mem::take(&mut current_models),
                             projects: std::mem::take(&mut current_projects),
                             now,
+                            entries: std::mem::take(&mut current_entries),
                         },
                     );
                 }
@@ -901,6 +960,7 @@ impl Aggregator {
             if let Some(ref project) = entry.project {
                 current_projects.insert(project.clone());
             }
+            current_entries.push((entry, entry_cost)); // Track entry for session creation
             last_entry_time = Some(entry_time);
         }
 
@@ -918,6 +978,7 @@ impl Aggregator {
                     models: current_models,
                     projects: current_projects,
                     now,
+                    entries: current_entries,
                 },
             );
         }
