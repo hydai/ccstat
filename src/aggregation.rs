@@ -714,9 +714,10 @@ impl Aggregator {
     /// Helper function to finalize a block and add it to the blocks vector
     fn finalize_block(blocks: &mut Vec<SessionBlock>, data: BlockData) {
         let block_end = data.start_time + data.session_duration;
-        let actual_end = data
-            .last_entry_time
-            .expect("last_entry_time should be Some for a non-empty block");
+        let Some(actual_end) = data.last_entry_time else {
+            // This should not happen for a non-empty block, but we'll handle it gracefully.
+            return;
+        };
 
         // Check if block is active: recent activity AND within block time window
         let is_active = (data.now - actual_end < data.session_duration) && (data.now < block_end);
@@ -784,11 +785,8 @@ impl Aggregator {
             // Determine if we need to start a new block
             let needs_new_block = if let Some(block_start) = current_block_start {
                 let time_since_block_start = entry_time - block_start;
-                let time_since_last_entry = if let Some(last_time) = last_entry_time {
-                    entry_time - last_time
-                } else {
-                    chrono::Duration::zero()
-                };
+                let time_since_last_entry = last_entry_time
+                    .map_or(chrono::Duration::zero(), |last_time| entry_time - last_time);
 
                 // New block if either:
                 // 1. Time since block start exceeds session duration
@@ -846,9 +844,7 @@ impl Aggregator {
             }
 
             // Track first entry time in this block
-            if first_entry_time.is_none() {
-                first_entry_time = Some(entry_time);
-            }
+            first_entry_time.get_or_insert(entry_time);
 
             // Calculate cost for this entry
             let entry_cost = self
