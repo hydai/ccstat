@@ -150,6 +150,9 @@ impl TableFormatter {
 
     /// Format a duration as "Xh Ym" or "Xm" if less than an hour
     fn format_duration(duration: chrono::Duration) -> String {
+        if duration.num_seconds() <= 0 {
+            return "0m".to_string();
+        }
         let total_minutes = duration.num_minutes();
         if total_minutes < 60 {
             format!("{}m", total_minutes)
@@ -215,14 +218,12 @@ impl TableFormatter {
                     Self::format_duration(gap_duration)
                 )
             } else if block.is_active {
-                // Active blocks: "YYYY-MM-DD, HH:MM:SS (Xh Ym elapsed, Xh Ym remaining)"
+                // Active blocks: "YYYY-MM-DD, HH:MM:SS (Xh Ym elapsed)"
                 let elapsed = now - block.start_time;
-                let remaining = block.end_time - now;
                 format!(
-                    "{} ({} elapsed, {} remaining)",
+                    "{} ({} elapsed)",
                     Self::format_datetime_with_tz(&block.start_time, tz),
-                    Self::format_duration(elapsed),
-                    Self::format_duration(remaining)
+                    Self::format_duration(elapsed)
                 )
             } else {
                 // Regular blocks: "YYYY-MM-DD, HH:MM:SS (Xh Ym)" with actual activity duration
