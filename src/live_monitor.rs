@@ -359,28 +359,46 @@ impl LiveMonitor {
                 token_limit,
                 session_duration,
             } => {
-                // For blocks, we need ALL entries to properly detect gaps
-                // Load all entries without filtering
-                let all_entries = self.data_loader.load_usage_entries_parallel();
-                let entries_stream = Box::pin(all_entries);
+                // Optimization: Apply date filtering before creating blocks if no project filter
+                let mut blocks = if self.filter.get_project().is_none() {
+                    // If no project filter, we can filter by date first for performance
+                    let date_filtered_entries = self
+                        .filter
+                        .clone()
+                        .filter_stream(Box::pin(self.data_loader.load_usage_entries_parallel()))
+                        .await;
+                    self.aggregator
+                        .create_billing_blocks_from_entries(
+                            date_filtered_entries,
+                            self.cost_mode,
+                            *session_duration,
+                        )
+                        .await?
+                } else {
+                    // With a project filter, process all entries to find inter-project gaps, then filter blocks
+                    let all_entries = self.data_loader.load_usage_entries_parallel();
+                    let mut blocks = self
+                        .aggregator
+                        .create_billing_blocks_from_entries(
+                            Box::pin(all_entries),
+                            self.cost_mode,
+                            *session_duration,
+                        )
+                        .await?;
 
-                // Create billing blocks from ALL entries to respect session_duration and gaps
-                let mut blocks = self
-                    .aggregator
-                    .create_billing_blocks_from_entries(
-                        entries_stream,
-                        self.cost_mode,
-                        *session_duration,
-                    )
-                    .await?;
+                    // Apply project filter if present
+                    if let Some(project) = self.filter.get_project() {
+                        filter_blocks_by_project(&mut blocks, project);
+                    }
 
-                // Apply project filter if present
-                if let Some(project) = self.filter.get_project() {
-                    filter_blocks_by_project(&mut blocks, project);
-                }
-
-                // Apply date filters from the filter object
-                filter_blocks_by_date(&mut blocks, self.filter.since_date, self.filter.until_date);
+                    // Apply date filters from the filter object
+                    filter_blocks_by_date(
+                        &mut blocks,
+                        self.filter.since_date,
+                        self.filter.until_date,
+                    );
+                    blocks
+                };
 
                 // Apply other filters
                 filter_blocks(&mut blocks, *active, *recent);
