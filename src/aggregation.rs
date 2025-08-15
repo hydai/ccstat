@@ -782,6 +782,12 @@ impl Aggregator {
         cost_mode: CostMode,
         session_duration_hours: f64,
     ) -> Result<Vec<SessionBlock>> {
+        if session_duration_hours.is_sign_negative() {
+            return Err(CcstatError::InvalidArgument(format!(
+                "Session duration cannot be negative: {}",
+                session_duration_hours
+            )));
+        }
         let session_duration = chrono::Duration::from_std(std::time::Duration::from_secs_f64(
             session_duration_hours * 3600.0,
         ))
