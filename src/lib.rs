@@ -36,6 +36,7 @@
 //! ```
 
 pub mod aggregation;
+pub mod blocks_monitor;
 pub mod cli;
 pub mod cost_calculator;
 pub mod data_loader;

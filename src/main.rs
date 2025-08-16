@@ -223,73 +223,17 @@ async fn main() -> Result<()> {
             recent,
             token_limit,
             session_duration,
+            max_cost,
         }) => {
-            info!("Running billing blocks report");
-
-            // Initialize components with progress bars enabled for terminal output
-            let show_progress =
-                !cli.json && !cli.watch && is_terminal::is_terminal(std::io::stdout());
-            let data_loader =
-                Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
-            let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
-            let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-            let aggregator = Arc::new(create_aggregator_with_timezone(
-                cost_calculator,
-                show_progress,
-                cli.timezone.as_deref(),
-                cli.utc,
-            )?);
-
-            // Build filter for date ranges
-            let filter = build_usage_filter(&cli, &aggregator)?;
-
-            // Check if we're in watch mode
-            if cli.watch {
-                info!("Starting live monitoring mode");
-                let monitor = LiveMonitor::new(
-                    data_loader,
-                    aggregator,
-                    filter,
-                    None, // No month filter for blocks
-                    cli.mode,
-                    cli.json,
-                    CommandType::Blocks {
-                        active: *active,
-                        recent: *recent,
-                        token_limit: token_limit.clone(),
-                        session_duration: *session_duration,
-                    },
-                    cli.interval,
-                    cli.full_model_names,
-                );
-                monitor.run().await?;
-            } else {
-                // Reuse the already-parsed dates from the filter
-                let since_date = filter.since_date;
-                let until_date = filter.until_date;
-
-                let params = BillingBlockParams {
-                    data_loader: &data_loader,
-                    aggregator: &aggregator,
-                    cost_mode: cli.mode,
-                    session_duration_hours: *session_duration,
-                    project: cli.project.as_deref(),
-                    since_date,
-                    until_date,
-                    active: *active,
-                    recent: *recent,
-                    token_limit: token_limit.as_deref(),
-                    approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
-                };
-                let blocks = create_and_filter_billing_blocks(params).await?;
-
-                // Format and output
-                let formatter = get_formatter(cli.json, cli.full_model_names);
-                println!(
-                    "{}",
-                    formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
-                );
-            }
+            handle_blocks_command(
+                &cli,
+                *active,
+                *recent,
+                token_limit.clone(),
+                *session_duration,
+                *max_cost,
+            )
+            .await?;
         }
 
         Some(Command::Statusline {
@@ -300,6 +244,26 @@ async fn main() -> Result<()> {
         }) => {
             // Run statusline handler
             ccstat::statusline::run(*monthly_fee, *no_color, *show_date, *show_git).await?;
+        }
+
+        Some(Command::Watch { max_cost }) => {
+            // Watch command is an alias for blocks --watch --active
+            info!("Running live billing block monitor");
+
+            // Force watch mode to be enabled
+            let mut cli_with_watch = cli.clone();
+            cli_with_watch.watch = true;
+
+            // Call handle_blocks_command with active=true
+            handle_blocks_command(
+                &cli_with_watch,
+                true,      // active
+                false,     // recent
+                None,      // token_limit
+                5.0,       // session_duration
+                *max_cost, // max_cost
+            )
+            .await?;
         }
 
         None => {
@@ -375,6 +339,84 @@ async fn handle_daily_command(cli: &Cli, instances: bool, detailed: bool) -> Res
             let formatter = get_formatter(cli.json, cli.full_model_names);
             println!("{}", formatter.format_daily(&daily_data, &totals));
         }
+    }
+
+    Ok(())
+}
+
+/// Handle blocks command logic - shared between explicit blocks command and watch alias
+async fn handle_blocks_command(
+    cli: &Cli,
+    active: bool,
+    recent: bool,
+    token_limit: Option<String>,
+    session_duration: f64,
+    max_cost: Option<f64>,
+) -> Result<()> {
+    info!("Running billing blocks report");
+
+    // Initialize components with progress bars enabled for terminal output
+    let show_progress = !cli.json && !cli.watch && is_terminal::is_terminal(std::io::stdout());
+    let data_loader = Arc::new(init_data_loader(show_progress, cli.intern, cli.arena).await?);
+    let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+    let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+    let aggregator = Arc::new(create_aggregator_with_timezone(
+        cost_calculator,
+        show_progress,
+        cli.timezone.as_deref(),
+        cli.utc,
+    )?);
+
+    // Build filter for date ranges
+    let filter = build_usage_filter(cli, &aggregator)?;
+
+    // Check if we're in watch mode
+    if cli.watch {
+        info!("Starting live monitoring mode");
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            None, // No month filter for blocks
+            cli.mode,
+            cli.json,
+            CommandType::Blocks {
+                active,
+                recent,
+                token_limit: token_limit.clone(),
+                session_duration,
+            },
+            cli.interval,
+            cli.full_model_names,
+        )
+        .with_max_cost(max_cost);
+        monitor.run().await?;
+    } else {
+        // Reuse the already-parsed dates from the filter
+        let since_date = filter.since_date;
+        let until_date = filter.until_date;
+
+        let params = BillingBlockParams {
+            data_loader: &data_loader,
+            aggregator: &aggregator,
+            cost_mode: cli.mode,
+            session_duration_hours: session_duration,
+            project: cli.project.as_deref(),
+            since_date,
+            until_date,
+            active,
+            recent,
+            token_limit: token_limit.as_deref(),
+            approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
+        };
+        let blocks = create_and_filter_billing_blocks(params).await?;
+
+        // Format and output
+        let formatter = get_formatter(cli.json, cli.full_model_names);
+        println!(
+            "{}",
+            formatter.format_blocks(&blocks, &aggregator.timezone_config().tz)
+        );
     }
 
     Ok(())

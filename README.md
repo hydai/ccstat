@@ -23,6 +23,9 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
 - 👀 **Universal Live Monitoring**: Real-time tracking with auto-refresh for ALL commands
+- 📊 **Live Billing Block Monitor**: Visual ASCII art display with progress bars, burn rate, and projections
+- 🎨 **Watch Command Alias**: Quick `ccstat watch` shortcut for live billing block monitoring
+- 💸 **Custom Cost Limits**: Set your own maximum cost threshold for progress calculations
 - ⚡ **Performance Options**: Parallel processing, string interning, arena allocation
 - 🔧 **Advanced Filtering**: By date, project, instance, and more
 - 🌍 **Timezone Support**: Accurate daily aggregation across different timezones
@@ -109,7 +112,11 @@ ccstat --json > usage.json
 ccstat --watch                    # Watch daily usage (default)
 ccstat monthly --watch            # Watch monthly aggregations
 ccstat session --watch            # Watch active sessions
-ccstat blocks --watch --active    # Watch active billing blocks
+ccstat blocks --watch --active    # Visual live billing block monitor with progress bars
+
+# Quick alias for live billing block monitor
+ccstat watch                      # Same as blocks --watch --active
+ccstat watch --max-cost 150       # Set custom $150 limit for progress bars
 ```
 
 ## Usage
@@ -223,8 +230,9 @@ ccstat blocks
 
 # Live monitoring
 ccstat blocks --watch                       # Watch billing blocks update
-ccstat blocks --watch --active              # Watch only active blocks
+ccstat blocks --watch --active              # Visual live monitor with progress bars (recommended)
 ccstat blocks --watch --interval 10         # Custom refresh interval
+ccstat blocks --watch --active --max-cost 100 # Set custom $100 limit for progress calculations
 
 # Only active blocks
 ccstat blocks --active
@@ -252,6 +260,57 @@ ccstat blocks --utc                          # Force UTC timezone
 # Model display options
 ccstat blocks --full-model-names            # Show full model names
 ```
+
+#### Live Billing Block Monitor
+
+The `--watch --active` combination provides a rich visual monitoring interface for active billing blocks:
+
+```bash
+ccstat blocks --watch --active
+```
+
+This displays a real-time ASCII art dashboard with:
+
+- **TIME Progress Bar**: Shows how much of the current 5-hour billing block has elapsed
+  - Visual progress bar with percentage completion
+  - Start time, elapsed time, and time remaining until block ends
+
+- **USAGE Progress Bar**: Tracks current cost and token consumption
+  - Real-time cost tracking against monthly limit
+  - Burn rate indicator (NORMAL/ELEVATED) based on usage patterns
+  - Total tokens consumed in the current block
+
+- **PROJECTION Progress Bar**: Estimates final cost for the billing block
+  - Status indicator (WITHIN LIMITS/APPROACHING LIMIT/OVER LIMIT)
+  - Projected final cost based on current burn rate
+
+- **Summary Line**: Shows active models, number of sessions, and projects
+
+The monitor refreshes every 5 seconds by default (customizable with `--interval`) and provides an at-a-glance view of your Claude Code usage patterns and spending.
+
+### Watch Command (Quick Access)
+
+The `watch` command provides a convenient alias for the most common live monitoring use case:
+
+```bash
+# Quick access to live billing block monitor
+ccstat watch                         # Equivalent to: ccstat blocks --watch --active
+
+# Set custom cost limit
+ccstat watch --max-cost 100          # Use $100 as the maximum for progress bars
+ccstat watch --max-cost 250          # Use $250 for users with higher limits
+
+# Combine with global options
+ccstat watch --interval 10           # Refresh every 10 seconds
+ccstat watch --project my-project    # Filter by specific project
+```
+
+The `--max-cost` option allows you to customize the cost limit used for:
+- Progress bar calculations in the USAGE section
+- Projection warnings in the PROJECTION section
+- Status indicators (WITHIN LIMITS/APPROACHING LIMIT/OVER LIMIT)
+
+If not specified, the tool automatically uses the highest historical cost from your billing blocks.
 
 ### Cost Calculation Modes
 
@@ -331,6 +390,36 @@ ccstat daily --intern --arena
 
 ## Output Examples
 
+### Live Billing Block Monitor
+
+When using `ccstat blocks --watch --active`, you get a visual dashboard:
+
+```
++--------------------------------------------------------------------------------------------------+
+|                               CCSTAT - LIVE BILLING BLOCK MONITOR                                |
++--------------------------------------------------------------------------------------------------+
+
+| TIME         [##################......................]   46.0%                                  |
+|    Started: 19:00:00  Elapsed: 2h 18m  Remaining: 2h 41m (00:00:00)                              |
+
+| USAGE        [#############...........................]   32.9% ($   68.49/$  208.37)            |
+|    Cost: $   68.49  (Burn: $0.496/min ELEVATED)  Tokens: 31,321,720                              |
+
+| PROJECTION   [############################............]   71.2% ($  148.39/$  208.37)            |
+|    Status: WITHIN LIMITS  Projected Cost: $  148.39                                              |
+
+| Models: Opus 4.1, Sonnet 4  Sessions: 10  Projects: 2                                            |
++--------------------------------------------------------------------------------------------------+
+|                            Refreshing every 5s - Press Ctrl+C to stop                            |
++--------------------------------------------------------------------------------------------------+
+```
+
+This provides:
+- Real-time progress tracking for the current 5-hour billing block
+- Visual indicators for usage against monthly limits
+- Burn rate monitoring to detect unusual usage patterns
+- Projected costs to help stay within budget
+
 ### Table Format (Default)
 
 ```
@@ -402,7 +491,7 @@ ccstat can also be used as a Rust library. Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ccstat = "0.2.2"
+ccstat = "0.3.3"
 ```
 
 Example usage:

@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -234,6 +234,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "colored",
+ "console",
  "criterion",
  "derive_more",
  "dirs",
@@ -253,6 +254,7 @@ dependencies = [
  "smallvec",
  "string-interner",
  "tempfile",
+ "terminal_size",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -2140,6 +2142,16 @@ dependencies = [
  "dirs-next",
  "rustversion",
  "winapi",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
+dependencies = [
+ "rustix",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
