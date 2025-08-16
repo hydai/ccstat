@@ -28,7 +28,7 @@ use crate::types::CostMode;
 use clap::{Parser, Subcommand};
 
 /// Analyze Claude Code usage data from local JSONL files
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
@@ -94,7 +94,7 @@ pub struct Cli {
 ///
 /// Each command provides different views and aggregations of usage data,
 /// with flexible filtering and output options.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Show daily usage summary
     Daily {
@@ -130,6 +130,10 @@ pub enum Command {
         /// Session duration in hours for billing blocks
         #[arg(long, default_value = "5.0")]
         session_duration: f64,
+
+        /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
+        #[arg(long)]
+        max_cost: Option<f64>,
     },
 
     /// Generate statusline output for Claude Code
@@ -149,6 +153,13 @@ pub enum Command {
         /// Show git branch
         #[arg(long)]
         show_git: bool,
+    },
+
+    /// Live monitor for active billing blocks (alias for blocks --watch --active)
+    Watch {
+        /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
+        #[arg(long)]
+        max_cost: Option<f64>,
     },
 }
 

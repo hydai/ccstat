@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-08-16
+
+### Added
+- **Watch Command Alias**: New `ccstat watch` command as a convenient shortcut for `ccstat blocks --watch --active`
+  - Quick access to the live billing block monitor without typing the full command
+  - Supports all global options like `--interval` and `--project`
+- **Custom Cost Limits**: New `--max-cost` option for setting user-defined cost thresholds
+  - Available on both `watch` and `blocks` commands
+  - Allows users to set their own maximum cost for progress bar calculations
+  - Example: `ccstat watch --max-cost 150` sets $150 as the maximum limit
+  - Defaults to historical maximum if not specified
+- **Enhanced Live Billing Block Monitor**: Visual ASCII art dashboard with real-time metrics
+  - Progress bars for time elapsed, current usage, and cost projections
+  - Burn rate indicator (NORMAL/ELEVATED) based on usage patterns
+  - Status indicators (WITHIN LIMITS/APPROACHING LIMIT/OVER LIMIT)
+
+### Changed
+- Refactored main.rs to eliminate code duplication with new `handle_blocks_command` function
+- LiveMonitor now supports user-defined maximum cost limits via `with_max_cost` method
+- CLI structs now derive `Clone` trait for better command reusability
+
+### Documentation
+- Added comprehensive documentation for the new `watch` command
+- Updated README with examples of custom cost limit usage
+- Added visual output examples of the live billing block monitor
+
 ## [0.3.2] - 2025-08-15
 
 ### Fixed

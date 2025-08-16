@@ -11,6 +11,7 @@ use crate::{
         Aggregator, BillingBlockParams, SessionBlock, SessionUsage, Totals,
         create_and_filter_billing_blocks, filter_monthly_data,
     },
+    blocks_monitor::{BlocksMonitor, DEFAULT_MAX_COST},
     data_loader::DataLoader,
     error::{CcstatError, Result},
     filters::{MonthFilter, UsageFilter},
@@ -22,7 +23,7 @@ use futures::StreamExt;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -68,6 +69,14 @@ pub struct LiveMonitor {
     command_type: CommandType,
     interval_secs: u64,
     full_model_names: bool,
+    /// Historical maximum cost tracked across refresh cycles.
+    /// Uses `Arc<Mutex>` for thread-safety. While production code is single-threaded,
+    /// test code spawns concurrent tasks that require Send+Sync traits.
+    /// The mutex ensures safe access across await points and in test scenarios.
+    historical_max_cost: Arc<Mutex<f64>>,
+    user_max_cost: Option<f64>,
+    /// Flag to track when historical max needs recalculation
+    should_recalc_max: Arc<AtomicBool>,
 }
 
 /// Data prepared for display
@@ -114,7 +123,16 @@ impl LiveMonitor {
             command_type,
             interval_secs,
             full_model_names,
+            historical_max_cost: Arc::new(Mutex::new(0.0)),
+            user_max_cost: None,
+            should_recalc_max: Arc::new(AtomicBool::new(true)), // Initially needs calculation
         }
+    }
+
+    /// Set a custom maximum cost limit
+    pub fn with_max_cost(mut self, max_cost: Option<f64>) -> Self {
+        self.user_max_cost = max_cost;
+        self
     }
 
     /// Start the live monitoring loop
@@ -200,6 +218,8 @@ impl LiveMonitor {
                 _ = rx.recv() => {
                     // File change detected, wait a bit for writes to complete
                     tokio::time::sleep(Duration::from_millis(500)).await;
+                    // Mark that we need to recalculate historical max
+                    self.should_recalc_max.store(true, Ordering::Release);
                     self.refresh_display().await?;
                     should_refresh.store(false, Ordering::Release);
                 }
@@ -359,6 +379,46 @@ impl LiveMonitor {
                 token_limit,
                 session_duration,
             } => {
+                // Only calculate historical maximum if user hasn't provided a custom max cost
+                // AND if we need to recalculate (either on startup or after file changes)
+                if self.user_max_cost.is_none() && self.should_recalc_max.load(Ordering::Acquire) {
+                    // First, get ALL blocks (unfiltered) to calculate true historical maximum
+                    let all_blocks_params = BillingBlockParams {
+                        data_loader: &self.data_loader,
+                        aggregator: &self.aggregator,
+                        cost_mode: self.cost_mode,
+                        session_duration_hours: *session_duration,
+                        project: None,     // No project filter to get all blocks
+                        since_date: None,  // No date filter to get all blocks
+                        until_date: None,  // No date filter to get all blocks
+                        active: false,     // Don't filter by active
+                        recent: false,     // Don't filter by recent
+                        token_limit: None, // No token limit filter
+                        approx_max_tokens: APPROX_MAX_TOKENS_PER_BLOCK,
+                    };
+                    let all_blocks = create_and_filter_billing_blocks(all_blocks_params).await?;
+
+                    // Calculate the true historical maximum from ALL blocks
+                    if !all_blocks.is_empty() {
+                        let true_max = all_blocks
+                            .iter()
+                            .map(|b| b.total_cost)
+                            .fold(0.0_f64, f64::max);
+
+                        // Update historical maximum with the true max
+                        if let Ok(mut historical_max) = self.historical_max_cost.lock() {
+                            *historical_max = true_max;
+                        } else {
+                            // Log the error but continue - poisoned mutex shouldn't crash the monitor
+                            tracing::error!("Failed to lock historical_max_cost mutex");
+                        }
+                    }
+
+                    // Mark that we've calculated the historical max
+                    self.should_recalc_max.store(false, Ordering::Release);
+                }
+
+                // Now get the filtered blocks for display
                 let params = BillingBlockParams {
                     data_loader: &self.data_loader,
                     aggregator: &self.aggregator,
@@ -385,13 +445,29 @@ impl LiveMonitor {
 
     /// Refresh the display with current data
     async fn refresh_display(&self) -> Result<()> {
+        // Prepare data for display
+        let prepared_data = self.prepare_data().await?;
+
+        // Check if we should use enhanced blocks UI
+        let use_enhanced_ui = match &self.command_type {
+            CommandType::Blocks { active, .. } => {
+                *active
+                    && prepared_data
+                        .blocks_data
+                        .as_ref()
+                        .map(|blocks| blocks.iter().any(|b| b.is_active))
+                        .unwrap_or(false)
+            }
+            _ => false,
+        };
+
         // Clear screen
         if !self.json_output {
             print!("\x1B[2J\x1B[1;1H"); // Clear screen and move cursor to top-left
         }
 
-        // Show current time and mode
-        if !self.json_output {
+        // Show current time and mode (skip for enhanced UI)
+        if !self.json_output && !use_enhanced_ui {
             let now = Local::now();
             let command_name = match &self.command_type {
                 CommandType::Daily { .. } => "Daily Usage",
@@ -411,9 +487,6 @@ impl LiveMonitor {
             );
             println!("{}", "-".repeat(80));
         }
-
-        // Prepare data for display
-        let prepared_data = self.prepare_data().await?;
 
         // Generate output
         let formatter = get_formatter(self.json_output, self.full_model_names);
@@ -473,12 +546,59 @@ impl LiveMonitor {
                     );
                 }
             }
-            CommandType::Blocks { .. } => {
+            CommandType::Blocks { active, .. } => {
                 if let Some(ref blocks_data) = prepared_data.blocks_data {
-                    println!(
-                        "{}",
-                        formatter.format_blocks(blocks_data, &self.aggregator.timezone_config().tz)
-                    );
+                    // Use enhanced monitor for active blocks in watch mode
+                    if *active && !blocks_data.is_empty() {
+                        // Find the active block
+                        if let Some(active_block) = blocks_data.iter().find(|b| b.is_active) {
+                            // Use user-provided max cost if available, otherwise use historical maximum
+                            let max_cost = self.user_max_cost.unwrap_or_else(|| {
+                                let calculated_max = self
+                                    .historical_max_cost
+                                    .lock()
+                                    .map(|guard| *guard)
+                                    .unwrap_or_else(|e| {
+                                        tracing::error!(
+                                            "Failed to lock historical_max_cost mutex: {}",
+                                            e
+                                        );
+                                        DEFAULT_MAX_COST
+                                    });
+
+                                if calculated_max > 0.0 {
+                                    calculated_max
+                                } else {
+                                    DEFAULT_MAX_COST // Fallback if no historical data or cost is zero
+                                }
+                            });
+
+                            let monitor = BlocksMonitor::new(
+                                self.aggregator.timezone_config().tz,
+                                Some(max_cost),
+                            );
+                            println!(
+                                "{}",
+                                monitor.render_active_block(active_block, chrono::Utc::now())
+                            );
+                        } else {
+                            // No active block found, use regular formatter
+                            println!(
+                                "{}",
+                                formatter.format_blocks(
+                                    blocks_data,
+                                    &self.aggregator.timezone_config().tz
+                                )
+                            );
+                        }
+                    } else {
+                        // Not active mode or no blocks, use regular formatter
+                        println!(
+                            "{}",
+                            formatter
+                                .format_blocks(blocks_data, &self.aggregator.timezone_config().tz)
+                        );
+                    }
                 }
             }
         }
