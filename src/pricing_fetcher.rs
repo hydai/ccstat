@@ -77,9 +77,18 @@ impl PricingFetcher {
         }
 
         match self.fetch_litellm_pricing().await {
-            Ok(data) => {
+            Ok(mut online_data) => {
                 info!("Successfully fetched pricing data from LiteLLM");
-                Ok(data)
+                // Merge with embedded data as fallback for missing models
+                let embedded_data = Self::parse_embedded_pricing()?;
+                for (model, pricing) in embedded_data {
+                    online_data.entry(model).or_insert(pricing);
+                }
+                debug!(
+                    "Merged online pricing ({} models) with embedded pricing",
+                    online_data.len()
+                );
+                Ok(online_data)
             }
             Err(e) => {
                 warn!("Failed to fetch pricing data: {}, using embedded data", e);
@@ -434,5 +443,49 @@ mod tests {
         let pricing = PricingFetcher::find_model_pricing(&pricing_map, "claude-3-opus");
         assert!(pricing.is_some());
         assert_eq!(pricing.unwrap().input_cost_per_token, Some(0.00001));
+    }
+
+    #[tokio::test]
+    async fn test_sonnet_45_model_pricing() {
+        let fetcher = PricingFetcher::new(true).await;
+
+        let model_aliases = [
+            "claude-sonnet-4-5-20250929",
+            "claude-4.5-sonnet",
+            "claude-sonnet-4.5",
+        ];
+
+        for &model_name in &model_aliases {
+            let pricing = fetcher
+                .get_model_pricing(model_name)
+                .await
+                .expect("Failed to fetch pricing")
+                .unwrap_or_else(|| panic!("No pricing found for {}", model_name));
+
+            assert_eq!(
+                pricing.input_cost_per_token,
+                Some(0.000003),
+                "Wrong input cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.output_cost_per_token,
+                Some(0.000015),
+                "Wrong output cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.cache_creation_input_token_cost,
+                Some(0.00000375),
+                "Wrong cache creation cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.cache_read_input_token_cost,
+                Some(0.0000003),
+                "Wrong cache read cost for {}",
+                model_name
+            );
+        }
     }
 }
