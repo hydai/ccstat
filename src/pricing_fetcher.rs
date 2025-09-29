@@ -449,39 +449,43 @@ mod tests {
     async fn test_sonnet_45_model_pricing() {
         let fetcher = PricingFetcher::new(true).await;
 
-        // Test the exact model name
-        let pricing = fetcher
-            .get_model_pricing("claude-sonnet-4-5-20250929")
-            .await
-            .unwrap();
-        assert!(
-            pricing.is_some(),
-            "Failed to find pricing for claude-sonnet-4-5-20250929"
-        );
+        let model_aliases = [
+            "claude-sonnet-4-5-20250929",
+            "claude-4.5-sonnet",
+            "claude-sonnet-4.5",
+        ];
 
-        let pricing = pricing.unwrap();
-        assert_eq!(pricing.input_cost_per_token, Some(0.000003));
-        assert_eq!(pricing.output_cost_per_token, Some(0.000015));
-        assert_eq!(pricing.cache_creation_input_token_cost, Some(0.00000375));
-        assert_eq!(pricing.cache_read_input_token_cost, Some(0.0000003));
+        for &model_name in &model_aliases {
+            let pricing = fetcher
+                .get_model_pricing(model_name)
+                .await
+                .expect("Failed to fetch pricing")
+                .unwrap_or_else(|| panic!("No pricing found for {}", model_name));
 
-        // Test alternative naming
-        let pricing_alt = fetcher
-            .get_model_pricing("claude-4.5-sonnet")
-            .await
-            .unwrap();
-        assert!(
-            pricing_alt.is_some(),
-            "Failed to find pricing for claude-4.5-sonnet"
-        );
-
-        let pricing_short = fetcher
-            .get_model_pricing("claude-sonnet-4.5")
-            .await
-            .unwrap();
-        assert!(
-            pricing_short.is_some(),
-            "Failed to find pricing for claude-sonnet-4.5"
-        );
+            assert_eq!(
+                pricing.input_cost_per_token,
+                Some(0.000003),
+                "Wrong input cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.output_cost_per_token,
+                Some(0.000015),
+                "Wrong output cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.cache_creation_input_token_cost,
+                Some(0.00000375),
+                "Wrong cache creation cost for {}",
+                model_name
+            );
+            assert_eq!(
+                pricing.cache_read_input_token_cost,
+                Some(0.0000003),
+                "Wrong cache read cost for {}",
+                model_name
+            );
+        }
     }
 }
