@@ -125,7 +125,7 @@ No command-specific options. Uses all global options.
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
 ## Important Notes
-- Current version: 0.3.3
+- Current version: 0.5.0
 - The project requires Rust 1.75 or later
 - Dependencies are managed in `ccusage/Cargo.toml`
 - Tests are co-located with source files
