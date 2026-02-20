@@ -3,11 +3,11 @@
 [![Crates.io](https://img.shields.io/crates/v/ccstat.svg)](https://crates.io/crates/ccstat)
 [![Docker Hub](https://img.shields.io/docker/v/hydai/ccstat?label=docker&sort=semver)](https://hub.docker.com/r/hydai/ccstat)
 
-Analyze Claude Code usage data from local JSONL files.
+Analyze AI coding tool usage data from local log files.
 
 ## Overview
 
-ccstat is a high-performance Rust CLI tool that processes Claude Code usage logs, calculates costs using LiteLLM pricing data, and provides various reporting views including daily, monthly, session-based, and 5-hour billing block reports.
+ccstat is a high-performance Rust CLI tool that processes usage logs from multiple AI coding tools (Claude, Codex, OpenCode, Amp, Pi), calculates costs using LiteLLM pricing data, and provides various reporting views including daily, weekly, monthly, session-based, and 5-hour billing block reports.
 
 This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and is a Rust reimplementation (RIIR - Rewrite It In Rust) of the original TypeScript tool, offering:
 - 50-70% reduction in memory usage
@@ -17,9 +17,10 @@ This project is inspired by [ccusage](https://github.com/ryoppippi/ccusage) and 
 
 ## Features
 
-- 📊 **Multiple Report Types**: Daily, monthly, session, and billing block views
+- 🔌 **Multi-Provider Support**: Claude, Codex, OpenCode, Amp, and Pi Agent
+- 📊 **Multiple Report Types**: Daily, weekly, monthly, session, and billing block views
 - 💰 **Accurate Cost Calculation**: Uses latest LiteLLM pricing data with offline fallback
-- 🔍 **Automatic Discovery**: Finds Claude data directories across platforms
+- 🔍 **Automatic Discovery**: Finds provider data directories across platforms
 - 📈 **Flexible Output**: Table format for humans, JSON for machines
 - 🚀 **High Performance**: Stream processing with minimal memory footprint
 - 👀 **Universal Live Monitoring**: Real-time tracking with auto-refresh for ALL commands
@@ -99,8 +100,17 @@ ccstat --verbose
 # View this month's usage
 ccstat monthly
 
+# View this week's usage
+ccstat weekly
+
 # View all sessions with costs
 ccstat session
+
+# Multi-provider support (default provider is claude)
+ccstat codex daily               # Codex daily usage
+ccstat opencode monthly          # OpenCode monthly usage
+ccstat amp session               # Amp session analysis
+ccstat pi daily                  # Pi Agent daily usage
 
 # Show statusline for Claude Code integration
 ccstat statusline
@@ -187,6 +197,24 @@ ccstat monthly --utc                        # Force UTC timezone
 ccstat monthly --full-model-names           # Show full model names
 ```
 
+### Weekly Summary
+
+Aggregate usage by week:
+
+```bash
+# Weekly totals (weeks start on Sunday by default)
+ccstat weekly
+
+# Custom start day
+ccstat weekly --start-of-week monday
+
+# With date filtering and JSON output
+ccstat weekly --since 2025-01-01 --json
+
+# Live monitoring
+ccstat weekly --watch
+```
+
 ### Session Analysis
 
 Analyze individual sessions:
@@ -252,6 +280,9 @@ ccstat blocks --since 2025-08-01 --until 2025-08-15
 
 # Set token limit for warnings
 ccstat blocks --token-limit "80%"
+
+# Custom billing block duration (default: 5 hours)
+ccstat blocks --session-duration 3.0
 
 # Timezone configuration
 ccstat blocks --timezone "America/New_York"  # Use specific timezone
@@ -468,7 +499,14 @@ This provides:
 
 ### Environment Variables
 
+Provider data directory overrides:
 - `CLAUDE_DATA_PATH`: Override default Claude data directory location
+- `CODEX_HOME`: Override Codex home directory (default: `~/.codex`)
+- `OPENCODE_DATA_DIR`: Override OpenCode data directory (default: `~/.local/share/opencode`)
+- `AMP_DATA_DIR`: Override Amp data directory (default: `~/.local/share/amp`)
+- `PI_AGENT_DIR`: Override Pi Agent directory (default: `~/.pi/agent`)
+
+Other:
 - `RUST_LOG`: Control logging level (e.g., `RUST_LOG=ccstat=debug`)
 
 ### Logging Behavior
@@ -479,11 +517,13 @@ ccstat runs in quiet mode by default (only warnings and errors are shown):
 
 ### Data Locations
 
-ccstat automatically discovers Claude data in standard locations:
+ccstat automatically discovers provider data in standard locations:
 
-- **macOS**: `~/.claude/`
-- **Linux**: `~/.claude/`
-- **Windows**: `%APPDATA%\Claude\`
+- **Claude**: `~/.claude/` (macOS/Linux), `%APPDATA%\Claude\` (Windows)
+- **Codex**: `~/.codex/sessions/`
+- **OpenCode**: `~/.local/share/opencode/storage/`
+- **Amp**: `~/.local/share/amp/threads/`
+- **Pi Agent**: `~/.pi/agent/sessions/`
 
 ## Using as a Library
 
@@ -502,19 +542,21 @@ use ccstat::{
     aggregation::Aggregator,
     cost_calculator::CostCalculator,
     pricing_fetcher::PricingFetcher,
+    timezone::TimezoneConfig,
     types::CostMode,
 };
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> ccstat::Result<()> {
-    // Load and analyze usage data
+    // Initialize components
     let data_loader = DataLoader::new().await?;
     let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
     let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
-    let aggregator = Aggregator::new(cost_calculator);
+    let aggregator = Aggregator::new(cost_calculator, TimezoneConfig::default());
 
-    let entries = data_loader.load_usage_entries();
+    // Load and aggregate usage data
+    let entries = data_loader.load_usage_entries_parallel();
     let daily_data = aggregator.aggregate_daily(entries, CostMode::Auto).await?;
 
     for day in &daily_data {
@@ -547,22 +589,18 @@ cargo bench
 
 ### Architecture
 
-The project follows a modular architecture:
+The project is a Cargo workspace with the main binary crate and 9 library crates:
 
-- `types.rs` - Domain types with newtype pattern
-- `data_loader.rs` - Async streaming JSONL parser
-- `pricing_fetcher.rs` - LiteLLM API client with caching
-- `cost_calculator.rs` - Token-based cost calculations
-- `aggregation.rs` - Time-based data aggregation
-- `cli.rs` - Command-line interface
-- `output.rs` - Table and JSON formatters
-- `statusline.rs` - Statusline command for Claude Code integration
-- `timezone.rs` - Timezone support and configuration
-- `model_formatter.rs` - Model name formatting utilities
-- `filters.rs` - Data filtering logic
-- `live_monitor.rs` - Live monitoring with auto-refresh
-- `memory_pool.rs` - Memory pool optimization
-- `string_pool.rs` - String interning for memory efficiency
+- **`src/`** - Main binary crate (CLI entry point, aggregation, live monitor, statusline)
+- **`crates/ccstat-core`** - Core types, error handling, filters, timezone, model formatting, memory optimization
+- **`crates/ccstat-pricing`** - LiteLLM API client with caching and token-based cost calculations
+- **`crates/ccstat-terminal`** - Table/JSON formatters and billing block monitor UI
+- **`crates/ccstat-provider-claude`** - Claude Code data loader
+- **`crates/ccstat-provider-codex`** - Codex data loader
+- **`crates/ccstat-provider-opencode`** - OpenCode data loader
+- **`crates/ccstat-provider-amp`** - Amp data loader
+- **`crates/ccstat-provider-pi`** - Pi Agent data loader
+- **`crates/ccstat-mcp`** - MCP server (stub)
 
 ### Contributing
 
@@ -577,9 +615,9 @@ The project follows a modular architecture:
 ### Common Issues
 
 **No data found:**
-- Ensure Claude Code is installed and has been used
-- Check if data exists in the expected location
-- Try setting `CLAUDE_DATA_PATH` environment variable
+- Ensure the AI coding tool has been used and has generated usage logs
+- Check if data exists in the expected location (see Data Locations above)
+- Try setting the appropriate environment variable (e.g., `CLAUDE_DATA_PATH`, `CODEX_HOME`)
 
 **Permission errors:**
 - ccstat needs read access to Claude data directory

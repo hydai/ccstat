@@ -1,7 +1,7 @@
 # Claude Code Project Instructions
 
 ## Project Overview
-This is the `ccstat` project - a CLI tool to analyze Claude Code usage data from local JSONL files.
+This is the `ccstat` project - a CLI tool to analyze AI coding tool usage data from local log files. It supports multiple providers: Claude, Codex, OpenCode, Amp, and Pi.
 
 ## Build and Test Commands
 
@@ -23,13 +23,20 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### Running the tool
 ```bash
-# Basic commands (ccstat defaults to daily command)
+# Basic commands (ccstat defaults to claude daily command)
 cargo run                                    # Same as cargo run -- daily
 cargo run -- daily
+cargo run -- weekly
 cargo run -- monthly
 cargo run -- session
 cargo run -- blocks
 cargo run -- statusline
+
+# Multi-provider support (default provider is claude)
+cargo run -- codex daily                    # Codex daily usage
+cargo run -- opencode monthly               # OpenCode monthly usage
+cargo run -- amp session                    # Amp session analysis
+cargo run -- pi daily                       # Pi Agent daily usage
 
 # Global options can be used without a command (defaults to daily)
 cargo run -- --json                         # Daily report in JSON
@@ -50,34 +57,41 @@ cargo run -- monthly --watch                # Watch monthly aggregations
 cargo run -- session --watch --interval 10  # Watch sessions with 10s refresh
 cargo run -- blocks --watch --active        # Watch active billing blocks
 
+# Watch command (hidden alias for blocks --watch --active)
+cargo run -- watch                          # Live billing block monitor
+cargo run -- watch --max-cost 150           # With custom cost limit
+
 # Command-specific options
 cargo run -- daily --instances              # Per-instance breakdown
 cargo run -- daily --detailed               # Show detailed token info
+cargo run -- weekly --start-of-week monday  # Week starting Monday
 cargo run -- blocks --active                # Active blocks only
+cargo run -- blocks --session-duration 3.0  # Custom block duration (hours)
 cargo run -- blocks --since 2025-08-01      # Blocks from August 1, 2025
 cargo run -- blocks --since 2025-08-01 --until 2025-08-15  # Blocks in date range
 ```
 
 ## Project Structure
-- `src/` - Source code
+
+This is a Cargo workspace. The root `Cargo.toml` defines workspace members and shared dependencies.
+
+- `src/` - Main binary crate (CLI entry point)
   - `main.rs` - Entry point
-  - `lib.rs` - Library root
-  - `cli.rs` - CLI argument parsing
-  - `types.rs` - Core types and data structures
-  - `data_loader.rs` - JSONL file discovery and parsing
+  - `lib.rs` - Library root (re-exports from workspace crates)
+  - `cli.rs` - CLI argument parsing (two-level: provider + report)
   - `aggregation.rs` - Usage data aggregation logic
-  - `cost_calculator.rs` - Cost calculation logic
-  - `pricing_fetcher.rs` - Model pricing data fetcher
-  - `output.rs` - Output formatting (table/JSON)
-  - `mcp.rs` - MCP server implementation
-  - `error.rs` - Error types
-  - `statusline.rs` - Statusline command for Claude Code integration
-  - `timezone.rs` - Timezone support and configuration
-  - `model_formatter.rs` - Model name formatting utilities
-  - `filters.rs` - Data filtering logic
   - `live_monitor.rs` - Live monitoring with auto-refresh
-  - `memory_pool.rs` - Memory pool optimization
-  - `string_pool.rs` - String interning for memory efficiency
+  - `statusline.rs` - Statusline command for Claude Code integration
+- `crates/` - Workspace crates
+  - `ccstat-core/` - Core types, error handling, filters, timezone, model formatting, string pool, memory pool
+  - `ccstat-pricing/` - Cost calculation and LiteLLM pricing data fetcher
+  - `ccstat-terminal/` - Output formatting (table/JSON) and blocks monitor UI
+  - `ccstat-provider-claude/` - Claude Code data loader
+  - `ccstat-provider-codex/` - Codex data loader
+  - `ccstat-provider-opencode/` - OpenCode data loader
+  - `ccstat-provider-amp/` - Amp data loader
+  - `ccstat-provider-pi/` - Pi Agent data loader
+  - `ccstat-mcp/` - MCP server implementation (stub)
 
 ## Command-Line Options
 
@@ -85,7 +99,7 @@ cargo run -- blocks --since 2025-08-01 --until 2025-08-15  # Blocks in date rang
 - `--verbose` / `-v` - Show informational output (default is quiet mode with only warnings and errors)
 - `--watch` / `-w` - Enable live monitoring mode with auto-refresh (works with all commands)
 - `--interval` - Refresh interval in seconds for watch mode (default: 5)
-- `--mode` - Cost calculation mode (auto, calculate, fetch, offline, none)
+- `--mode` - Cost calculation mode (auto, calculate, display)
 - `--json` - Output results in JSON format instead of tables
 - `--since` - Filter by start date (YYYY-MM-DD or YYYY-MM format)
 - `--until` - Filter by end date (YYYY-MM-DD or YYYY-MM format)
@@ -102,6 +116,9 @@ cargo run -- blocks --since 2025-08-01 --until 2025-08-15  # Blocks in date rang
 - `--instances` / `-i` - Show per-instance breakdown
 - `--detailed` / `-d` - Show detailed token information per entry
 
+#### Weekly Command
+- `--start-of-week` - Day to start the week (default: sunday)
+
 #### Monthly Command
 No command-specific options. Uses all global options.
 
@@ -112,6 +129,15 @@ No command-specific options. Uses all global options.
 - `--active` - Show only active billing blocks
 - `--recent` - Show only recent blocks (last 24h)
 - `--token-limit` - Set token limit for warnings (e.g., "80%")
+- `--session-duration` - Billing block duration in hours (default: 5.0)
+- `--max-cost` - Maximum cost limit in USD for progress calculations (defaults to historical maximum)
+
+#### Watch Command (hidden alias)
+Equivalent to `blocks --watch --active`.
+- `--max-cost` - Maximum cost limit in USD for progress calculations
+
+#### MCP Command
+Starts an MCP server. Currently a stub that returns "not implemented".
 
 #### Statusline Command
 - `--monthly-fee` - Monthly subscription fee in USD (default: 200)
@@ -124,15 +150,45 @@ No command-specific options. Uses all global options.
 - Timeout after 5 seconds if stdin doesn't provide input
 - Example usage: `echo '{"session_id": "test", "model": {"id": "claude-3-opus", "display_name": "Claude 3 Opus"}}' | ccstat statusline`
 
+## Multi-Provider Support
+
+ccstat supports 5 providers. The provider is an optional first subcommand (defaults to `claude`):
+
+```bash
+ccstat daily                    # Implicit Claude provider
+ccstat claude daily             # Explicit Claude provider
+ccstat codex daily              # Codex provider
+ccstat opencode monthly         # OpenCode provider
+ccstat amp session              # Amp provider
+ccstat pi daily                 # Pi Agent provider
+```
+
+### Provider-Report Matrix
+| Report | Claude | Codex | OpenCode | Amp | Pi |
+|--------|--------|-------|----------|-----|-----|
+| daily | yes | yes | yes | yes | yes |
+| weekly | yes | no | yes | no | no |
+| monthly | yes | yes | yes | yes | yes |
+| session | yes | yes | yes | yes | yes |
+| blocks | yes | no | no | no | no |
+| statusline | yes | no | no | no | no |
+
+### Provider Environment Variables
+- `CLAUDE_DATA_PATH` - Override Claude data directory
+- `CODEX_HOME` - Override Codex home directory (default: `~/.codex`)
+- `OPENCODE_DATA_DIR` - Override OpenCode data directory (default: `~/.local/share/opencode`)
+- `AMP_DATA_DIR` - Override Amp data directory (default: `~/.local/share/amp`)
+- `PI_AGENT_DIR` - Override Pi Agent directory (default: `~/.pi/agent`)
+
 ## Important Notes
 - Current version: 0.6.1
-- The project requires Rust 1.75 or later
-- Dependencies are managed in `ccusage/Cargo.toml`
+- The project requires **Rust 1.85 or later** (edition 2024)
+- Dependencies are managed in the workspace root `Cargo.toml`
 - Tests are co-located with source files
-- The tool looks for Claude usage data in platform-specific directories
+- The tool discovers usage data in platform-specific directories for each provider
 - Timezone support enables accurate daily aggregation across different timezones
 - The statusline command provides real-time usage monitoring for Claude Code integration
-- Billing blocks are 5 hours long and start at hour boundaries (XX:00)
+- Billing blocks default to 5 hours (configurable with `--session-duration`)
 
 ## Performance Optimization
 
