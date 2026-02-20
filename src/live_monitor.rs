@@ -207,12 +207,25 @@ impl LiveMonitor {
         let mut interval = interval(Duration::from_secs(self.interval_secs));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        // Create ctrl_c future once and pin it so the signal handle stays
+        // registered across loop iterations. Re-creating it inside select!
+        // would drop (and deregister) the handle each time another branch
+        // wins, causing SIGINT to be silently swallowed.
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+
         // Initial display
         self.refresh_display().await?;
 
         // Main monitoring loop
         loop {
             tokio::select! {
+                biased;  // Poll ctrl_c first for instant Ctrl+C response
+                _ = &mut ctrl_c => {
+                    // Graceful shutdown
+                    println!("\nExiting live monitoring mode...");
+                    break;
+                }
                 _ = interval.tick() => {
                     // Regular interval refresh
                     if should_refresh.load(Ordering::Acquire) {
@@ -227,11 +240,6 @@ impl LiveMonitor {
                     self.should_recalc_max.store(true, Ordering::Release);
                     self.refresh_display().await?;
                     should_refresh.store(false, Ordering::Release);
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    // Graceful shutdown
-                    println!("\nExiting live monitoring mode...");
-                    break;
                 }
             }
         }
