@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-02-21
+
+### Fixed
+- Handle unknown models gracefully in Auto cost mode — unknown models (e.g., `gemini-3-pro-high`) now return $0.00 cost with a warning instead of causing a fatal error
+- Deduplicate unknown model warnings to once per model name instead of once per JSONL entry
+
 ## [0.6.0] - 2026-02-20
 
 ### Added
@@ -248,7 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/hydai/ccstat/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/hydai/ccstat/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hydai/ccstat/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/hydai/ccstat/compare/v0.3.3...v0.4.0
