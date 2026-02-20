@@ -220,11 +220,15 @@ dependencies = [
 
 [[package]]
 name = "ccstat"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "ccstat-core",
+ "ccstat-pricing",
+ "ccstat-provider-claude",
+ "ccstat-terminal",
  "chrono",
  "chrono-tz",
  "clap",
@@ -259,6 +263,161 @@ dependencies = [
  "typed-arena",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "ccstat-core"
+version = "0.5.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "futures",
+ "iana-time-zone",
+ "indicatif",
+ "once_cell",
+ "rayon",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "string-interner",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tracing",
+ "typed-arena",
+ "uuid",
+]
+
+[[package]]
+name = "ccstat-mcp"
+version = "0.5.0"
+dependencies = [
+ "ccstat-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "ccstat-pricing"
+version = "0.5.0"
+dependencies = [
+ "ccstat-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
+name = "ccstat-provider-amp"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "ccstat-core",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "ccstat-provider-claude"
+version = "0.5.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ccstat-core",
+ "chrono",
+ "dirs",
+ "futures",
+ "indicatif",
+ "once_cell",
+ "rayon",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "string-interner",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tracing",
+ "typed-arena",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
+name = "ccstat-provider-codex"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "ccstat-core",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "ccstat-provider-opencode"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "ccstat-core",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "ccstat-provider-pi"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "ccstat-core",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "ccstat-terminal"
+version = "0.5.0"
+dependencies = [
+ "ccstat-core",
+ "chrono",
+ "chrono-tz",
+ "colored",
+ "console",
+ "prettytable-rs",
+ "serde",
+ "serde_json",
+ "terminal_size",
+ "tokio-test",
+ "tracing",
 ]
 
 [[package]]

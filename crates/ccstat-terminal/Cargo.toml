@@ -1,0 +1,23 @@
+[package]
+name = "ccstat-terminal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal output formatting for ccstat"
+
+[dependencies]
+ccstat-core = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+prettytable-rs = { workspace = true }
+colored = { workspace = true }
+terminal_size = { workspace = true }
+console = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }

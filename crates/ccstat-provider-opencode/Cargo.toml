@@ -1,0 +1,19 @@
+[package]
+name = "ccstat-provider-opencode"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OpenCode provider for ccstat"
+
+[dependencies]
+ccstat-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+walkdir = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }

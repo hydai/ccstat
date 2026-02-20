@@ -30,7 +30,7 @@ fn test_deduplication_logic() {
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
 
-    for raw in vec![raw1, raw2, raw3] {
+    for raw in [raw1, raw2, raw3] {
         if let Some(key) = UsageEntry::dedup_key(&raw)
             && !seen.contains(&key)
         {

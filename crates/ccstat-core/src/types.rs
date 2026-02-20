@@ -18,7 +18,7 @@ use uuid::Uuid;
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::ModelName;
+/// use ccstat_core::types::ModelName;
 ///
 /// let model = ModelName::new("claude-3-opus");
 /// assert_eq!(model.as_str(), "claude-3-opus");
@@ -51,7 +51,7 @@ impl fmt::Display for ModelName {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::SessionId;
+/// use ccstat_core::types::SessionId;
 ///
 /// let session = SessionId::new("550e8400-e29b-41d4-a716-446655440000");
 /// assert_eq!(session.as_str(), "550e8400-e29b-41d4-a716-446655440000");
@@ -90,7 +90,7 @@ impl AsRef<str> for SessionId {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::ISOTimestamp;
+/// use ccstat_core::types::ISOTimestamp;
 /// use chrono::{TimeZone, Utc};
 ///
 /// let dt = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
@@ -140,7 +140,7 @@ impl AsRef<DateTime<Utc>> for ISOTimestamp {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::DailyDate;
+/// use ccstat_core::types::DailyDate;
 /// use chrono::NaiveDate;
 ///
 /// let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
@@ -187,7 +187,7 @@ impl DailyDate {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::TokenCounts;
+/// use ccstat_core::types::TokenCounts;
 ///
 /// let tokens = TokenCounts::new(100, 50, 10, 5);
 /// assert_eq!(tokens.total(), 165);
@@ -260,7 +260,7 @@ impl AddAssign for TokenCounts {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::CostMode;
+/// use ccstat_core::types::CostMode;
 /// use std::str::FromStr;
 ///
 /// // Parse from string
@@ -270,12 +270,13 @@ impl AddAssign for TokenCounts {
 /// // Display mode formatting
 /// assert_eq!(CostMode::Calculate.to_string(), "calculate");
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CostMode {
     /// Use pre-calculated costs when available, otherwise calculate
     ///
     /// This is the default mode that provides the best balance between
     /// accuracy and performance.
+    #[default]
     Auto,
     /// Always calculate from tokens using current pricing data
     ///
@@ -287,12 +288,6 @@ pub enum CostMode {
     /// Use this mode when you only want to display costs that were
     /// calculated at the time of usage.
     Display,
-}
-
-impl Default for CostMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 impl fmt::Display for CostMode {
@@ -326,7 +321,7 @@ impl std::str::FromStr for CostMode {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::ModelPricing;
+/// use ccstat_core::types::ModelPricing;
 ///
 /// let pricing = ModelPricing {
 ///     input_cost_per_token: Some(0.00001),  // $0.01 per 1K tokens
@@ -433,7 +428,7 @@ pub struct RawJsonlEntry {
 ///
 /// # Examples
 /// ```
-/// use ccstat::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
+/// use ccstat_core::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
 /// use chrono::Utc;
 ///
 /// let entry = UsageEntry {

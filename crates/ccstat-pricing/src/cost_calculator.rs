@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccstat::{
+//! use ccstat_pricing::{
 //!     cost_calculator::CostCalculator,
 //!     pricing_fetcher::PricingFetcher,
 //!     types::{CostMode, ModelName, TokenCounts},
@@ -31,9 +31,9 @@
 //! # }
 //! ```
 
-use crate::error::{CcstatError, Result};
 use crate::pricing_fetcher::PricingFetcher;
-use crate::types::{CostMode, ModelName, ModelPricing, TokenCounts};
+use ccstat_core::error::{CcstatError, Result};
+use ccstat_core::types::{CostMode, ModelName, ModelPricing, TokenCounts};
 use std::sync::Arc;
 use tracing::debug;
 

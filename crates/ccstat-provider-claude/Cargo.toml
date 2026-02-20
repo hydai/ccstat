@@ -1,0 +1,33 @@
+[package]
+name = "ccstat-provider-claude"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Claude Code provider for ccstat"
+
+[dependencies]
+ccstat-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+walkdir = { workspace = true }
+dirs = { workspace = true }
+rayon = { workspace = true }
+indicatif = { workspace = true }
+chrono = { workspace = true }
+once_cell = { workspace = true }
+string-interner = { workspace = true }
+typed-arena = { workspace = true }
+smallvec = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

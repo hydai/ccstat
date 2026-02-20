@@ -4,8 +4,8 @@
 //! active billing blocks with progress bars, burn rate calculations,
 //! and usage projections.
 
-use crate::aggregation::SessionBlock;
-use crate::model_formatter::format_model_name;
+use ccstat_core::aggregation_types::SessionBlock;
+use ccstat_core::model_formatter::format_model_name;
 use chrono::{DateTime, Duration, Utc};
 use colored::*;
 use std::fmt;

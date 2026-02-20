@@ -1,7 +1,7 @@
 //! Pricing fetcher module for LiteLLM model pricing data
 
-use crate::error::Result;
-use crate::types::ModelPricing;
+use ccstat_core::error::Result;
+use ccstat_core::types::ModelPricing;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

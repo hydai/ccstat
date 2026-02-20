@@ -7,9 +7,9 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccstat::output::get_formatter;
-//! use ccstat::aggregation::{DailyUsage, Totals};
-//! use ccstat::types::{DailyDate, TokenCounts};
+//! use ccstat_terminal::output::get_formatter;
+//! use ccstat_core::aggregation_types::{DailyUsage, Totals};
+//! use ccstat_core::types::{DailyDate, TokenCounts};
 //! use chrono::NaiveDate;
 //!
 //! let daily_data = vec![
@@ -33,10 +33,10 @@
 //! println!("{}", json_formatter.format_daily(&daily_data, &totals));
 //! ```
 
-use crate::aggregation::{
+use ccstat_core::aggregation_types::{
     DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals,
 };
-use crate::model_formatter::{format_model_list, format_model_name};
+use ccstat_core::model_formatter::{format_model_list, format_model_name};
 use prettytable::{Cell, Row, Table, format, row};
 use serde_json::json;
 
@@ -48,8 +48,8 @@ use serde_json::json;
 /// # Example Implementation
 ///
 /// ```
-/// use ccstat::output::OutputFormatter;
-/// use ccstat::aggregation::{DailyUsage, DailyInstanceUsage, SessionUsage, MonthlyUsage, SessionBlock, Totals};
+/// use ccstat_terminal::output::OutputFormatter;
+/// use ccstat_core::aggregation_types::{DailyUsage, DailyInstanceUsage, SessionUsage, MonthlyUsage, SessionBlock, Totals};
 ///
 /// struct CustomFormatter;
 ///
@@ -696,9 +696,9 @@ impl OutputFormatter for JsonFormatter {
 /// # Examples
 ///
 /// ```
-/// use ccstat::output::{get_formatter, OutputFormatter};
-/// use ccstat::aggregation::{DailyUsage, Totals};
-/// use ccstat::types::{DailyDate, TokenCounts};
+/// use ccstat_terminal::output::{get_formatter, OutputFormatter};
+/// use ccstat_core::aggregation_types::{DailyUsage, Totals};
+/// use ccstat_core::types::{DailyDate, TokenCounts};
 /// use chrono::NaiveDate;
 ///
 /// // Get table formatter for human-readable output
@@ -732,8 +732,8 @@ pub fn get_formatter(json: bool, full_model_names: bool) -> Box<dyn OutputFormat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregation::{MonthlyUsage, SessionBlock, SessionUsage};
-    use crate::types::{DailyDate, ModelName, SessionId, TokenCounts};
+    use ccstat_core::aggregation_types::{MonthlyUsage, SessionBlock, SessionUsage};
+    use ccstat_core::types::{DailyDate, ModelName, SessionId, TokenCounts};
     use chrono::{NaiveDate, TimeZone, Utc};
 
     #[test]

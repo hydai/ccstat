@@ -35,22 +35,31 @@
 //! }
 //! ```
 
+// Re-export modules from ccstat-core
+pub use ccstat_core::error;
+pub use ccstat_core::filters;
+pub use ccstat_core::memory_pool;
+pub use ccstat_core::model_formatter;
+pub use ccstat_core::string_pool;
+pub use ccstat_core::timezone;
+pub use ccstat_core::types;
+
+// Re-export modules from ccstat-pricing
+pub use ccstat_pricing::cost_calculator;
+pub use ccstat_pricing::pricing_fetcher;
+
+// Re-export modules from ccstat-terminal
+pub use ccstat_terminal::blocks_monitor;
+pub use ccstat_terminal::output;
+
+// Re-export modules from ccstat-provider-claude
+pub use ccstat_provider_claude::data_loader;
+
+// Local modules (not yet extracted)
 pub mod aggregation;
-pub mod blocks_monitor;
 pub mod cli;
-pub mod cost_calculator;
-pub mod data_loader;
-pub mod error;
-pub mod filters;
 pub mod live_monitor;
-pub mod memory_pool;
-pub mod model_formatter;
-pub mod output;
-pub mod pricing_fetcher;
 pub mod statusline;
-pub mod string_pool;
-pub mod timezone;
-pub mod types;
 
 // Test utilities module (only compiled for tests)
 #[cfg(test)]

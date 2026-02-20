@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```
-//! use ccstat::error::{CcstatError, Result};
+//! use ccstat_core::error::{CcstatError, Result};
 //!
 //! fn example_function() -> Result<()> {
 //!     // This will automatically convert io::Error to CcstatError
@@ -89,7 +89,7 @@ pub enum CcstatError {
 /// # Example
 ///
 /// ```
-/// use ccstat::Result;
+/// use ccstat_core::Result;
 ///
 /// fn process_data() -> Result<String> {
 ///     Ok("Processed successfully".to_string())

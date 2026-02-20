@@ -20,7 +20,7 @@
 /// # Examples
 ///
 /// ```
-/// use ccstat::model_formatter::format_model_name;
+/// use ccstat_core::model_formatter::format_model_name;
 ///
 /// assert_eq!(format_model_name("claude-opus-4-20250514", false), "Opus 4");
 /// assert_eq!(format_model_name("claude-opus-4-20250514", true), "claude-opus-4-20250514");
@@ -67,7 +67,7 @@ pub fn format_model_name(model_name: &str, use_full_name: bool) -> String {
 /// # Examples
 ///
 /// ```
-/// use ccstat::model_formatter::format_model_list;
+/// use ccstat_core::model_formatter::format_model_list;
 ///
 /// let models = vec!["claude-opus-4-20250514".to_string(), "claude-sonnet-4-20250514".to_string()];
 /// assert_eq!(format_model_list(&models, false, ", "), "Opus 4, Sonnet 4");

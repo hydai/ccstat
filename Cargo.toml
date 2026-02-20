@@ -1,16 +1,36 @@
-[package]
-name = "ccstat"
-version = "0.4.0"
+[workspace]
+members = [
+    "crates/ccstat-core",
+    "crates/ccstat-pricing",
+    "crates/ccstat-terminal",
+    "crates/ccstat-provider-claude",
+    "crates/ccstat-provider-codex",
+    "crates/ccstat-provider-opencode",
+    "crates/ccstat-provider-amp",
+    "crates/ccstat-provider-pi",
+    "crates/ccstat-mcp",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.5.0"
 edition = "2024"
 authors = ["hydai"]
-description = "Analyze Claude Code usage data from local JSONL files"
-repository = "https://github.com/hydai/ccstat"
 license = "MIT"
-readme = "README.md"
-keywords = ["claude", "usage", "cli", "cost", "analysis"]
-categories = ["command-line-utilities"]
+repository = "https://github.com/hydai/ccstat"
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates
+ccstat-core = { path = "crates/ccstat-core" }
+ccstat-pricing = { path = "crates/ccstat-pricing" }
+ccstat-terminal = { path = "crates/ccstat-terminal" }
+ccstat-provider-claude = { path = "crates/ccstat-provider-claude" }
+ccstat-provider-codex = { path = "crates/ccstat-provider-codex" }
+ccstat-provider-opencode = { path = "crates/ccstat-provider-opencode" }
+ccstat-provider-amp = { path = "crates/ccstat-provider-amp" }
+ccstat-provider-pi = { path = "crates/ccstat-provider-pi" }
+ccstat-mcp = { path = "crates/ccstat-mcp" }
+
 # Core
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -59,12 +79,86 @@ once_cell = "1.19"
 walkdir = "2.5"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
-[dev-dependencies]
+# Dev/Test
 tempfile = "3.13"
 criterion = { version = "0.7", features = ["html_reports"] }
 proptest = "1.5"
 tokio-test = "0.4"
 filetime = "0.2"
+
+[package]
+name = "ccstat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Analyze Claude Code usage data from local JSONL files"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+keywords = ["claude", "usage", "cli", "cost", "analysis"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+# Internal crates (will be populated as extraction proceeds)
+ccstat-core = { workspace = true }
+ccstat-pricing = { workspace = true }
+ccstat-terminal = { workspace = true }
+ccstat-provider-claude = { workspace = true }
+
+# Core
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+iana-time-zone = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+prettytable-rs = { workspace = true }
+colored = { workspace = true }
+terminal_size = { workspace = true }
+console = { workspace = true }
+
+# Async
+futures = { workspace = true }
+tokio-stream = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+
+# HTTP
+reqwest = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Performance
+smallvec = { workspace = true }
+typed-arena = { workspace = true }
+rayon = { workspace = true }
+string-interner = { workspace = true }
+
+# Utils
+dirs = { workspace = true }
+derive_more = { workspace = true }
+indicatif = { workspace = true }
+is-terminal = { workspace = true }
+notify = { workspace = true }
+once_cell = { workspace = true }
+walkdir = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+criterion = { workspace = true }
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+filetime = { workspace = true }
 
 [[bench]]
 name = "parsing"

@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use ccstat::filters::UsageFilter;
+//! use ccstat_core::filters::UsageFilter;
 //! use chrono::NaiveDate;
 //!
 //! // Create a filter for January 2024
@@ -28,8 +28,8 @@ use chrono_tz::Tz;
 ///
 /// # Examples
 /// ```
-/// use ccstat::filters::UsageFilter;
-/// use ccstat::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
+/// use ccstat_core::filters::UsageFilter;
+/// use ccstat_core::types::{UsageEntry, SessionId, ISOTimestamp, ModelName, TokenCounts};
 /// use chrono::{NaiveDate, Utc};
 ///
 /// let filter = UsageFilter::new()
@@ -194,7 +194,7 @@ impl UsageFilter {
 /// # Example
 ///
 /// ```
-/// use ccstat::filters::MonthFilter;
+/// use ccstat_core::filters::MonthFilter;
 ///
 /// // Filter for Q1 2024
 /// let filter = MonthFilter::new()

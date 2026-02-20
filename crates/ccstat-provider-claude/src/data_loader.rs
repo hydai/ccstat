@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use ccstat::data_loader::DataLoader;
+//! use ccstat_provider_claude::data_loader::DataLoader;
 //! use futures::StreamExt;
 //!
 //! # async fn example() -> ccstat::Result<()> {
@@ -32,10 +32,10 @@
 //! # }
 //! ```
 
-use crate::error::{CcstatError, Result};
-use crate::memory_pool::MemoryPool;
-use crate::string_pool::{InternedModel, InternedSession};
-use crate::types::{ModelName, RawJsonlEntry, SessionId, UsageEntry};
+use ccstat_core::error::{CcstatError, Result};
+use ccstat_core::memory_pool::MemoryPool;
+use ccstat_core::string_pool::{InternedModel, InternedSession};
+use ccstat_core::types::{ModelName, RawJsonlEntry, SessionId, UsageEntry};
 use futures::StreamExt;
 use futures::stream::Stream;
 use indicatif::{ProgressBar, ProgressStyle};
