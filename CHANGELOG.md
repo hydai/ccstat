@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-02-20
+
+### Added
+- **Weekly report**: New `weekly` command for weekly usage aggregation
+  - Configurable week start day via `--start-of-week` (default: sunday)
+  - Table and JSON output formats
+  - Live monitoring support with `--watch`
+- **Codex provider**: Parse usage from `~/.codex/sessions/*.jsonl` with cumulative-to-delta token conversion
+- **OpenCode provider**: Parse per-message JSON files from `~/.local/share/opencode/storage/message/*.json` with deduplication
+- **Amp provider**: Parse Amp thread JSON from `~/.local/share/amp/threads/T-*.json` with usageLedger cross-reference for cache breakdown
+- **Pi provider**: Parse Pi session JSONL from `~/.pi/agent/sessions/` with `[pi]` model prefix
+- **Multi-provider dispatch**: All report commands (daily, monthly, weekly, session) work with all providers
+
+### Changed
+- MCP stub error message now includes issue tracker link
+
+### Fixed
+- Missing `WeeklyUsage` import in `OutputFormatter` doctest
+- CI workflow now triggers on `crates/**` path changes
+
 ## [0.5.0] - 2026-02-20
 
 ### Changed
@@ -228,7 +248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/hydai/ccstat/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hydai/ccstat/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/hydai/ccstat/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/hydai/ccstat/compare/v0.3.2...v0.3.3
