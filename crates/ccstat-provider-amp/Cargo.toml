@@ -18,3 +18,7 @@ walkdir = { workspace = true }
 dirs = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+async-stream = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

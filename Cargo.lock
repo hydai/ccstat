@@ -327,6 +327,7 @@ dependencies = [
 name = "ccstat-provider-amp"
 version = "0.5.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "ccstat-core",
  "chrono",
@@ -334,6 +335,7 @@ dependencies = [
  "futures",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "walkdir",
