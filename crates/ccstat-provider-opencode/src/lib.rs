@@ -3,4 +3,6 @@
 //! This crate implements the provider trait for OpenCode,
 //! handling per-message JSON files and session metadata.
 
-// Stub: will be implemented in a later phase
+pub mod data_loader;
+
+pub use data_loader::DataLoader;

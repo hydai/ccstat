@@ -17,3 +17,4 @@ tracing = { workspace = true }
 walkdir = { workspace = true }
 dirs = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }

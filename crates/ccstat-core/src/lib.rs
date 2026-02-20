@@ -9,6 +9,7 @@ pub mod error;
 pub mod filters;
 pub mod memory_pool;
 pub mod model_formatter;
+pub mod provider;
 pub mod string_pool;
 pub mod timezone;
 pub mod types;

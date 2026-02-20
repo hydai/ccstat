@@ -99,11 +99,15 @@ keywords = ["claude", "usage", "cli", "cost", "analysis"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-# Internal crates (will be populated as extraction proceeds)
+# Internal crates
 ccstat-core = { workspace = true }
 ccstat-pricing = { workspace = true }
 ccstat-terminal = { workspace = true }
 ccstat-provider-claude = { workspace = true }
+ccstat-provider-codex = { workspace = true }
+ccstat-provider-opencode = { workspace = true }
+ccstat-provider-amp = { workspace = true }
+ccstat-provider-pi = { workspace = true }
 
 # Core
 tokio = { workspace = true }

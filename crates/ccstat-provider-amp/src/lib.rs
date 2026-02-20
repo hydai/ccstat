@@ -3,4 +3,6 @@
 //! This crate implements the provider trait for Amp,
 //! handling thread-based JSON and usageLedger events.
 
-// Stub: will be implemented in a later phase
+pub mod data_loader;
+
+pub use data_loader::DataLoader;

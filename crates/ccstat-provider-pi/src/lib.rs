@@ -3,4 +3,6 @@
 //! This crate implements the provider trait for Pi,
 //! handling JSONL session parsing with [pi] model prefix.
 
-// Stub: will be implemented in a later phase
+pub mod data_loader;
+
+pub use data_loader::DataLoader;

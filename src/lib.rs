@@ -40,6 +40,7 @@ pub use ccstat_core::error;
 pub use ccstat_core::filters;
 pub use ccstat_core::memory_pool;
 pub use ccstat_core::model_formatter;
+pub use ccstat_core::provider;
 pub use ccstat_core::string_pool;
 pub use ccstat_core::timezone;
 pub use ccstat_core::types;
@@ -52,8 +53,12 @@ pub use ccstat_pricing::pricing_fetcher;
 pub use ccstat_terminal::blocks_monitor;
 pub use ccstat_terminal::output;
 
-// Re-export modules from ccstat-provider-claude
+// Re-export modules from providers
+pub use ccstat_provider_amp as amp_provider;
 pub use ccstat_provider_claude::data_loader;
+pub use ccstat_provider_codex as codex_provider;
+pub use ccstat_provider_opencode as opencode_provider;
+pub use ccstat_provider_pi as pi_provider;
 
 // Local modules (not yet extracted)
 pub mod aggregation;

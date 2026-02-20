@@ -16,6 +16,7 @@ use ccstat::{
     live_monitor::{CommandType, LiveMonitor},
     output::get_formatter,
     pricing_fetcher::PricingFetcher,
+    provider::ProviderDataLoader,
     timezone::TimezoneConfig,
 };
 use chrono::Datelike;
@@ -128,14 +129,7 @@ async fn main() -> Result<()> {
                 resolve_provider_report(cmd).expect("Watch and Mcp are handled above");
             validate_provider_report(provider, &report)?;
 
-            // Only Claude is implemented so far
-            if provider != Provider::Claude {
-                return Err(CcstatError::Config(format!(
-                    "Provider '{provider}' is not yet implemented"
-                )));
-            }
-
-            dispatch_report(&cli, &report).await?;
+            dispatch_provider_report(&cli, provider, &report).await?;
         }
     }
 
@@ -143,10 +137,34 @@ async fn main() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Report dispatch (Claude-only for now)
+// Report dispatch
 // ---------------------------------------------------------------------------
 
-async fn dispatch_report(cli: &Cli, report: &Report) -> Result<()> {
+/// Route a report to the appropriate provider-specific handler
+async fn dispatch_provider_report(cli: &Cli, provider: Provider, report: &Report) -> Result<()> {
+    match provider {
+        Provider::Claude => dispatch_claude_report(cli, report).await,
+        Provider::Codex => {
+            dispatch_provider_with_loader::<ccstat_provider_codex::DataLoader>(cli, report, "codex")
+                .await
+        }
+        Provider::Opencode => {
+            dispatch_provider_with_loader::<ccstat_provider_opencode::DataLoader>(
+                cli, report, "opencode",
+            )
+            .await
+        }
+        Provider::Amp => {
+            dispatch_provider_with_loader::<ccstat_provider_amp::DataLoader>(cli, report, "amp")
+                .await
+        }
+        Provider::Pi => {
+            dispatch_provider_with_loader::<ccstat_provider_pi::DataLoader>(cli, report, "pi").await
+        }
+    }
+}
+
+async fn dispatch_claude_report(cli: &Cli, report: &Report) -> Result<()> {
     match report {
         Report::Daily(args) => handle_daily_command(cli, args.instances, args.detailed).await,
         Report::Monthly => handle_monthly_command(cli).await,
@@ -163,6 +181,101 @@ async fn dispatch_report(cli: &Cli, report: &Report) -> Result<()> {
             .await
         }
     }
+}
+
+/// Generic dispatch for non-Claude providers.
+///
+/// Creates the provider's data loader, feeds entries into the shared
+/// aggregation pipeline, and formats output. Watch mode is not supported
+/// for non-Claude providers.
+async fn dispatch_provider_with_loader<T: ProviderDataLoader>(
+    cli: &Cli,
+    report: &Report,
+    provider_name: &str,
+) -> Result<()> {
+    info!("Running {} provider report", provider_name);
+
+    let sp = show_progress(cli);
+    let data_loader = T::new().await?;
+    let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+    let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+    let aggregator =
+        create_aggregator_with_timezone(cost_calculator, sp, cli.timezone.as_deref(), cli.utc)?;
+    let filter = build_usage_filter(cli, &aggregator)?;
+
+    let entries = data_loader.load_entries();
+    let filtered_entries = filter.filter_stream(entries).await;
+
+    match report {
+        Report::Daily(args) => {
+            if args.instances {
+                let instance_data = aggregator
+                    .aggregate_daily_by_instance(filtered_entries, cli.mode)
+                    .await?;
+                let totals = Totals::from_daily_instances(&instance_data);
+                let formatter = get_formatter(cli.json, cli.full_model_names);
+                println!(
+                    "{}",
+                    formatter.format_daily_by_instance(&instance_data, &totals)
+                );
+            } else {
+                let daily_data = aggregator
+                    .aggregate_daily_detailed(filtered_entries, cli.mode, args.detailed)
+                    .await?;
+                let totals = Totals::from_daily(&daily_data);
+                let formatter = get_formatter(cli.json, cli.full_model_names);
+                println!("{}", formatter.format_daily(&daily_data, &totals));
+            }
+        }
+        Report::Monthly => {
+            let daily_data = aggregator
+                .aggregate_daily(filtered_entries, cli.mode)
+                .await?;
+            let mut monthly_data = Aggregator::aggregate_monthly(&daily_data);
+            let mut month_filter = MonthFilter::new();
+            if let Some(since_str) = &cli.since {
+                let since_date = parse_date_filter(since_str)?;
+                month_filter = month_filter.with_since(since_date.year(), since_date.month());
+            }
+            if let Some(until_str) = &cli.until {
+                let until_date = parse_date_filter(until_str)?;
+                month_filter = month_filter.with_until(until_date.year(), until_date.month());
+            }
+            filter_monthly_data(&mut monthly_data, &month_filter);
+            let totals = Totals::from_monthly(&monthly_data);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
+            println!("{}", formatter.format_monthly(&monthly_data, &totals));
+        }
+        Report::Weekly(args) => {
+            let start_of_week = parse_weekday(&args.start_of_week)?;
+            let daily_data = aggregator
+                .aggregate_daily(filtered_entries, cli.mode)
+                .await?;
+            let weekly_data = Aggregator::aggregate_weekly(&daily_data, start_of_week);
+            let totals = Totals::from_weekly(&weekly_data);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
+            println!("{}", formatter.format_weekly(&weekly_data, &totals));
+        }
+        Report::Session(_) => {
+            let session_data = aggregator
+                .aggregate_sessions(filtered_entries, cli.mode)
+                .await?;
+            let totals = Totals::from_sessions(&session_data);
+            let formatter = get_formatter(cli.json, cli.full_model_names);
+            println!(
+                "{}",
+                formatter.format_sessions(&session_data, &totals, &aggregator.timezone_config().tz)
+            );
+        }
+        _ => {
+            return Err(CcstatError::Config(format!(
+                "Report type not supported for {} provider",
+                provider_name
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
