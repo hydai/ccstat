@@ -35,7 +35,7 @@ use crate::pricing_fetcher::PricingFetcher;
 use ccstat_core::error::{CcstatError, Result};
 use ccstat_core::types::{CostMode, ModelName, ModelPricing, TokenCounts};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Calculates costs based on token usage and pricing
 ///
@@ -156,7 +156,14 @@ impl CostCalculator {
                 if let Some(cost) = pre_calculated {
                     Ok(cost)
                 } else {
-                    self.calculate_cost(tokens, model_name).await
+                    match self.calculate_cost(tokens, model_name).await {
+                        Ok(cost) => Ok(cost),
+                        Err(CcstatError::UnknownModel(ref name)) => {
+                            warn!(model = %name, "Unknown model encountered, cost will be reported as $0.00");
+                            Ok(0.0)
+                        }
+                        Err(e) => Err(e),
+                    }
                 }
             }
             CostMode::Calculate => self.calculate_cost(tokens, model_name).await,
@@ -283,5 +290,50 @@ mod tests {
         // Should handle very small numbers without precision issues
         assert!(cost > 0.0);
         assert!(cost < 0.00001);
+    }
+
+    #[tokio::test]
+    async fn test_auto_mode_unknown_model_returns_zero() {
+        let fetcher = Arc::new(PricingFetcher::new(true).await);
+        let calculator = CostCalculator::new(fetcher);
+        let tokens = TokenCounts::new(1000, 500, 0, 0);
+        let model = ModelName::new("totally-unknown-model-xyz");
+
+        let result = calculator
+            .calculate_with_mode(&tokens, &model, None, CostMode::Auto)
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_mode_unknown_model_errors() {
+        let fetcher = Arc::new(PricingFetcher::new(true).await);
+        let calculator = CostCalculator::new(fetcher);
+        let tokens = TokenCounts::new(1000, 500, 0, 0);
+        let model = ModelName::new("totally-unknown-model-xyz");
+
+        let result = calculator
+            .calculate_with_mode(&tokens, &model, None, CostMode::Calculate)
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CcstatError::UnknownModel(_)));
+    }
+
+    #[tokio::test]
+    async fn test_auto_mode_unknown_model_with_precalculated() {
+        let fetcher = Arc::new(PricingFetcher::new(true).await);
+        let calculator = CostCalculator::new(fetcher);
+        let tokens = TokenCounts::new(1000, 500, 0, 0);
+        let model = ModelName::new("totally-unknown-model-xyz");
+
+        let result = calculator
+            .calculate_with_mode(&tokens, &model, Some(1.23), CostMode::Auto)
+            .await;
+
+        assert!(result.is_ok());
+        assert!((result.unwrap() - 1.23).abs() < f64::EPSILON);
     }
 }
