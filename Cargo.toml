@@ -13,7 +13,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 authors = ["hydai"]
 license = "MIT"
@@ -21,15 +21,15 @@ repository = "https://github.com/hydai/ccstat"
 
 [workspace.dependencies]
 # Internal crates
-ccstat-core = { version = "0.5.0", path = "crates/ccstat-core" }
-ccstat-pricing = { version = "0.5.0", path = "crates/ccstat-pricing" }
-ccstat-terminal = { version = "0.5.0", path = "crates/ccstat-terminal" }
-ccstat-provider-claude = { version = "0.5.0", path = "crates/ccstat-provider-claude" }
-ccstat-provider-codex = { version = "0.5.0", path = "crates/ccstat-provider-codex" }
-ccstat-provider-opencode = { version = "0.5.0", path = "crates/ccstat-provider-opencode" }
-ccstat-provider-amp = { version = "0.5.0", path = "crates/ccstat-provider-amp" }
-ccstat-provider-pi = { version = "0.5.0", path = "crates/ccstat-provider-pi" }
-ccstat-mcp = { version = "0.5.0", path = "crates/ccstat-mcp" }
+ccstat-core = { version = "0.6.0", path = "crates/ccstat-core" }
+ccstat-pricing = { version = "0.6.0", path = "crates/ccstat-pricing" }
+ccstat-terminal = { version = "0.6.0", path = "crates/ccstat-terminal" }
+ccstat-provider-claude = { version = "0.6.0", path = "crates/ccstat-provider-claude" }
+ccstat-provider-codex = { version = "0.6.0", path = "crates/ccstat-provider-codex" }
+ccstat-provider-opencode = { version = "0.6.0", path = "crates/ccstat-provider-opencode" }
+ccstat-provider-amp = { version = "0.6.0", path = "crates/ccstat-provider-amp" }
+ccstat-provider-pi = { version = "0.6.0", path = "crates/ccstat-provider-pi" }
+ccstat-mcp = { version = "0.6.0", path = "crates/ccstat-mcp" }
 
 # Core
 tokio = { version = "1.40", features = ["full"] }
