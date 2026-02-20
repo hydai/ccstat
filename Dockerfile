@@ -2,7 +2,7 @@
 # Builds a minimal container with just the ccstat binary
 
 # Build stage
-FROM rust:1.89-alpine AS builder
+FROM rust:1.93-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
@@ -17,7 +17,7 @@ COPY . .
 RUN cargo build --release --locked --bin ccstat
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install runtime dependencies
 RUN apk add --no-cache \
