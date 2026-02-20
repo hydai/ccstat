@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-20
+
+### Changed
+- **BREAKING**: Restructured into multi-crate Cargo workspace (ccstat-core, ccstat-pricing, ccstat-terminal, ccstat-provider-claude, ccstat-provider-codex, ccstat-provider-opencode, ccstat-provider-amp, ccstat-provider-pi, ccstat-mcp)
+- **BREAKING**: Two-level CLI structure with provider subcommands
+- Updated Docker images and GitHub Actions to latest versions
+- Updated Cargo dependencies to latest versions
+
+### Fixed
+- Resolved CI failures in workspace crate tests
+- Fixed Docker Hub digests as source for GHCR manifest creation
+
+## [0.4.0] - 2025-09-30
+
+### Added
+- Claude Sonnet 4.5 model support with pricing data
+
+### Fixed
+- Merge online and embedded pricing data for complete model lookup coverage
+
 ## [0.3.3] - 2025-08-16
 
 ### Added
@@ -208,7 +228,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advanced filtering options by date, project, and instance
 - High-performance stream processing with minimal memory footprint
 
-[Unreleased]: https://github.com/hydai/ccstat/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/hydai/ccstat/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hydai/ccstat/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/hydai/ccstat/compare/v0.3.3...v0.4.0
+[0.3.3]: https://github.com/hydai/ccstat/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/hydai/ccstat/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/hydai/ccstat/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/hydai/ccstat/compare/v0.2.2...v0.3.0
