@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-mcp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ccstat-core",
  "serde",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-pricing"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ccstat-core",
  "reqwest",
@@ -325,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-provider-amp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-provider-claude"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-provider-codex"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-provider-opencode"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-provider-pi"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -425,7 +425,7 @@ dependencies = [
 
 [[package]]
 name = "ccstat-terminal"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ccstat-core",
  "chrono",
