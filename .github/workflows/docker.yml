@@ -155,8 +155,9 @@ jobs:
           # Extract ghcr.io tags from metadata
           GHCR_TAGS=$(jq -cr '.tags | map(select(contains("ghcr.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           if [ ! -z "$GHCR_TAGS" ]; then
+            # Use Docker Hub digests as source (build step only pushes to Docker Hub)
             docker buildx imagetools create $GHCR_TAGS \
-              $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+              $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
           fi
 
       - name: Inspect image
