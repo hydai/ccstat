@@ -49,7 +49,7 @@ use serde_json::json;
 ///
 /// ```
 /// use ccstat_terminal::output::OutputFormatter;
-/// use ccstat_core::aggregation_types::{DailyUsage, DailyInstanceUsage, SessionUsage, MonthlyUsage, SessionBlock, Totals};
+/// use ccstat_core::aggregation_types::{DailyUsage, DailyInstanceUsage, SessionUsage, MonthlyUsage, WeeklyUsage, SessionBlock, Totals};
 ///
 /// struct CustomFormatter;
 ///
