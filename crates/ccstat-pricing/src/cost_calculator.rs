@@ -34,7 +34,8 @@
 use crate::pricing_fetcher::PricingFetcher;
 use ccstat_core::error::{CcstatError, Result};
 use ccstat_core::types::{CostMode, ModelName, ModelPricing, TokenCounts};
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, warn};
 
 /// Calculates costs based on token usage and pricing
@@ -45,6 +46,8 @@ use tracing::{debug, warn};
 pub struct CostCalculator {
     /// Pricing fetcher instance
     pricing_fetcher: Arc<PricingFetcher>,
+    /// Tracks models already warned about to avoid duplicate warnings
+    warned_models: Mutex<HashSet<String>>,
 }
 
 impl CostCalculator {
@@ -54,7 +57,10 @@ impl CostCalculator {
     ///
     /// * `pricing_fetcher` - Arc to a PricingFetcher instance for retrieving model pricing
     pub fn new(pricing_fetcher: Arc<PricingFetcher>) -> Self {
-        Self { pricing_fetcher }
+        Self {
+            pricing_fetcher,
+            warned_models: Mutex::new(HashSet::new()),
+        }
     }
 
     /// Calculate cost for token usage
@@ -159,7 +165,9 @@ impl CostCalculator {
                     match self.calculate_cost(tokens, model_name).await {
                         Ok(cost) => Ok(cost),
                         Err(CcstatError::UnknownModel(ref name)) => {
-                            warn!(model = %name, "Unknown model encountered, cost will be reported as $0.00");
+                            if self.warned_models.lock().unwrap().insert(name.to_string()) {
+                                warn!(model = %name, "Unknown model encountered, cost will be reported as $0.00");
+                            }
                             Ok(0.0)
                         }
                         Err(e) => Err(e),
