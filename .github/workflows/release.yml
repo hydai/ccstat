@@ -85,7 +85,26 @@ jobs:
       uses: rust-lang/crates-io-auth-action@v1
       id: auth
 
-    - name: Publish to crates.io
-      run: cargo publish
+    - name: Publish workspace crates to crates.io
+      run: |
+        cargo publish -p ccstat-core
+        sleep 30
+        cargo publish -p ccstat-pricing
+        sleep 30
+        cargo publish -p ccstat-terminal
+        sleep 30
+        cargo publish -p ccstat-mcp
+        sleep 30
+        cargo publish -p ccstat-provider-claude
+        sleep 30
+        cargo publish -p ccstat-provider-codex
+        sleep 30
+        cargo publish -p ccstat-provider-opencode
+        sleep 30
+        cargo publish -p ccstat-provider-amp
+        sleep 30
+        cargo publish -p ccstat-provider-pi
+        sleep 30
+        cargo publish -p ccstat
       env:
         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
