@@ -835,7 +835,7 @@ mod tests {
 
         // Create verbose entries
         let timestamp = Utc.with_ymd_and_hms(2024, 3, 15, 10, 30, 0).unwrap();
-        let verbose_entry = crate::aggregation::VerboseEntry {
+        let verbose_entry = ccstat_core::aggregation_types::VerboseEntry {
             timestamp,
             session_id: "test-session".to_string(),
             model: "claude-3-opus".to_string(),

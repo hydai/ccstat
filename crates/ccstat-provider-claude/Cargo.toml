@@ -29,5 +29,6 @@ smallvec = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+filetime = { workspace = true }
 tempfile = { workspace = true }
 tokio-test = { workspace = true }

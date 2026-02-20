@@ -18,7 +18,7 @@
 //! use ccstat_provider_claude::data_loader::DataLoader;
 //! use futures::StreamExt;
 //!
-//! # async fn example() -> ccstat::Result<()> {
+//! # async fn example() -> ccstat_core::Result<()> {
 //! let data_loader = DataLoader::new().await?;
 //!
 //! // Stream usage entries

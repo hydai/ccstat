@@ -9,11 +9,11 @@
 //! use ccstat_pricing::{
 //!     cost_calculator::CostCalculator,
 //!     pricing_fetcher::PricingFetcher,
-//!     types::{CostMode, ModelName, TokenCounts},
 //! };
+//! use ccstat_core::types::{CostMode, ModelName, TokenCounts};
 //! use std::sync::Arc;
 //!
-//! # async fn example() -> ccstat::Result<()> {
+//! # async fn example() -> ccstat_core::Result<()> {
 //! let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
 //! let calculator = CostCalculator::new(pricing_fetcher);
 //!
