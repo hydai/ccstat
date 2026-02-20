@@ -5,12 +5,14 @@ on:
     branches: [ main, master, develop ]
     paths:
       - 'src/**'
+      - 'crates/**'
       - 'Cargo.*'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'src/**'
+      - 'crates/**'
       - 'Cargo.*'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
