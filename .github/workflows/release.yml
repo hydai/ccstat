@@ -105,6 +105,6 @@ jobs:
         sleep 30
         cargo publish -p ccstat-provider-pi
         sleep 30
-        cargo publish -p ccstat
+        cargo publish -p ccstat --allow-dirty
       env:
         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
