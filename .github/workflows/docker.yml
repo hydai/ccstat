@@ -172,7 +172,7 @@ jobs:
       - merge
     steps:
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:latest
           format: 'sarif'
