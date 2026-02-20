@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
         // Stub: MCP server
         Some(Command::Mcp) => {
             return Err(CcstatError::Config(
-                "MCP server is not yet implemented".into(),
+                "MCP server is not yet implemented. Track progress at https://github.com/hydai/ccstat/issues".into(),
             ));
         }
 
