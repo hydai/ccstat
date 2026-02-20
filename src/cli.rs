@@ -1,23 +1,20 @@
 //! CLI interface for ccstat
 //!
 //! This module defines the command-line interface using clap, providing
-//! structured access to all ccstat functionality.
+//! a two-level subcommand structure: `ccstat [provider] <report> [flags]`.
 //!
-//! # Commands
-//!
-//! - `daily` - Show daily usage summary with optional date filters
-//! - `monthly` - Show monthly rollups with month filters
-//! - `session` - Show individual session details
-//! - `blocks` - Show 5-hour billing blocks
+//! When the provider is omitted, it defaults to `claude`. This means:
+//! - `ccstat daily` is equivalent to `ccstat claude daily`
+//! - `ccstat codex daily` explicitly selects the Codex provider
 //!
 //! # Example
 //!
 //! ```bash
-//! # Show daily usage for January 2024
+//! # Show daily Claude usage for January 2024
 //! ccstat daily --since 2024-01-01 --until 2024-01-31
 //!
-//! # Show monthly usage as JSON
-//! ccstat monthly --json
+//! # Explicit provider selection
+//! ccstat claude monthly --json
 //!
 //! # Show active billing blocks with token warnings
 //! ccstat blocks --active --token-limit 80%
@@ -25,9 +22,9 @@
 
 use crate::error::{CcstatError, Result};
 use crate::types::CostMode;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
-/// Analyze Claude Code usage data from local JSONL files
+/// Analyze AI coding tool usage data
 #[derive(Parser, Debug, Clone)]
 #[command(name = "ccstat")]
 #[command(version, about, long_about = None)]
@@ -90,78 +87,278 @@ pub struct Cli {
     pub command: Option<Command>,
 }
 
-/// Available commands
-///
-/// Each command provides different views and aggregations of usage data,
-/// with flexible filtering and output options.
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
+/// Supported usage data providers
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Provider {
+    Claude,
+    Codex,
+    Opencode,
+    Amp,
+    Pi,
+}
+
+impl std::fmt::Display for Provider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Provider::Claude => write!(f, "claude"),
+            Provider::Codex => write!(f, "codex"),
+            Provider::Opencode => write!(f, "opencode"),
+            Provider::Amp => write!(f, "amp"),
+            Provider::Pi => write!(f, "pi"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared argument structs (reused by both shortcut and provider subcommands)
+// ---------------------------------------------------------------------------
+
+/// Arguments for the daily report
+#[derive(Args, Debug, Clone)]
+pub struct DailyArgs {
+    /// Show per-instance breakdown
+    #[arg(long, short = 'i')]
+    pub instances: bool,
+
+    /// Show detailed token information per entry
+    #[arg(long, short = 'd', conflicts_with = "instances")]
+    pub detailed: bool,
+}
+
+/// Arguments for the weekly report
+#[derive(Args, Debug, Clone)]
+pub struct WeeklyArgs {
+    /// Day to start the week (default: sunday)
+    #[arg(long, default_value = "sunday")]
+    pub start_of_week: String,
+}
+
+/// Arguments for the session report
+#[derive(Args, Debug, Clone)]
+pub struct SessionArgs {}
+
+/// Arguments for the blocks report
+#[derive(Args, Debug, Clone)]
+pub struct BlocksArgs {
+    /// Show only active blocks
+    #[arg(long)]
+    pub active: bool,
+
+    /// Show only recent blocks (last 24h)
+    #[arg(long)]
+    pub recent: bool,
+
+    /// Token limit for warnings
+    #[arg(long)]
+    pub token_limit: Option<String>,
+
+    /// Session duration in hours for billing blocks
+    #[arg(long, default_value = "5.0")]
+    pub session_duration: f64,
+
+    /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
+    #[arg(long)]
+    pub max_cost: Option<f64>,
+}
+
+/// Arguments for the statusline command
+#[derive(Args, Debug, Clone)]
+pub struct StatuslineArgs {
+    /// Monthly subscription fee in USD (default: 200)
+    #[arg(long, default_value = "200")]
+    pub monthly_fee: f64,
+
+    /// Disable colored output
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Show date and time
+    #[arg(long)]
+    pub show_date: bool,
+
+    /// Show git branch
+    #[arg(long)]
+    pub show_git: bool,
+}
+
+/// Arguments for the watch command (hidden alias)
+#[derive(Args, Debug, Clone)]
+pub struct WatchArgs {
+    /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
+    #[arg(long)]
+    pub max_cost: Option<f64>,
+}
+
+// ---------------------------------------------------------------------------
+// Report subcommand (nested under each provider)
+// ---------------------------------------------------------------------------
+
+/// Report types available within a provider
 #[derive(Subcommand, Debug, Clone)]
-pub enum Command {
+pub enum Report {
     /// Show daily usage summary
-    Daily {
-        /// Show per-instance breakdown
-        #[arg(long, short = 'i')]
-        instances: bool,
-
-        /// Show detailed token information per entry
-        #[arg(long, short = 'd', conflicts_with = "instances")]
-        detailed: bool,
-    },
-
+    Daily(DailyArgs),
     /// Show monthly usage summary
     Monthly,
-
+    /// Show weekly usage summary
+    Weekly(WeeklyArgs),
     /// Show session-based usage
-    Session,
-
+    Session(SessionArgs),
     /// Show 5-hour billing blocks
-    Blocks {
-        /// Show only active blocks
-        #[arg(long)]
-        active: bool,
+    Blocks(BlocksArgs),
+    /// Generate statusline output
+    Statusline(StatuslineArgs),
+}
 
-        /// Show only recent blocks (last 24h)
-        #[arg(long)]
-        recent: bool,
+// ---------------------------------------------------------------------------
+// Top-level command (providers + report shortcuts + special commands)
+// ---------------------------------------------------------------------------
 
-        /// Token limit for warnings
-        #[arg(long)]
-        token_limit: Option<String>,
-
-        /// Session duration in hours for billing blocks
-        #[arg(long, default_value = "5.0")]
-        session_duration: f64,
-
-        /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
-        #[arg(long)]
-        max_cost: Option<f64>,
+/// Available commands
+///
+/// Provider subcommands (`claude`, `codex`, etc.) accept a nested report.
+/// Report names used directly (`daily`, `monthly`, etc.) default to the
+/// Claude provider.
+#[derive(Subcommand, Debug, Clone)]
+pub enum Command {
+    // -- Provider subcommands ------------------------------------------------
+    /// Claude Code usage data
+    Claude {
+        #[command(subcommand)]
+        report: Report,
+    },
+    /// Codex usage data
+    Codex {
+        #[command(subcommand)]
+        report: Report,
+    },
+    /// OpenCode usage data
+    Opencode {
+        #[command(subcommand)]
+        report: Report,
+    },
+    /// Amp usage data
+    Amp {
+        #[command(subcommand)]
+        report: Report,
+    },
+    /// Pi Agent usage data
+    Pi {
+        #[command(subcommand)]
+        report: Report,
     },
 
+    // -- Report shortcuts (implicit Claude provider) -------------------------
+    /// Show daily usage summary (provider: claude)
+    Daily(DailyArgs),
+    /// Show monthly usage summary (provider: claude)
+    Monthly,
+    /// Show weekly usage summary (provider: claude)
+    Weekly(WeeklyArgs),
+    /// Show session-based usage (provider: claude)
+    Session(SessionArgs),
+    /// Show 5-hour billing blocks (provider: claude)
+    Blocks(BlocksArgs),
     /// Generate statusline output for Claude Code
-    Statusline {
-        /// Monthly subscription fee in USD (default: 200)
-        #[arg(long, default_value = "200")]
-        monthly_fee: f64,
+    Statusline(StatuslineArgs),
 
-        /// Disable colored output
-        #[arg(long)]
-        no_color: bool,
-
-        /// Show date and time
-        #[arg(long)]
-        show_date: bool,
-
-        /// Show git branch
-        #[arg(long)]
-        show_git: bool,
-    },
+    // -- Special commands ----------------------------------------------------
+    /// Start MCP server
+    Mcp,
 
     /// Live monitor for active billing blocks (alias for blocks --watch --active)
-    Watch {
-        /// Maximum cost limit in USD for progress calculations (defaults to historical maximum)
-        #[arg(long)]
-        max_cost: Option<f64>,
-    },
+    #[command(hide = true)]
+    Watch(WatchArgs),
 }
+
+// ---------------------------------------------------------------------------
+// Resolution and validation
+// ---------------------------------------------------------------------------
+
+/// Resolve a top-level command into a (Provider, Report) pair.
+///
+/// Returns `None` for special commands (Mcp, Watch) that need separate handling.
+pub fn resolve_provider_report(cmd: &Command) -> Option<(Provider, Report)> {
+    match cmd.clone() {
+        // Provider subcommands
+        Command::Claude { report } => Some((Provider::Claude, report)),
+        Command::Codex { report } => Some((Provider::Codex, report)),
+        Command::Opencode { report } => Some((Provider::Opencode, report)),
+        Command::Amp { report } => Some((Provider::Amp, report)),
+        Command::Pi { report } => Some((Provider::Pi, report)),
+
+        // Report shortcuts → Claude
+        Command::Daily(args) => Some((Provider::Claude, Report::Daily(args))),
+        Command::Monthly => Some((Provider::Claude, Report::Monthly)),
+        Command::Weekly(args) => Some((Provider::Claude, Report::Weekly(args))),
+        Command::Session(args) => Some((Provider::Claude, Report::Session(args))),
+        Command::Blocks(args) => Some((Provider::Claude, Report::Blocks(args))),
+        Command::Statusline(args) => Some((Provider::Claude, Report::Statusline(args))),
+
+        // Special commands
+        Command::Mcp | Command::Watch(_) => None,
+    }
+}
+
+/// Validate that a provider supports the given report type.
+///
+/// Returns an error for unsupported combinations per the provider-report matrix.
+pub fn validate_provider_report(provider: Provider, report: &Report) -> Result<()> {
+    let supported = match (&provider, report) {
+        // All providers support daily, monthly, session
+        (_, Report::Daily(_) | Report::Monthly | Report::Session(_)) => true,
+
+        // Weekly: only Claude and OpenCode
+        (Provider::Claude | Provider::Opencode, Report::Weekly(_)) => true,
+
+        // Blocks: only Claude
+        (Provider::Claude, Report::Blocks(_)) => true,
+
+        // Statusline: only Claude
+        (Provider::Claude, Report::Statusline(_)) => true,
+
+        // Everything else is unsupported
+        _ => false,
+    };
+
+    if supported {
+        Ok(())
+    } else {
+        let report_name = match report {
+            Report::Daily(_) => "daily",
+            Report::Monthly => "monthly",
+            Report::Weekly(_) => "weekly",
+            Report::Session(_) => "session",
+            Report::Blocks(_) => "blocks",
+            Report::Statusline(_) => "statusline",
+        };
+        Err(CcstatError::Config(format!(
+            "The '{report_name}' report is not supported for the '{provider}' provider"
+        )))
+    }
+}
+
+/// Check whether a command targets the statusline (used to skip logging init).
+pub fn is_statusline_command(cmd: &Option<Command>) -> bool {
+    matches!(
+        cmd,
+        Some(
+            Command::Statusline(_)
+                | Command::Claude {
+                    report: Report::Statusline(_),
+                    ..
+                }
+        )
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Date parsing
+// ---------------------------------------------------------------------------
 
 /// Parse date filter from string
 ///
@@ -230,21 +427,182 @@ mod tests {
 
     #[test]
     fn test_cli_parsing() {
-        // Test global JSON flag
+        // Test global JSON flag (no command → None)
         let cli = Cli::parse_from(["ccstat", "--json"]);
         assert!(cli.json);
+        assert!(cli.command.is_none());
 
-        // Test with daily command
+        // Test with daily command (shortcut)
         let cli = Cli::parse_from(["ccstat", "daily", "--instances"]);
-        match cli.command {
-            Some(Command::Daily { instances, .. }) => assert!(instances),
+        match &cli.command {
+            Some(Command::Daily(args)) => assert!(args.instances),
             _ => panic!("Expected Daily command"),
         }
     }
 
     #[test]
+    fn test_provider_subcommand() {
+        // ccstat claude daily --instances
+        let cli = Cli::parse_from(["ccstat", "claude", "daily", "--instances"]);
+        match &cli.command {
+            Some(Command::Claude {
+                report: Report::Daily(args),
+            }) => assert!(args.instances),
+            _ => panic!("Expected Claude Daily command"),
+        }
+
+        // ccstat codex monthly
+        let cli = Cli::parse_from(["ccstat", "codex", "monthly"]);
+        match &cli.command {
+            Some(Command::Codex {
+                report: Report::Monthly,
+            }) => {}
+            _ => panic!("Expected Codex Monthly command"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_provider_report() {
+        // Shortcut: daily → (Claude, Daily)
+        let cmd = Command::Daily(DailyArgs {
+            instances: false,
+            detailed: false,
+        });
+        let (provider, report) = resolve_provider_report(&cmd).unwrap();
+        assert_eq!(provider, Provider::Claude);
+        assert!(matches!(report, Report::Daily(_)));
+
+        // Explicit: codex daily → (Codex, Daily)
+        let cmd = Command::Codex {
+            report: Report::Daily(DailyArgs {
+                instances: false,
+                detailed: false,
+            }),
+        };
+        let (provider, report) = resolve_provider_report(&cmd).unwrap();
+        assert_eq!(provider, Provider::Codex);
+        assert!(matches!(report, Report::Daily(_)));
+
+        // Special commands return None
+        assert!(resolve_provider_report(&Command::Mcp).is_none());
+    }
+
+    #[test]
+    fn test_validate_provider_report_matrix() {
+        // Claude supports everything
+        assert!(
+            validate_provider_report(
+                Provider::Claude,
+                &Report::Daily(DailyArgs {
+                    instances: false,
+                    detailed: false
+                })
+            )
+            .is_ok()
+        );
+        assert!(validate_provider_report(Provider::Claude, &Report::Monthly).is_ok());
+        assert!(
+            validate_provider_report(
+                Provider::Claude,
+                &Report::Weekly(WeeklyArgs {
+                    start_of_week: "sunday".into()
+                })
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_provider_report(
+                Provider::Claude,
+                &Report::Blocks(BlocksArgs {
+                    active: false,
+                    recent: false,
+                    token_limit: None,
+                    session_duration: 5.0,
+                    max_cost: None
+                })
+            )
+            .is_ok()
+        );
+
+        // Codex does NOT support weekly, blocks, statusline
+        assert!(
+            validate_provider_report(
+                Provider::Codex,
+                &Report::Weekly(WeeklyArgs {
+                    start_of_week: "sunday".into()
+                })
+            )
+            .is_err()
+        );
+        assert!(
+            validate_provider_report(
+                Provider::Codex,
+                &Report::Blocks(BlocksArgs {
+                    active: false,
+                    recent: false,
+                    token_limit: None,
+                    session_duration: 5.0,
+                    max_cost: None
+                })
+            )
+            .is_err()
+        );
+
+        // OpenCode supports weekly
+        assert!(
+            validate_provider_report(
+                Provider::Opencode,
+                &Report::Weekly(WeeklyArgs {
+                    start_of_week: "sunday".into()
+                })
+            )
+            .is_ok()
+        );
+
+        // Amp does not support weekly
+        assert!(
+            validate_provider_report(
+                Provider::Amp,
+                &Report::Weekly(WeeklyArgs {
+                    start_of_week: "sunday".into()
+                })
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_is_statusline_command() {
+        // Direct shortcut
+        assert!(is_statusline_command(&Some(Command::Statusline(
+            StatuslineArgs {
+                monthly_fee: 200.0,
+                no_color: false,
+                show_date: false,
+                show_git: false,
+            }
+        ))));
+
+        // Via provider
+        assert!(is_statusline_command(&Some(Command::Claude {
+            report: Report::Statusline(StatuslineArgs {
+                monthly_fee: 200.0,
+                no_color: false,
+                show_date: false,
+                show_git: false,
+            })
+        })));
+
+        // Not statusline
+        assert!(!is_statusline_command(&Some(Command::Daily(DailyArgs {
+            instances: false,
+            detailed: false,
+        }))));
+        assert!(!is_statusline_command(&None));
+    }
+
+    #[test]
     fn test_cost_mode_parsing() {
-        // Test global mode flag
         let cli = Cli::parse_from(["ccstat", "--mode", "calculate"]);
         assert_eq!(cli.mode, CostMode::Calculate);
     }
