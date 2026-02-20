@@ -82,6 +82,19 @@ pub struct MonthlyUsage {
     pub active_days: usize,
 }
 
+/// Weekly usage summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeeklyUsage {
+    /// Date of the week start (YYYY-MM-DD format)
+    pub week: String,
+    /// Total token counts for the week
+    pub tokens: TokenCounts,
+    /// Total cost for the week in USD
+    pub total_cost: f64,
+    /// Number of days with usage in this week
+    pub active_days: usize,
+}
+
 /// 5-hour billing block
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBlock {
@@ -156,6 +169,15 @@ impl Totals {
         for monthly in monthly_usage {
             totals.tokens += monthly.tokens;
             totals.total_cost += monthly.total_cost;
+        }
+        totals
+    }
+
+    pub fn from_weekly(weekly_usage: &[WeeklyUsage]) -> Self {
+        let mut totals = Self::default();
+        for weekly in weekly_usage {
+            totals.tokens += weekly.tokens;
+            totals.total_cost += weekly.total_cost;
         }
         totals
     }

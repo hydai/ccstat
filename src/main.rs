@@ -6,8 +6,8 @@ use ccstat::{
         filter_monthly_data,
     },
     cli::{
-        BlocksArgs, Cli, Command, Provider, Report, is_statusline_command, parse_date_filter,
-        resolve_provider_report, validate_provider_report,
+        BlocksArgs, Cli, Command, Provider, Report, WeeklyArgs, is_statusline_command,
+        parse_date_filter, parse_weekday, resolve_provider_report, validate_provider_report,
     },
     cost_calculator::CostCalculator,
     data_loader::DataLoader,
@@ -150,9 +150,7 @@ async fn dispatch_report(cli: &Cli, report: &Report) -> Result<()> {
     match report {
         Report::Daily(args) => handle_daily_command(cli, args.instances, args.detailed).await,
         Report::Monthly => handle_monthly_command(cli).await,
-        Report::Weekly(_) => Err(CcstatError::Config(
-            "Weekly report is not yet implemented".into(),
-        )),
+        Report::Weekly(args) => handle_weekly_command(cli, args).await,
         Report::Session(_) => handle_session_command(cli).await,
         Report::Blocks(args) => handle_blocks_command(cli, args).await,
         Report::Statusline(args) => {
@@ -276,6 +274,68 @@ async fn handle_monthly_command(cli: &Cli) -> Result<()> {
         let totals = Totals::from_monthly(&monthly_data);
         let formatter = get_formatter(cli.json, cli.full_model_names);
         println!("{}", formatter.format_monthly(&monthly_data, &totals));
+        Ok(())
+    }
+}
+
+async fn handle_weekly_command(cli: &Cli, args: &WeeklyArgs) -> Result<()> {
+    info!("Running weekly usage report");
+
+    let start_of_week = parse_weekday(&args.start_of_week)?;
+
+    let sp = show_progress(cli);
+    let data_loader = Arc::new(init_data_loader(sp, cli.intern, cli.arena).await?);
+    let pricing_fetcher = Arc::new(PricingFetcher::new(false).await);
+    let cost_calculator = Arc::new(CostCalculator::new(pricing_fetcher));
+    let aggregator = Arc::new(create_aggregator_with_timezone(
+        cost_calculator,
+        sp,
+        cli.timezone.as_deref(),
+        cli.utc,
+    )?);
+
+    let mut month_filter = MonthFilter::new();
+    if let Some(since_str) = &cli.since {
+        let since_date = parse_date_filter(since_str)?;
+        month_filter = month_filter.with_since(since_date.year(), since_date.month());
+    }
+    if let Some(until_str) = &cli.until {
+        let until_date = parse_date_filter(until_str)?;
+        month_filter = month_filter.with_until(until_date.year(), until_date.month());
+    }
+
+    if cli.watch {
+        info!("Starting live monitoring mode");
+        let filter = UsageFilter::new();
+        let monitor = LiveMonitor::new(
+            data_loader,
+            aggregator,
+            filter,
+            Some(month_filter),
+            cli.mode,
+            cli.json,
+            CommandType::Weekly { start_of_week },
+            cli.interval,
+            cli.full_model_names,
+        );
+        monitor.run().await
+    } else {
+        let entries = Box::pin(data_loader.load_usage_entries_parallel());
+        let daily_data = aggregator.aggregate_daily(entries, cli.mode).await?;
+        let mut weekly_data = Aggregator::aggregate_weekly(&daily_data, start_of_week);
+
+        // Apply month filter to weekly data (filter by week start date)
+        weekly_data.retain(|w| {
+            if let Ok(date) = parse_date_filter(&w.week) {
+                month_filter.matches_date(&date)
+            } else {
+                false
+            }
+        });
+
+        let totals = Totals::from_weekly(&weekly_data);
+        let formatter = get_formatter(cli.json, cli.full_model_names);
+        println!("{}", formatter.format_weekly(&weekly_data, &totals));
         Ok(())
     }
 }

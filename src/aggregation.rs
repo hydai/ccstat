@@ -57,6 +57,7 @@ use crate::error::{CcstatError, Result};
 use crate::filters::MonthFilter;
 use crate::timezone::TimezoneConfig;
 use crate::types::{CostMode, DailyDate, ModelName, SessionId, TokenCounts, UsageEntry};
+use chrono::Datelike;
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -65,6 +66,7 @@ use std::sync::Arc;
 // Re-export aggregation data types from ccstat-core
 pub use ccstat_core::aggregation_types::{
     DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals, VerboseEntry,
+    WeeklyUsage,
 };
 
 /// Accumulator for daily aggregation
@@ -442,6 +444,46 @@ impl Aggregator {
             .into_iter()
             .map(|(month, (tokens, cost, days))| MonthlyUsage {
                 month,
+                tokens,
+                total_cost: cost,
+                active_days: days,
+            })
+            .collect()
+    }
+
+    /// Aggregate daily usage into weekly summaries
+    ///
+    /// Groups daily data by the week-start date, where the week starts on the
+    /// specified day. Each week is labeled with its start date in YYYY-MM-DD format.
+    pub fn aggregate_weekly(
+        daily_usage: &[DailyUsage],
+        start_of_week: chrono::Weekday,
+    ) -> Vec<WeeklyUsage> {
+        let mut weekly_map: BTreeMap<String, (TokenCounts, f64, usize)> = BTreeMap::new();
+
+        for daily in daily_usage {
+            let date = *daily.date.inner();
+            // Calculate the start of the week for this date
+            let days_since_start = (date.weekday().num_days_from_sunday() as i64
+                - start_of_week.num_days_from_sunday() as i64
+                + 7)
+                % 7;
+            let week_start = date - chrono::Duration::days(days_since_start);
+            let week_key = week_start.format("%Y-%m-%d").to_string();
+
+            let entry = weekly_map
+                .entry(week_key)
+                .or_insert((TokenCounts::default(), 0.0, 0));
+
+            entry.0 += daily.tokens;
+            entry.1 += daily.total_cost;
+            entry.2 += 1;
+        }
+
+        weekly_map
+            .into_iter()
+            .map(|(week, (tokens, cost, days))| WeeklyUsage {
+                week,
                 tokens,
                 total_cost: cost,
                 active_days: days,

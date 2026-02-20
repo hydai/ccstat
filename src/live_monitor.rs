@@ -49,6 +49,9 @@ pub enum CommandType {
         detailed: bool,
     },
     Monthly,
+    Weekly {
+        start_of_week: chrono::Weekday,
+    },
     Session,
     Blocks {
         active: bool,
@@ -91,6 +94,8 @@ pub struct PreparedData {
     pub daily_data: Option<Vec<crate::aggregation::DailyUsage>>,
     /// Monthly aggregation
     pub monthly_data: Option<Vec<crate::aggregation::MonthlyUsage>>,
+    /// Weekly aggregation
+    pub weekly_data: Option<Vec<crate::aggregation::WeeklyUsage>>,
     /// Session aggregation
     pub session_data: Option<Vec<crate::aggregation::SessionUsage>>,
     /// Billing blocks
@@ -316,6 +321,7 @@ impl LiveMonitor {
             instance_data: None,
             daily_data: None,
             monthly_data: None,
+            weekly_data: None,
             session_data: None,
             blocks_data: None,
             totals: Totals::default(),
@@ -367,6 +373,31 @@ impl LiveMonitor {
 
                 prepared_data.totals = Totals::from_monthly(&monthly_data);
                 prepared_data.monthly_data = Some(monthly_data);
+            }
+            CommandType::Weekly { start_of_week } => {
+                // First aggregate daily, then weekly
+                let daily_data = self
+                    .aggregator
+                    .aggregate_daily(
+                        futures::stream::iter(&filtered_entries).map(|e| Ok(e.clone())),
+                        self.cost_mode,
+                    )
+                    .await?;
+                let mut weekly_data = Aggregator::aggregate_weekly(&daily_data, *start_of_week);
+
+                // Apply month filter if present (filter by week start date)
+                if let Some(month_filter) = &self.month_filter {
+                    weekly_data.retain(|w| {
+                        if let Ok(date) = crate::cli::parse_date_filter(&w.week) {
+                            month_filter.matches_date(&date)
+                        } else {
+                            false
+                        }
+                    });
+                }
+
+                prepared_data.totals = Totals::from_weekly(&weekly_data);
+                prepared_data.weekly_data = Some(weekly_data);
             }
             CommandType::Session => {
                 let session_data = self.aggregate_sessions_for_watch(&filtered_entries).await?;
@@ -472,6 +503,7 @@ impl LiveMonitor {
             let command_name = match &self.command_type {
                 CommandType::Daily { .. } => "Daily Usage",
                 CommandType::Monthly => "Monthly Usage",
+                CommandType::Weekly { .. } => "Weekly Usage",
                 CommandType::Session => "Session Usage",
                 CommandType::Blocks { .. } => "Billing Blocks",
             };
@@ -531,6 +563,14 @@ impl LiveMonitor {
                     println!(
                         "{}",
                         formatter.format_monthly(monthly_data, &prepared_data.totals)
+                    );
+                }
+            }
+            CommandType::Weekly { .. } => {
+                if let Some(ref weekly_data) = prepared_data.weekly_data {
+                    println!(
+                        "{}",
+                        formatter.format_weekly(weekly_data, &prepared_data.totals)
                     );
                 }
             }

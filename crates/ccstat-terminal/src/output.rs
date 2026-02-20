@@ -34,7 +34,7 @@
 //! ```
 
 use ccstat_core::aggregation_types::{
-    DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals,
+    DailyInstanceUsage, DailyUsage, MonthlyUsage, SessionBlock, SessionUsage, Totals, WeeklyUsage,
 };
 use ccstat_core::model_formatter::{format_model_list, format_model_name};
 use prettytable::{Cell, Row, Table, format, row};
@@ -70,6 +70,10 @@ use serde_json::json;
 ///         format!("Total months: {}", data.len())
 ///     }
 ///
+///     fn format_weekly(&self, data: &[WeeklyUsage], totals: &Totals) -> String {
+///         format!("Total weeks: {}", data.len())
+///     }
+///
 ///     fn format_blocks(&self, data: &[SessionBlock], _tz: &chrono_tz::Tz) -> String {
 ///         format!("Total blocks: {}", data.len())
 ///     }
@@ -88,6 +92,9 @@ pub trait OutputFormatter {
 
     /// Format monthly usage data with totals
     fn format_monthly(&self, data: &[MonthlyUsage], totals: &Totals) -> String;
+
+    /// Format weekly usage data with totals
+    fn format_weekly(&self, data: &[WeeklyUsage], totals: &Totals) -> String;
 
     /// Format billing blocks (5-hour windows)
     fn format_blocks(&self, data: &[SessionBlock], tz: &chrono_tz::Tz) -> String;
@@ -495,6 +502,43 @@ impl OutputFormatter for TableFormatter {
         table.to_string()
     }
 
+    fn format_weekly(&self, data: &[WeeklyUsage], totals: &Totals) -> String {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+
+        table.set_titles(row![
+            b -> "Week",
+            b -> "Input",
+            b -> "Output",
+            b -> "Cache Create",
+            b -> "Cache Read",
+            b -> "Total",
+            b -> "Cost",
+            b -> "Active Days"
+        ]);
+
+        for entry in data {
+            table.add_row(row![
+                entry.week,
+                r -> Self::format_number(entry.tokens.input_tokens),
+                r -> Self::format_number(entry.tokens.output_tokens),
+                r -> Self::format_number(entry.tokens.cache_creation_tokens),
+                r -> Self::format_number(entry.tokens.cache_read_tokens),
+                r -> Self::format_number(entry.tokens.total()),
+                r -> Self::format_currency(entry.total_cost),
+                c -> entry.active_days
+            ]);
+        }
+
+        // Add separator
+        table.add_row(Row::new(vec![Cell::new(""); 8]));
+
+        // Add totals row
+        table.add_row(Self::format_totals_row(totals));
+
+        table.to_string()
+    }
+
     fn format_blocks(&self, data: &[SessionBlock], tz: &chrono_tz::Tz) -> String {
         self.format_blocks_with_now(data, tz, chrono::Utc::now())
     }
@@ -638,6 +682,35 @@ impl OutputFormatter for JsonFormatter {
                 },
                 "total_cost": m.total_cost,
                 "active_days": m.active_days,
+            })).collect::<Vec<_>>(),
+            "totals": {
+                "tokens": {
+                    "input_tokens": totals.tokens.input_tokens,
+                    "output_tokens": totals.tokens.output_tokens,
+                    "cache_creation_tokens": totals.tokens.cache_creation_tokens,
+                    "cache_read_tokens": totals.tokens.cache_read_tokens,
+                    "total": totals.tokens.total(),
+                },
+                "total_cost": totals.total_cost,
+            }
+        });
+
+        serde_json::to_string_pretty(&output).unwrap()
+    }
+
+    fn format_weekly(&self, data: &[WeeklyUsage], totals: &Totals) -> String {
+        let output = json!({
+            "weekly": data.iter().map(|w| json!({
+                "week": w.week,
+                "tokens": {
+                    "input_tokens": w.tokens.input_tokens,
+                    "output_tokens": w.tokens.output_tokens,
+                    "cache_creation_tokens": w.tokens.cache_creation_tokens,
+                    "cache_read_tokens": w.tokens.cache_read_tokens,
+                    "total": w.tokens.total(),
+                },
+                "total_cost": w.total_cost,
+                "active_days": w.active_days,
             })).collect::<Vec<_>>(),
             "totals": {
                 "tokens": {

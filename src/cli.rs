@@ -420,6 +420,33 @@ pub fn parse_date_filter(date_str: &str) -> Result<chrono::NaiveDate> {
     }
 }
 
+/// Parse a weekday name string into a chrono::Weekday
+///
+/// Accepts lowercase day names: "sunday", "monday", "tuesday", etc.
+///
+/// # Example
+///
+/// ```
+/// use ccstat::cli::parse_weekday;
+/// assert_eq!(parse_weekday("monday").unwrap(), chrono::Weekday::Mon);
+/// assert_eq!(parse_weekday("sunday").unwrap(), chrono::Weekday::Sun);
+/// ```
+pub fn parse_weekday(s: &str) -> Result<chrono::Weekday> {
+    match s.to_lowercase().as_str() {
+        "sunday" | "sun" => Ok(chrono::Weekday::Sun),
+        "monday" | "mon" => Ok(chrono::Weekday::Mon),
+        "tuesday" | "tue" => Ok(chrono::Weekday::Tue),
+        "wednesday" | "wed" => Ok(chrono::Weekday::Wed),
+        "thursday" | "thu" => Ok(chrono::Weekday::Thu),
+        "friday" | "fri" => Ok(chrono::Weekday::Fri),
+        "saturday" | "sat" => Ok(chrono::Weekday::Sat),
+        _ => Err(CcstatError::InvalidArgument(format!(
+            "Invalid weekday '{}'. Expected: sunday, monday, tuesday, wednesday, thursday, friday, saturday",
+            s
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
