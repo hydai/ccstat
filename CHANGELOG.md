@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-02-21
+
+### Fixed
+- Ctrl+C could not terminate `blocks --watch --active` (or `watch` command) — `tokio::signal::ctrl_c()` was recreated inside `select!` each iteration, causing the signal handler to be dropped and SIGINT to be silently swallowed
+
 ## [0.6.1] - 2026-02-21
 
 ### Fixed
