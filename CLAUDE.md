@@ -181,7 +181,7 @@ ccstat pi daily                 # Pi Agent provider
 - `PI_AGENT_DIR` - Override Pi Agent directory (default: `~/.pi/agent`)
 
 ## Important Notes
-- Current version: 0.6.1
+- Current version: 0.6.2
 - The project requires **Rust 1.85 or later** (edition 2024)
 - Dependencies are managed in the workspace root `Cargo.toml`
 - Tests are co-located with source files
